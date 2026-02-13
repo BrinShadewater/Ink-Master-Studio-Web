@@ -1,0 +1,5 @@
+{
+  "name": "InkMaster Studio",
+  "description": "Professional Print-on-Demand image processor and AI editor using Gemini 2.5 Flash. Prepares artwork specifically for black garments.",
+  "requestFramePermissions": []
+}
