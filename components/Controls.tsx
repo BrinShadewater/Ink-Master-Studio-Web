@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { ProcessingSettings, OutputFormat, ShirtColor, EdgeBehavior, DetailLevel, ResizeMode, ItemType } from '../types';
 import { PresetsPanel } from './PresetsPanel';
-import { ExportHistory } from './ExportHistory';
 import { ExportHistoryEntry } from '../types';
+
+// Lazy load export history
+const ExportHistory = lazy(() => import('./ExportHistory').then(module => ({ default: module.ExportHistory })));
 
 interface ControlsProps {
   settings: ProcessingSettings;
@@ -658,7 +660,9 @@ export const Controls: React.FC<ControlsProps> = ({
       </div>
 
       {/* Feature 10: Export History */}
-      <ExportHistory entries={exportHistory} />
+      <Suspense fallback={<div className="h-20" />}>
+        <ExportHistory entries={exportHistory} />
+      </Suspense>
     </div>
   );
 };

@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
 import { Preview } from './components/Preview';
 import { CheckpointBar, Checkpoint } from './components/CheckpointBar';
-import { BatchProcessor } from './components/BatchProcessor';
 import { Header } from './components/Header';
 import { ProcessingSettings, ProcessedResult, ShirtColor, ExportHistoryEntry } from './types';
 import { DEFAULT_SETTINGS, TARGET_WIDTH, TARGET_HEIGHT } from './constants';
 import { processImage, fileToBase64, generatePalette, getPrintDPI, generateUnderbase } from './services/imageProcessing';
 import { editImageWithGemini } from './services/geminiService';
+
+// Lazy load heavy components
+const BatchProcessor = lazy(() => import('./components/BatchProcessor').then(module => ({ default: module.BatchProcessor })));
 
 interface AppState {
     image: string | null;
@@ -404,10 +406,18 @@ const App: React.FC = () => {
 
         {/* Batch Processor Modal */}
         {showBatch && (
+          <Suspense fallback={
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+              <div className="bg-slate-900 rounded-lg p-8">
+                <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto"></div>
+              </div>
+            </div>
+          }>
             <BatchProcessor 
                 onClose={() => setShowBatch(false)} 
                 defaultSettings={settings} 
             />
+          </Suspense>
         )}
       </main>
       <footer className="border-t border-slate-900 bg-slate-950 py-8 mt-auto">

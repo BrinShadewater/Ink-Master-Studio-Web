@@ -24,7 +24,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
     }
   };
 
-  const validateAndAccept = (file: File) => {
+  const validateAndAccept = async (file: File) => {
     const isSvg = file.type === 'image/svg+xml';
     const maxSize = isSvg ? MAX_SVG_SIZE_MB : MAX_FILE_SIZE_MB;
     
@@ -37,6 +37,15 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
     if (!allowedTypes.includes(file.type)) {
       alert('Invalid file type. Please upload JPG, PNG, or SVG.');
       return;
+    }
+
+    // Additional SVG security check
+    if (isSvg) {
+      const text = await file.text();
+      if (/<script/i.test(text) || /on\w+=/i.test(text)) {
+        alert('SVG file contains potentially unsafe content.');
+        return;
+      }
     }
 
     onFileAccepted(file);

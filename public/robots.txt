@@ -1,0 +1,9 @@
+# Allow all search engines
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://inkmasterstudio.com/sitemap.xml
+
+# Crawl delay (optional, to be nice to servers)
+Crawl-delay: 1
