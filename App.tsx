@@ -222,7 +222,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-200 font-sans selection:bg-indigo-500 selection:text-white pt-14">
+    <div className={`min-h-screen flex flex-col text-slate-200 font-sans selection:bg-indigo-500 selection:text-white pt-14 relative ${originalImage ? 'bg-slate-950' : 'bg-transparent'}`}>
       {!originalImage && <AnimatedBackground />}
       <Header />
       <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -251,7 +251,7 @@ const App: React.FC = () => {
                     className="flex items-center gap-2 text-slate-400 hover:text-white border border-slate-700 hover:border-indigo-500 rounded-lg px-6 py-3 transition-all"
                  >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                    Or open Batch Processor
+                    Batch Processing
                  </button>
             </div>
 
@@ -424,9 +424,9 @@ const App: React.FC = () => {
           </Suspense>
         )}
       </main>
-      <footer className="border-t border-slate-900 bg-slate-950 py-8 mt-auto">
+      <footer className="border-t border-slate-900 bg-slate-950/90 backdrop-blur-sm py-8 mt-auto relative z-10">
         <div className="max-w-7xl mx-auto px-4 text-center text-slate-600 text-sm">
-          <p>InkMaster AI © 2024. Optimized for Direct-to-Garment (DTG) printing.</p>
+          <p>InkMaster Studio - AI Powered Print-on-Demand Image Editor © 2026. Optimized for Direct-to-Garment (DTG) printing.</p>
         </div>
       </footer>
     </div>

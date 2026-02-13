@@ -12,7 +12,7 @@ export const AnimatedBackground: React.FC = () => {
   }));
 
   return (
-    <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
       {/* Animated gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
         <div className="absolute inset-0 opacity-30">
