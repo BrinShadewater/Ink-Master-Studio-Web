@@ -4,6 +4,7 @@ import { Controls } from './components/Controls';
 import { Preview } from './components/Preview';
 import { CheckpointBar, Checkpoint } from './components/CheckpointBar';
 import { Header } from './components/Header';
+import { AnimatedBackground } from './components/AnimatedBackground';
 import { ProcessingSettings, ProcessedResult, ShirtColor, ExportHistoryEntry } from './types';
 import { DEFAULT_SETTINGS, TARGET_WIDTH, TARGET_HEIGHT } from './constants';
 import { processImage, fileToBase64, generatePalette, getPrintDPI, generateUnderbase } from './services/imageProcessing';
@@ -222,10 +223,11 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-200 font-sans selection:bg-indigo-500 selection:text-white pt-14">
+      {!originalImage && <AnimatedBackground />}
       <Header />
       <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!originalImage ? (
-          <div className="max-w-2xl mx-auto mt-12">
+          <div className="max-w-2xl mx-auto mt-12 relative z-10">
             <div className="flex flex-col items-center justify-center gap-4 mb-10">
               <img 
                 src="/logo/logo.png" 
@@ -393,14 +395,16 @@ const App: React.FC = () => {
                       <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-400 uppercase tracking-widest transition-colors">Redo</span>
                   </button>
                 </div>
+
+                {/* Checkpoint Bar - moved under undo/redo */}
+                <CheckpointBar
+                  currentSettings={settings}
+                  currentThumbnail={processedResult?.previewUrl || processedResult?.url || null}
+                  onRestore={handleRestoreCheckpoint}
+                />
                
               </div>
             </div>
-            <CheckpointBar
-              currentSettings={settings}
-              currentThumbnail={processedResult?.previewUrl || processedResult?.url || null}
-              onRestore={handleRestoreCheckpoint}
-            />
           </div>
         )}
 

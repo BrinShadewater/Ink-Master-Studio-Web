@@ -18,7 +18,7 @@ const MOCKUPS = [
   { name: 'Red', file: '/mockups/mockup-red.png', color: '#C0392B' },
   { name: 'Charcoal', file: '/mockups/mockup-charcoal.png', color: '#3D3D3D' },
   { name: 'Heather', file: '/mockups/mockup-heather.png', color: '#8E9A9A' },
-  { name: 'Military Green', file: '/mockups/mockup-militarygreen.png', color: '#4A5240' },
+  { name: 'Military Green', file: '/mockups/mockup-miltarygreen.png', color: '#4A5240' },
   { name: 'Forest Green', file: '/mockups/mockup-forestgreen.png', color: '#2D5A27' },
   { name: 'Cardinal', file: '/mockups/mockup-cardinal.png', color: '#8B1A1A' },
   { name: 'Black', file: '/mockups/mockup-black.png', color: '#1A1A1A' },
@@ -383,16 +383,16 @@ export const Preview: React.FC<PreviewProps> = ({
   return (
     <div className="w-full flex flex-col gap-4">
       {/* View Mode Tabs */}
-      <div className="flex bg-slate-900 rounded-lg p-1 self-start border border-slate-800">
+      <div className="flex bg-slate-900 rounded-lg p-1.5 self-start border border-slate-800">
         <button
           onClick={() => setViewMode('ARTBOARD')}
-          className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'ARTBOARD' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+          className={`px-6 py-3 text-sm font-bold rounded-md transition-all ${viewMode === 'ARTBOARD' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
         >
           Artboard
         </button>
         <button
           onClick={() => setViewMode('MOCKUP')}
-          className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'MOCKUP' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+          className={`px-6 py-3 text-sm font-bold rounded-md transition-all ${viewMode === 'MOCKUP' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
         >
           Mockup
         </button>
@@ -456,7 +456,7 @@ export const Preview: React.FC<PreviewProps> = ({
                 // Before/After Slider
                 <div
                     ref={beforeAfterRef}
-                    className="relative w-full h-full"
+                    className="relative w-full h-full select-none"
                     onMouseMove={(e) => {
                     if (!sliderDragging.current || !beforeAfterRef.current) return;
                     const rect = beforeAfterRef.current.getBoundingClientRect();
@@ -464,18 +464,21 @@ export const Preview: React.FC<PreviewProps> = ({
                     setSliderPosition(Math.max(5, Math.min(95, x)));
                     }}
                     onMouseUp={() => { sliderDragging.current = false; }}
+                    onMouseLeave={() => { sliderDragging.current = false; }}
                 >
                     {/* Original image — clipped to left of slider */}
                     <img
                         src={originalImage || ''}
-                        className="absolute inset-0 w-full h-full object-contain"
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                         style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
+                        draggable={false}
                     />
                     {/* Processed image — clipped to right of slider */}
                     <img
                         src={processedResult.url}
-                        className="absolute inset-0 w-full h-full object-contain"
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                         style={{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }}
+                        draggable={false}
                     />
                     {/* Slider handle */}
                     <div
@@ -609,7 +612,15 @@ export const Preview: React.FC<PreviewProps> = ({
                 <div className="grid grid-cols-2 gap-2 w-full h-[600px]">
                     {[previewMockupIndex, compareMockupIndex].map((idx, panelIdx) => (
                     <div key={panelIdx} className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
-                        <img src={MOCKUPS[idx].file} className="absolute inset-0 w-full h-full object-contain" />
+                        <img 
+                            src={MOCKUPS[idx].file} 
+                            className="absolute inset-0 w-full h-full object-contain"
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                console.error(`Failed to load mockup: ${target.src}`);
+                                target.src = 'data:image/svg+xml,%3Csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"%3E%3Crect fill=\"%23334155\" width=\"100\" height=\"100\"/%3E%3Ctext x=\"50\" y=\"50\" font-size=\"12\" fill=\"%23cbd5e1\" text-anchor=\"middle\" dominant-baseline=\"middle\"%3EMockup Not Found%3C/text%3E%3C/svg%3E';
+                            }}
+                        />
                         {designUrl && (
                         <div
                             className="absolute"
@@ -672,8 +683,9 @@ export const Preview: React.FC<PreviewProps> = ({
                 draggable={false}
                 onError={(e) => {
                     const target = e.target as HTMLImageElement;
-                    target.style.opacity = '0.2';
                     console.error(`Failed to load mockup: ${target.src}`);
+                    // Replace with placeholder instead of dimming
+                    target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"%3E%3Crect fill="%23334155" width="100" height="100"/%3E%3Ctext x="50" y="50" font-size="12" fill="%23cbd5e1" text-anchor="middle" dominant-baseline="middle"%3EMockup Not Found%3C/text%3E%3C/svg%3E';
                 }}
                 />
 

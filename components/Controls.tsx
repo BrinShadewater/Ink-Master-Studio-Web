@@ -161,14 +161,14 @@ export const Controls: React.FC<ControlsProps> = ({
         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Background Removal</h2>
         <div className="flex flex-col gap-3">
           
-          {/* Flood Fill BG */}
+          {/* Flood Fill Background Removal */}
           <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-bold text-indigo-300 uppercase tracking-widest flex items-center gap-2">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
-                Flood Fill BG
+                Flood Fill Background Removal
               </h2>
               <button
                 onClick={() => handleChange('bgRemoval', !settings.bgRemoval, true)}
@@ -481,7 +481,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 : 'border-slate-700 bg-slate-800/50 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            <span className="flex items-center gap-2">🚫 Keep Original (No Knockout)</span>
+            <span className="flex items-center gap-2">Keep Original (No Knockout)</span>
             {settings.shirtColor === ShirtColor.NONE && <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>}
           </button>
 
