@@ -19,7 +19,7 @@ export const Header: React.FC<HeaderProps> = () => {
       >
         <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
           <img
-            src="public/logo/logo.png"
+            src="/logo/logo.png"
             alt="InkMaster AI"
             className="w-full h-full object-contain"
           />

@@ -226,7 +226,7 @@ const App: React.FC = () => {
           <div className="max-w-2xl mx-auto mt-12">
             <div className="flex flex-col items-center justify-center gap-4 mb-10">
               <img 
-                src="public/logo/logo.png" 
+                src="/logo/logo.png" 
                 alt="InkMaster Logo" 
                 className="w-24 h-24 object-contain drop-shadow-2xl"
               />
