@@ -1,10 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>InkMaster Studio - POD Prepper</title>
+
+    <!-- Temporary: Tailwind CDN (fine for now, we’ll clean later) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
       /* Custom scrollbar for dark theme */
       ::-webkit-scrollbar {
@@ -22,20 +25,11 @@
         background: #475569; /* Slate 600 */
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
-    "jszip": "https://esm.sh/jszip@^3.10.1",
-    "imagetracerjs": "https://esm.sh/imagetracerjs@1.2.6",
-    "jspdf": "https://esm.sh/jspdf@^2.5.1"
-  }
-}
-</script>
-</head>
+
+    <!-- THIS is the important line -->
+    <script type="module" src="/index.tsx"></script>
+  </head>
+
   <body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500 selection:text-white">
     <div id="root"></div>
   </body>
