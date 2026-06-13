@@ -1,10 +1,10 @@
-# Ink Master Studio Web
+# Ink Master Studio Web 🖨️
 
 AI-assisted production tool for screen-print and apparel mockup workflows.
 
-Ink Master Studio helps turn source artwork into usable previews and production assets: upload artwork, adjust mockup controls, generate exports, track history, and prepare client-facing visuals without leaving the browser.
+Ink Master Studio helps turn source artwork into usable previews and production assets: upload artwork, adjust mockup controls, generate exports, track history, and prepare client-facing visuals without leaving the browser. The goal is a practical workbench, not a shiny demo: fewer handoffs, fewer mystery steps, faster proofs.
 
-## What This App Does
+## 👕 What This App Does
 
 - Accepts uploaded artwork for production/mockup workflows.
 - Provides preset controls and preview surfaces for apparel mockups.
@@ -12,7 +12,7 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 - Generates PDF/ZIP output for sharing or production handoff.
 - Uses AI assistance where it helps move artwork toward usable proof material.
 
-## Stack
+## 🧰 Stack
 
 - Vite
 - React 19
@@ -21,11 +21,11 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 - Image processing utilities
 - PDF/ZIP export helpers
 
-## Repository Status
+## 🚦 Repository Status
 
 Prototype-to-production tool. The UI is practical, but API-key handling must be reviewed before public deployment.
 
-## Local Development
+## ⚙️ Local Development
 
 Prerequisites:
 
@@ -57,7 +57,7 @@ Preview:
 npm run preview
 ```
 
-## Project Map
+## 🗺️ Project Map
 
 ```text
 App.tsx                 Main application shell
@@ -71,7 +71,7 @@ Dockerfile
 nginx.conf
 ```
 
-## Key Surfaces
+## 🔦 Key Surfaces
 
 - `components/Dropzone.tsx` handles artwork intake.
 - `components/Controls.tsx` and `components/PresetsPanel.tsx` shape the production workflow.
@@ -80,7 +80,7 @@ nginx.conf
 - `services/geminiService.ts` and `services/imageProcessing.ts` are security- and cost-sensitive.
 - `nginx.conf` and `Dockerfile` support production hosting.
 
-## Documentation
+## 📚 Documentation
 
 - `SECURITY.md`
 - `PERFORMANCE_SEO_REPORT.md`
@@ -90,15 +90,15 @@ nginx.conf
 - `CONTRIBUTING.md`
 - `CHANGELOG.md`
 
-## Security Note
+## 🔐 Security Note
 
 Read `SECURITY.md` before deploying. The current architecture needs careful handling of the Gemini API key; a server-side proxy or serverless function is the safer production path.
 
-## Working Style
+## 🧵 Working Style
 
 Keep the tool practical and production-minded. Every control should help someone move from artwork to proof faster, with fewer hidden steps.
 
-## Review Checklist
+## ✅ Review Checklist
 
 - Run `npm run build`.
 - Test uploads with safe sample files.
