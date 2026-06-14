@@ -26,58 +26,18 @@
 - No hardcoded credentials
 - Environment variables properly loaded
 
-## ⚠️ CRITICAL SECURITY ISSUE
+## ✅ Gemini API Key Handling
 
-### API Key Exposure in Client Bundle
+Gemini requests are routed through `api/edit-image.ts`, a Vercel serverless function. The browser calls `/api/edit-image`; the function reads `GEMINI_API_KEY` from the server environment and forwards the request to Gemini.
 
-**Problem**: The Gemini API key is currently embedded in the client-side JavaScript bundle via Vite's `define` configuration. This means anyone can:
-1. Open browser DevTools
-2. View the source code
-3. Extract your API key
-4. Use it for their own requests (costing you money!)
+This means:
 
-**Current Implementation** (in `vite.config.ts`):
-```typescript
-define: {
-  'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-}
-```
+- The API key is no longer bundled into client-side JavaScript.
+- `GEMINI_API_KEY` must be configured in Vercel Project Settings.
+- The API route validates request shape, image type, prompt length, and approximate payload size.
+- Google Cloud usage quotas and billing alerts are still recommended.
 
-**Impact**: 
-- ❌ API key is publicly visible
-- ❌ Anyone can use your API quota
-- ❌ Potential for abuse and unexpected costs
-- ❌ Key cannot be easily rotated without rebuild/redeploy
-
-**Recommended Solution**:
-
-You need a backend proxy server to secure the API key. Here are your options:
-
-#### Option 1: Add a Backend API (Recommended)
-Create a simple Node.js/Express server:
-```
-Client → Your Backend → Gemini API
-              ↑
-          (API key stored securely on server)
-```
-
-#### Option 2: Use Vercel/Netlify Serverless Functions
-- Move API calls to serverless functions
-- API key stays on the server
-- Functions act as a proxy
-
-#### Option 3: Use API Key Restrictions (Partial Mitigation)
-In Google Cloud Console:
-1. Restrict API key to specific domains
-2. Set usage quotas
-3. Enable billing alerts
-
-**This does NOT hide the key but limits damage if exposed**
-
-### Next Steps:
-1. **Immediate**: Set up API key restrictions in Google Cloud Console
-2. **Short-term**: Implement daily spending limits and alerts
-3. **Long-term**: Build a backend proxy service
+Do not add `GEMINI_API_KEY` as a `VITE_` variable or reintroduce Vite `define` replacements for secret values.
 
 ## 🔒 Additional Recommendations
 
@@ -110,4 +70,4 @@ Set up alerts for:
 ---
 
 **Last Updated**: February 12, 2026
-**Status**: ⚠️ CRITICAL ISSUE - API Key Exposed
+**Status**: ✅ API key moved behind Vercel serverless function

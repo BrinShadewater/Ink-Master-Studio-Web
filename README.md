@@ -32,11 +32,13 @@ Prerequisites:
 - Node.js
 - A Gemini API key
 
-Create `.env.local`:
+For local development, create `.env.local`:
 
 ```text
 GEMINI_API_KEY=your_key_here
 ```
+
+For Vercel, add `GEMINI_API_KEY` as a server-side environment variable in Project Settings. Do not expose it as a `VITE_` or other public browser variable.
 
 Install and run:
 
@@ -77,7 +79,7 @@ nginx.conf
 - `components/Controls.tsx` and `components/PresetsPanel.tsx` shape the production workflow.
 - `components/Preview.tsx` controls mockup review.
 - `components/BatchProcessor.tsx` and `components/ExportHistory.tsx` affect output workflows.
-- `services/geminiService.ts` and `services/imageProcessing.ts` are security- and cost-sensitive.
+- `api/edit-image.ts`, `services/geminiService.ts`, and `services/imageProcessing.ts` are security- and cost-sensitive.
 - `nginx.conf` and `Dockerfile` support production hosting.
 
 ## 📚 Documentation

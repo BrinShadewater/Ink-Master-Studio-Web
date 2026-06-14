@@ -251,7 +251,11 @@ export const Preview: React.FC<PreviewProps> = ({
     setIsDownloading(true);
     setDownloadProgress(0);
 
-    const indices = Array.from(selectedMockupIndices);
+    const indices = Array.from(selectedMockupIndices).filter(
+      (idx): idx is number =>
+        typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < MOCKUPS.length
+    );
+    if (indices.length === 0) return;
 
     try {
       if (indices.length === 1) {
