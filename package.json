@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.41.0",
+    "@google/genai": "^1.52.0",
     "imagetracerjs": "^1.2.6",
     "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
