@@ -1,20 +1,107 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Ink Master Studio Web
 
-# Run and deploy your AI Studio app
+AI-assisted production tool for screen-print and apparel mockup workflows.
 
-This contains everything you need to run your app locally.
+Ink Master Studio helps turn source artwork into usable previews and production assets: upload artwork, adjust mockup controls, generate exports, track history, and prepare client-facing visuals without leaving the browser.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1Cdl4So0BJNUsD1BAW8qtx7x42IEu1D68
+## What This App Does
 
-## Run Locally
+- Accepts uploaded artwork for production/mockup workflows.
+- Provides preset controls and preview surfaces for apparel mockups.
+- Supports batch processing and export history.
+- Generates PDF/ZIP output for sharing or production handoff.
+- Uses AI assistance where it helps move artwork toward usable proof material.
 
-**Prerequisites:**  Node.js
+## Stack
 
+- Vite
+- React 19
+- TypeScript
+- Gemini API integration
+- Image processing utilities
+- PDF/ZIP export helpers
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Repository Status
+
+Prototype-to-production tool. The UI is practical, but API-key handling must be reviewed before public deployment.
+
+## Local Development
+
+Prerequisites:
+
+- Node.js
+- A Gemini API key
+
+Create `.env.local`:
+
+```text
+GEMINI_API_KEY=your_key_here
+```
+
+Install and run:
+
+```shell
+npm install
+npm run dev
+```
+
+Build:
+
+```shell
+npm run build
+```
+
+Preview:
+
+```shell
+npm run preview
+```
+
+## Project Map
+
+```text
+App.tsx                 Main application shell
+components/             Upload, controls, preview, batch, export UI
+services/               Gemini and image-processing services
+public/mockups/         Apparel mockup assets
+public/logo/            Brand assets
+PERFORMANCE_SEO_REPORT.md
+SECURITY.md
+Dockerfile
+nginx.conf
+```
+
+## Key Surfaces
+
+- `components/Dropzone.tsx` handles artwork intake.
+- `components/Controls.tsx` and `components/PresetsPanel.tsx` shape the production workflow.
+- `components/Preview.tsx` controls mockup review.
+- `components/BatchProcessor.tsx` and `components/ExportHistory.tsx` affect output workflows.
+- `services/geminiService.ts` and `services/imageProcessing.ts` are security- and cost-sensitive.
+- `nginx.conf` and `Dockerfile` support production hosting.
+
+## Documentation
+
+- `SECURITY.md`
+- `PERFORMANCE_SEO_REPORT.md`
+- `docs/PROJECT-BRIEF.md`
+- `docs/MAINTENANCE.md`
+- `README.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+
+## Security Note
+
+Read `SECURITY.md` before deploying. The current architecture needs careful handling of the Gemini API key; a server-side proxy or serverless function is the safer production path.
+
+## Working Style
+
+Keep the tool practical and production-minded. Every control should help someone move from artwork to proof faster, with fewer hidden steps.
+
+## Review Checklist
+
+- Run `npm run build`.
+- Test uploads with safe sample files.
+- Review mockup alignment and export output.
+- Check that no real client assets or secrets are committed.
+- Re-read `SECURITY.md` for any API, upload, or deployment change.
