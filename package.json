@@ -20,7 +20,7 @@
     "@types/node": "^22.14.0",
     "terser": "^5.46.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^8.0.16"
   },
   "overrides": {
     "glob": "^13.0.0",
