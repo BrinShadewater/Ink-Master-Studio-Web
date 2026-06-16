@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
-import { GEMINI_MODEL } from "../constants";
 
 export const config = {
   maxDuration: 60,
 };
 
+const GEMINI_MODEL = "gemini-2.5-flash-image";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const isValidMimeType = (mimeType: unknown) =>
