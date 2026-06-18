@@ -36,6 +36,66 @@ export enum ResizeMode {
   TILE = 'TILE'
 }
 
+export type WorkspaceStage = 'goal' | 'prepare' | 'preview' | 'export';
+export type RecipeId =
+  | 'dark-garment'
+  | 'light-garment'
+  | 'clean-logo'
+  | 'vintage-distressed'
+  | 'mockups-only'
+  | 'custom';
+
+export interface ArtworkAnalysis {
+  width: number;
+  height: number;
+  hasTransparency: boolean;
+  transparencyCoverage: number;
+  edgeBackground: {
+    isUniform: boolean;
+    color: string;
+    tone: 'dark' | 'light' | 'mid';
+    confidence: number;
+  };
+  printQuality: {
+    dpi: number;
+    status: 'good' | 'low' | 'poor';
+    label: string;
+  };
+  palette: string[];
+  dominantTone: 'dark' | 'light' | 'mid';
+  contrastRisk: {
+    darkGarment: boolean;
+    lightGarment: boolean;
+  };
+  vectorSuitability: 'strong' | 'possible' | 'weak';
+  warnings: string[];
+}
+
+export interface RecipeDefinition {
+  id: RecipeId;
+  name: string;
+  description: string;
+  icon: string;
+  outcome: string;
+}
+
+export interface RecipeRecommendation {
+  recipeId: RecipeId;
+  confidence: number;
+  reasons: string[];
+  alternatives: RecipeId[];
+  proposedChanges: string[];
+}
+
+export interface UserRecipe {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: number;
+  source: 'user';
+  settings: ProcessingSettings;
+}
+
 export interface ProcessingSettings {
   format: OutputFormat;
   shirtColor: ShirtColor;

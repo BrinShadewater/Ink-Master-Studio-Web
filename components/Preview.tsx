@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ProcessedResult, ProcessingSettings } from '../types';
+import { ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
 import { compositeMockup, generatePrintPDF } from '../services/imageProcessing';
 
 interface PreviewProps {
@@ -12,6 +12,9 @@ interface PreviewProps {
   isEyedropperMode: boolean;
   onEyedropperPick: (color: string) => void;
   dpiInfo: { dpi: number; status: string; label: string } | null;
+  embedded?: boolean;
+  workspaceStage?: WorkspaceStage;
+  exportRequestToken?: number;
 }
 
 const MOCKUPS = [
@@ -56,7 +59,10 @@ export const Preview: React.FC<PreviewProps> = ({
   onExported,
   isEyedropperMode,
   onEyedropperPick,
-  dpiInfo
+  dpiInfo,
+  embedded = false,
+  workspaceStage = 'prepare',
+  exportRequestToken = 0,
 }) => {
   const [viewMode, setViewMode] = useState<'ARTBOARD' | 'MOCKUP'>('ARTBOARD');
   const [bgMode, setBgMode] = useState<'CHECKER' | 'BLACK' | 'WHITE'>('CHECKER');
@@ -300,6 +306,12 @@ export const Preview: React.FC<PreviewProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (exportRequestToken > 0) {
+      void handleMockupDownload();
+    }
+  }, [exportRequestToken]);
+
   const handleDownloadSingle = async (idx: number) => {
     const designUrl = getDesignUrl();
     if (!designUrl) return;
@@ -383,6 +395,122 @@ export const Preview: React.FC<PreviewProps> = ({
   }
 
   const designUrl = getDesignUrl();
+
+  if (embedded) {
+    const showMockup = workspaceStage === 'preview' && viewMode === 'MOCKUP';
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/80 px-3 py-2 lg:px-4">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,.7)]" />
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-300">
+              {workspaceStage === 'preview' ? (showMockup ? 'Garment preview' : 'Artwork preview') : workspaceStage === 'export' ? 'Export proof' : 'Live artwork'}
+            </span>
+            {dpiInfo && (
+              <span className={`rounded-md border px-2 py-1 text-[9px] font-bold ${dpiInfo.status === 'good' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : dpiInfo.status === 'low' ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}`}>
+                {dpiInfo.dpi} DPI
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {workspaceStage === 'preview' && (
+              <div className="mr-1 flex rounded-lg border border-slate-700 bg-slate-950/60 p-1">
+                <button type="button" onClick={() => setViewMode('ARTBOARD')} className={`rounded-md px-3 py-1.5 text-[10px] font-bold ${viewMode === 'ARTBOARD' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Artwork</button>
+                <button type="button" onClick={() => setViewMode('MOCKUP')} className={`rounded-md px-3 py-1.5 text-[10px] font-bold ${viewMode === 'MOCKUP' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Garment</button>
+              </div>
+            )}
+            {!showMockup && (
+              <>
+                <button type="button" onClick={() => setBeforeAfterMode((value) => !value)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-bold ${beforeAfterMode ? 'border-indigo-400 bg-indigo-500/15 text-indigo-200' : 'border-slate-700 text-slate-400 hover:text-white'}`}>Before / After</button>
+                {(['CHECKER', 'BLACK', 'WHITE'] as const).map((mode) => (
+                  <button
+                    type="button"
+                    key={mode}
+                    aria-label={`${mode.toLowerCase()} preview background`}
+                    onClick={() => setBgMode(mode)}
+                    className={`h-7 w-7 rounded-md border ${bgMode === mode ? 'border-indigo-400 ring-1 ring-indigo-400/40' : 'border-slate-700'}`}
+                    style={{ background: mode === 'BLACK' ? '#050505' : mode === 'WHITE' ? '#fff' : 'linear-gradient(45deg,#475569 25%,transparent 25%),linear-gradient(-45deg,#475569 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#475569 75%),linear-gradient(-45deg,transparent 75%,#475569 75%)', backgroundSize: mode === 'CHECKER' ? '10px 10px' : undefined }}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className={`relative min-h-0 flex-1 overflow-hidden ${showMockup ? 'bg-slate-950' : getBgClass()}`}>
+          {showMockup ? (
+            <>
+              <img src={MOCKUPS[previewMockupIndex].file} alt={`${MOCKUPS[previewMockupIndex].name} shirt mockup`} className="absolute inset-0 h-full w-full object-contain" />
+              {designUrl && (
+                <div className="absolute" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%` }}>
+                  <img src={designUrl} alt="Artwork placed on shirt" className="h-full w-full object-contain drop-shadow-lg" />
+                </div>
+              )}
+              <div className="absolute bottom-4 left-1/2 flex max-w-[95%] -translate-x-1/2 flex-wrap justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950/85 p-2 backdrop-blur sm:gap-1.5">
+                {MOCKUPS.map((mockup, index) => (
+                  <button
+                    type="button"
+                    key={mockup.name}
+                    onClick={() => { setPreviewMockupIndex(index); setSelectedMockupIndices(new Set([index])); }}
+                    aria-label={`Preview ${mockup.name} shirt`}
+                    className={`h-5 w-5 rounded-full border-2 transition hover:scale-110 sm:h-6 sm:w-6 ${previewMockupIndex === index ? 'border-white ring-2 ring-indigo-400/40' : 'border-slate-600'}`}
+                    style={{ backgroundColor: mockup.color }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : beforeAfterMode ? (
+            <div
+              ref={beforeAfterRef}
+              className="relative h-full w-full select-none"
+              onMouseMove={(event) => {
+                if (!sliderDragging.current || !beforeAfterRef.current) return;
+                const rect = beforeAfterRef.current.getBoundingClientRect();
+                setSliderPosition(Math.max(5, Math.min(95, ((event.clientX - rect.left) / rect.width) * 100)));
+              }}
+              onMouseUp={() => { sliderDragging.current = false; }}
+              onMouseLeave={() => { sliderDragging.current = false; }}
+            >
+              <img src={originalImage || ''} alt="Original artwork" className="absolute inset-0 h-full w-full object-contain p-5" style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }} />
+              <img src={processedResult.url} alt="Processed artwork" className="absolute inset-0 h-full w-full object-contain p-5" style={{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }} />
+              <button
+                type="button"
+                aria-label="Move before and after divider"
+                className="absolute bottom-0 top-0 z-10 w-1 -translate-x-1/2 cursor-ew-resize bg-white shadow-lg"
+                style={{ left: `${sliderPosition}%` }}
+                onMouseDown={() => { sliderDragging.current = true; }}
+              >
+                <span className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-900 shadow-xl">↔</span>
+              </button>
+              <span className="absolute left-3 top-3 rounded-md bg-black/60 px-2 py-1 text-[9px] font-bold text-white">BEFORE</span>
+              <span className="absolute right-3 top-3 rounded-md bg-indigo-600/80 px-2 py-1 text-[9px] font-bold text-white">AFTER</span>
+            </div>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center overflow-hidden p-4 lg:p-7">
+              <img
+                src={processedResult.previewUrl || processedResult.url}
+                alt="Processed artwork preview"
+                onClick={handleEyedropperClick}
+                className="max-h-full max-w-full object-contain drop-shadow-2xl"
+                style={{
+                  transform: `scale(${zoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                  transformOrigin: 'center',
+                  cursor: isEyedropperMode ? 'crosshair' : 'default',
+                }}
+              />
+            </div>
+          )}
+          {!showMockup && (
+            <div className="absolute bottom-3 left-3 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-950/80 p-1 backdrop-blur">
+              <button type="button" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))} className="h-7 w-7 rounded text-xs text-slate-300 hover:bg-slate-800">−</button>
+              <button type="button" onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }} className="rounded px-2 py-1 text-[9px] font-bold text-slate-400 hover:bg-slate-800 hover:text-white">{Math.round(zoom * 100)}%</button>
+              <button type="button" onClick={() => setZoom((value) => Math.min(5, value + 0.25))} className="h-7 w-7 rounded text-xs text-slate-300 hover:bg-slate-800">+</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full flex flex-col gap-4">
