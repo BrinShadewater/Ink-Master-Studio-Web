@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   OutputFormat,
   PrintableArea,
@@ -7,6 +7,7 @@ import {
   ProductionThresholds,
   ProfileValidationError,
 } from '../types';
+import { parseSelectedMockupIndices } from '../services/productionProfiles';
 
 interface ProfileEditorProps {
   profile: ProductionProfile;
@@ -47,7 +48,7 @@ const ErrorMessages: React.FC<{
   const matches = errors.filter((error) => error.field === field);
   if (matches.length === 0) return null;
   return (
-    <div id={`${fieldId(field)}-error`} className="mt-1 space-y-1 text-xs text-rose-300">
+    <div id={`${fieldId(field)}-error`} role="alert" className="mt-1 space-y-1 text-xs text-rose-300">
       {matches.map((error, index) => (
         <p key={`${error.field}-${index}`}>{error.message}</p>
       ))}
@@ -84,20 +85,32 @@ const NumericInput: React.FC<{
 };
 
 const BooleanInput: React.FC<{
+  field: string;
   label: string;
   checked: boolean;
+  errors: ProfileValidationError[];
   onChange: (checked: boolean) => void;
-}> = ({ label, checked, onChange }) => (
-  <label className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
-    <input
-      type="checkbox"
-      checked={checked}
-      onChange={(event) => onChange(event.target.checked)}
-      className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-500"
-    />
-    {label}
-  </label>
-);
+}> = ({ field, label, checked, errors, onChange }) => {
+  const invalid = errors.some((error) => error.field === field);
+  const id = fieldId(field);
+  return (
+    <div>
+      <label htmlFor={id} className={`flex items-center gap-3 rounded-lg border bg-slate-900/50 px-3 py-2 text-sm text-slate-200 ${invalid ? 'border-rose-500' : 'border-slate-800'}`}>
+        <input
+          id={id}
+          type="checkbox"
+          checked={checked}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+          onChange={(event) => onChange(event.target.checked)}
+          className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-500"
+        />
+        {label}
+      </label>
+      <ErrorMessages field={field} errors={errors} />
+    </div>
+  );
+};
 
 export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   profile,
@@ -137,8 +150,52 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       },
     },
   });
+  const selectedIndicesField = 'defaults.packageOptions.selectedMockupIndices';
+  const selectedIndicesKey = JSON.stringify(
+    profile.defaults.packageOptions.selectedMockupIndices,
+  );
+  const emittedSelectedIndices = useRef<number[] | null>(null);
+  const [selectedIndicesDraft, setSelectedIndicesDraft] = useState(
+    profile.defaults.packageOptions.selectedMockupIndices.join(', '),
+  );
+  const [selectedIndicesDraftError, setSelectedIndicesDraftError] = useState<string | null>(null);
+  useEffect(() => {
+    if (
+      emittedSelectedIndices.current
+      === profile.defaults.packageOptions.selectedMockupIndices
+    ) {
+      emittedSelectedIndices.current = null;
+      return;
+    }
+    setSelectedIndicesDraft(
+      profile.defaults.packageOptions.selectedMockupIndices.join(', '),
+    );
+    setSelectedIndicesDraftError(null);
+  }, [
+    profile.id,
+    profile.revision,
+    profile.defaults.packageOptions.selectedMockupIndices,
+    selectedIndicesKey,
+  ]);
+  const updateSelectedIndicesDraft = (draft: string) => {
+    setSelectedIndicesDraft(draft);
+    const parsed = parseSelectedMockupIndices(draft);
+    if (parsed.success === false) {
+      setSelectedIndicesDraftError(parsed.error);
+      return;
+    }
+    setSelectedIndicesDraftError(null);
+    emittedSelectedIndices.current = parsed.value;
+    updatePackageOption('selectedMockupIndices', parsed.value);
+  };
+  const hasError = (field: string) =>
+    validationErrors.some((error) => error.field === field);
+  const describedBy = (field: string) =>
+    hasError(field) ? `${fieldId(field)}-error` : undefined;
   const nameInvalid = validationErrors.some((error) => error.field === 'name');
-  const canSave = profile.name.trim().length > 0 && validationErrors.length === 0;
+  const canSave = profile.name.trim().length > 0
+    && validationErrors.length === 0
+    && selectedIndicesDraftError === null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -149,6 +206,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <label className={labelClassName}>
               Profile name
               <input
+                id={fieldId('name')}
                 value={profile.name}
                 aria-invalid={nameInvalid || undefined}
                 aria-describedby={nameInvalid ? `${fieldId('name')}-error` : undefined}
@@ -160,31 +218,40 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <label className={labelClassName}>
               Printer name
               <input
+                id={fieldId('printerName')}
                 value={profile.printerName}
+                aria-invalid={hasError('printerName') || undefined}
+                aria-describedby={describedBy('printerName')}
                 onChange={(event) => onChange({ ...profile, printerName: event.target.value })}
-                className={`${inputClassName} mt-1`}
+                className={`${inputClassName} mt-1 ${hasError('printerName') ? 'border-rose-500' : ''}`}
               />
               <ErrorMessages field="printerName" errors={validationErrors} />
             </label>
             <label className={`${labelClassName} sm:col-span-2`}>
               Description
               <textarea
+                id={fieldId('description')}
                 value={profile.description}
                 rows={3}
+                aria-invalid={hasError('description') || undefined}
+                aria-describedby={describedBy('description')}
                 onChange={(event) => onChange({ ...profile, description: event.target.value })}
-                className={`${inputClassName} mt-1 resize-y`}
+                className={`${inputClassName} mt-1 resize-y ${hasError('description') ? 'border-rose-500' : ''}`}
               />
               <ErrorMessages field="description" errors={validationErrors} />
             </label>
             <label className={labelClassName}>
               Production method
               <select
+                id={fieldId('method')}
                 value={profile.method}
+                aria-invalid={hasError('method') || undefined}
+                aria-describedby={describedBy('method')}
                 onChange={(event) => onChange({
                   ...profile,
                   method: event.target.value as ProductionProfile['method'],
                 })}
-                className={`${inputClassName} mt-1`}
+                className={`${inputClassName} mt-1 ${hasError('method') ? 'border-rose-500' : ''}`}
               >
                 <option value="DTG">DTG</option>
                 <option value="DTF">DTF</option>
@@ -239,8 +306,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         <section aria-labelledby="profile-output-heading" className="space-y-3 border-t border-slate-800 pt-5">
           <h3 id="profile-output-heading" className="text-sm font-black text-white">Artwork defaults</h3>
           <div className="grid gap-2 sm:grid-cols-2">
-            <BooleanInput label="Preserve transparency" checked={profile.defaults.preserveTransparency} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, preserveTransparency: checked } })} />
-            <BooleanInput label="Include underbase" checked={profile.defaults.includeUnderbase} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, includeUnderbase: checked } })} />
+            <BooleanInput field="defaults.preserveTransparency" label="Preserve transparency" checked={profile.defaults.preserveTransparency} errors={validationErrors} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, preserveTransparency: checked } })} />
+            <BooleanInput field="defaults.includeUnderbase" label="Include underbase" checked={profile.defaults.includeUnderbase} errors={validationErrors} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, includeUnderbase: checked } })} />
           </div>
         </section>
 
@@ -252,7 +319,10 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <label className={labelClassName}>
               Default format
               <select
+                id={fieldId('defaults.format')}
                 value={profile.defaults.format}
+                aria-invalid={hasError('defaults.format') || undefined}
+                aria-describedby={describedBy('defaults.format')}
                 onChange={(event) => onChange({
                   ...profile,
                   defaults: {
@@ -260,7 +330,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
                     format: event.target.value as OutputFormat,
                   },
                 })}
-                className={`${inputClassName} mt-1`}
+                className={`${inputClassName} mt-1 ${hasError('defaults.format') ? 'border-rose-500' : ''}`}
               >
                 {Object.values(OutputFormat).map((format) => (
                   <option key={format} value={format}>{format}</option>
@@ -271,37 +341,49 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <label className={labelClassName}>
               Naming pattern
               <input
+                id={fieldId('defaults.packageOptions.namingPattern')}
                 value={profile.defaults.packageOptions.namingPattern}
+                aria-invalid={hasError('defaults.packageOptions.namingPattern') || undefined}
+                aria-describedby={describedBy('defaults.packageOptions.namingPattern')}
                 onChange={(event) => updatePackageOption('namingPattern', event.target.value)}
-                className={`${inputClassName} mt-1`}
+                className={`${inputClassName} mt-1 ${hasError('defaults.packageOptions.namingPattern') ? 'border-rose-500' : ''}`}
               />
               <ErrorMessages field="defaults.packageOptions.namingPattern" errors={validationErrors} />
             </label>
             <label className={`${labelClassName} sm:col-span-2`}>
               Selected mockup indices
               <input
-                value={profile.defaults.packageOptions.selectedMockupIndices.join(', ')}
-                onChange={(event) => updatePackageOption(
-                  'selectedMockupIndices',
-                  event.target.value === ''
-                    ? []
-                    : event.target.value.split(',').map((value) => Number(value.trim())),
-                )}
-                aria-invalid={validationErrors.some((error) => error.field === 'defaults.packageOptions.selectedMockupIndices') || undefined}
-                aria-describedby={validationErrors.some((error) => error.field === 'defaults.packageOptions.selectedMockupIndices') ? `${fieldId('defaults.packageOptions.selectedMockupIndices')}-error` : undefined}
-                className={`${inputClassName} mt-1`}
+                id={fieldId(selectedIndicesField)}
+                value={selectedIndicesDraft}
+                onChange={(event) => updateSelectedIndicesDraft(event.target.value)}
+                aria-invalid={hasError(selectedIndicesField) || selectedIndicesDraftError !== null || undefined}
+                aria-describedby={[
+                  hasError(selectedIndicesField) ? `${fieldId(selectedIndicesField)}-error` : null,
+                  selectedIndicesDraftError ? `${fieldId(selectedIndicesField)}-draft-error` : null,
+                ].filter(Boolean).join(' ') || undefined}
+                className={`${inputClassName} mt-1 ${hasError(selectedIndicesField) || selectedIndicesDraftError ? 'border-rose-500' : ''}`}
                 placeholder="1, 2, 6"
               />
-              <ErrorMessages field="defaults.packageOptions.selectedMockupIndices" errors={validationErrors} />
+              <ErrorMessages field={selectedIndicesField} errors={validationErrors} />
+              {selectedIndicesDraftError && (
+                <p id={`${fieldId(selectedIndicesField)}-draft-error`} role="alert" className="mt-1 text-xs text-rose-300">
+                  {selectedIndicesDraftError}
+                </p>
+              )}
+              {!selectedIndicesDraftError && !hasError(selectedIndicesField) && (
+                <span className="mt-1 block text-[11px] font-normal text-slate-500">
+                  Comma-separated whole numbers; leave blank to select none.
+                </span>
+              )}
             </label>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            <BooleanInput label="Include print master" checked={profile.defaults.packageOptions.includePrintMaster} onChange={(checked) => updatePackageOption('includePrintMaster', checked)} />
-            <BooleanInput label="Include production PDF" checked={profile.defaults.packageOptions.includeProductionPdf} onChange={(checked) => updatePackageOption('includeProductionPdf', checked)} />
-            <BooleanInput label="Include mockups" checked={profile.defaults.packageOptions.includeMockups} onChange={(checked) => updatePackageOption('includeMockups', checked)} />
-            <BooleanInput label="Package includes underbase" checked={profile.defaults.packageOptions.includeUnderbase} onChange={(checked) => updatePackageOption('includeUnderbase', checked)} />
-            <BooleanInput label="Include summary" checked={profile.defaults.packageOptions.includeSummary} onChange={(checked) => updatePackageOption('includeSummary', checked)} />
-            <BooleanInput label="Include manifest" checked={profile.defaults.packageOptions.includeManifest} onChange={(checked) => updatePackageOption('includeManifest', checked)} />
+            <BooleanInput field="defaults.packageOptions.includePrintMaster" label="Include print master" checked={profile.defaults.packageOptions.includePrintMaster} errors={validationErrors} onChange={(checked) => updatePackageOption('includePrintMaster', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeProductionPdf" label="Include production PDF" checked={profile.defaults.packageOptions.includeProductionPdf} errors={validationErrors} onChange={(checked) => updatePackageOption('includeProductionPdf', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeMockups" label="Include mockups" checked={profile.defaults.packageOptions.includeMockups} errors={validationErrors} onChange={(checked) => updatePackageOption('includeMockups', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeUnderbase" label="Package includes underbase" checked={profile.defaults.packageOptions.includeUnderbase} errors={validationErrors} onChange={(checked) => updatePackageOption('includeUnderbase', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeSummary" label="Include summary" checked={profile.defaults.packageOptions.includeSummary} errors={validationErrors} onChange={(checked) => updatePackageOption('includeSummary', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeManifest" label="Include manifest" checked={profile.defaults.packageOptions.includeManifest} errors={validationErrors} onChange={(checked) => updatePackageOption('includeManifest', checked)} />
           </div>
         </section>
       </div>

@@ -8,6 +8,7 @@ import {
   exportProductionProfiles,
   getProfileUpdateState,
   importProductionProfiles,
+  parseSelectedMockupIndices,
   printableAreaKey,
   reviseProductionProfile,
   snapshotProductionProfile,
@@ -409,6 +410,31 @@ test('describes profile changes in deterministic human-readable groups', () => {
   ]);
   assert.deepEqual(applied, appliedSnapshot);
   assert.deepEqual(source, sourceSnapshot);
+});
+
+test('parses complete selected mockup index drafts without coercion', () => {
+  assert.deepEqual(parseSelectedMockupIndices('1, 2'), {
+    success: true,
+    value: [1, 2],
+  });
+  assert.deepEqual(parseSelectedMockupIndices(''), {
+    success: true,
+    value: [],
+  });
+});
+
+test('rejects incomplete and invalid selected mockup index drafts', () => {
+  for (const [draft, expected] of [
+    ['1,', 'Finish the index after the comma.'],
+    ['-1', 'Mockup indices must be nonnegative integers.'],
+    ['1.5', 'Mockup indices must be nonnegative integers.'],
+    ['one', 'Mockup indices must be nonnegative integers.'],
+  ] as const) {
+    assert.deepEqual(parseSelectedMockupIndices(draft), {
+      success: false,
+      error: expected,
+    });
+  }
 });
 
 test('migrates empty storage to exactly one valid default Standard DTG profile', () => {

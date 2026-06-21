@@ -163,6 +163,29 @@ export interface ProfileChangeGroup {
   changes: string[];
 }
 
+export type SelectedMockupIndicesParseResult =
+  | { success: true; value: number[] }
+  | { success: false; error: string };
+
+export const parseSelectedMockupIndices = (
+  draft: string,
+): SelectedMockupIndicesParseResult => {
+  const trimmed = draft.trim();
+  if (trimmed === '') return { success: true, value: [] };
+  const tokens = draft.split(',');
+  if (tokens.some((token) => token.trim() === '')) {
+    return { success: false, error: 'Finish the index after the comma.' };
+  }
+  const values = tokens.map((token) => Number(token.trim()));
+  if (values.some((value) => !Number.isInteger(value) || value < 0)) {
+    return {
+      success: false,
+      error: 'Mockup indices must be nonnegative integers.',
+    };
+  }
+  return { success: true, value: values };
+};
+
 const readableValue = (value: string | number | boolean): string => {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return String(value);
