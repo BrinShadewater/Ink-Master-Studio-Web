@@ -205,6 +205,70 @@ test('applies a production profile as one immutable job revision while preservin
   );
 });
 
+test('isolates all nested job state when applying a production profile', async () => {
+  const source = createStudioJob('Nested profile switch');
+  source.metadata.tags = ['priority'];
+  source.placements[source.activePlacementKey].offsetXInches = 1;
+  source.proofBranding.shopName = 'Original shop';
+  source.preflightFindings = [{
+    id: 'finding-1',
+    severity: 'warning',
+    title: 'Check artwork',
+    message: 'Review transparency.',
+    action: 'Inspect the source file.',
+  }];
+  source.versions = [{
+    id: 'version-1',
+    name: 'Initial',
+    timestamp: 10,
+    settings: {
+      ...structuredClone(source.settings),
+      colorReplacements: [{
+        sourceColor: '#000000',
+        targetColor: '#FFFFFF',
+        tolerance: 15,
+      }],
+    },
+  }];
+  source.packageOptions.selectedMockupIndices = [1, 3];
+  source.sourceArtwork = {
+    name: 'nested-artwork.png',
+    type: 'image/png',
+    lastModified: 20,
+    blob: new Blob(['original-artwork'], { type: 'image/png' }),
+  };
+  const sourceBefore = structuredClone(source);
+
+  const applied = applyProductionProfileToJob(source, customProfile());
+
+  applied.metadata.tags.push('changed');
+  applied.placements[applied.activePlacementKey].offsetXInches = 9;
+  applied.proofBranding.shopName = 'Changed shop';
+  applied.preflightFindings[0].title = 'Changed finding';
+  applied.versions[0].name = 'Changed version';
+  applied.versions[0].settings.colorReplacements[0].targetColor = '#FF0000';
+  applied.packageOptions.selectedMockupIndices.push(99);
+
+  assert.deepEqual(source, sourceBefore);
+  assert.notEqual(applied.metadata, source.metadata);
+  assert.notEqual(applied.metadata.tags, source.metadata.tags);
+  assert.notEqual(applied.placements, source.placements);
+  assert.notEqual(
+    applied.placements[applied.activePlacementKey],
+    source.placements[source.activePlacementKey],
+  );
+  assert.notEqual(applied.proofBranding, source.proofBranding);
+  assert.notEqual(applied.preflightFindings, source.preflightFindings);
+  assert.notEqual(applied.versions, source.versions);
+  assert.notEqual(applied.versions[0].settings, source.versions[0].settings);
+  assert.notEqual(applied.packageOptions, source.packageOptions);
+  assert.notEqual(applied.sourceArtwork, source.sourceArtwork);
+  assert.ok(applied.sourceArtwork?.blob instanceof Blob);
+  assert.equal(applied.sourceArtwork?.blob.type, 'image/png');
+  assert.equal(await applied.sourceArtwork?.blob.text(), 'original-artwork');
+  assert.equal(await source.sourceArtwork.blob.text(), 'original-artwork');
+});
+
 test('duplicates jobs without sharing identity or export history', () => {
   const source = createStudioJob('Original', customProfile());
   source.exports = [{

@@ -199,21 +199,24 @@ export const touchStudioJob = (job: StudioJob): StudioJob => ({
 export const applyProductionProfileToJob = (
   job: StudioJob,
   profile: ProductionProfile,
-): StudioJob => touchStudioJob({
-  ...job,
-  productionProfile: snapshotProductionProfile(profile),
-  printSpecification: {
-    ...job.printSpecification,
-    method: profile.method,
-    targetDpi: profile.thresholds.targetDpi,
-  },
-  settings: {
-    ...job.settings,
-    format: profile.defaults.format,
-    preserveTransparency: profile.defaults.preserveTransparency,
-  },
-  packageOptions: packageOptionsFromProfile(profile),
-});
+): StudioJob => {
+  const clonedJob = structuredClone(job);
+  return touchStudioJob({
+    ...clonedJob,
+    productionProfile: snapshotProductionProfile(profile),
+    printSpecification: {
+      ...clonedJob.printSpecification,
+      method: profile.method,
+      targetDpi: profile.thresholds.targetDpi,
+    },
+    settings: {
+      ...clonedJob.settings,
+      format: profile.defaults.format,
+      preserveTransparency: profile.defaults.preserveTransparency,
+    },
+    packageOptions: packageOptionsFromProfile(profile),
+  });
+};
 
 export const duplicateStudioJob = (job: StudioJob): StudioJob => {
   const duplicate = migrateStudioJob(job);
