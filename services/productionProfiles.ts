@@ -30,6 +30,9 @@ export const printableAreaKey = (
   location: PlacementLocation,
 ) => `${itemType}:${location}`;
 
+const REQUIRED_PRINTABLE_AREA_KEYS = Object.values(ItemType).flatMap((itemType) =>
+  LOCATIONS.map((location) => printableAreaKey(itemType, location)));
+
 export const createDefaultPrintableAreas = (): Record<string, PrintableArea> => {
   const printableAreas: Record<string, PrintableArea> = {};
   for (const itemType of Object.values(ItemType)) {
@@ -297,6 +300,17 @@ export const validateProductionProfile = (
     const areaEntries = Object.entries(printableAreas);
     if (areaEntries.length === 0) {
       addError('printableAreas', 'At least one printable area is required.');
+    }
+    const requiredKeys = new Set(REQUIRED_PRINTABLE_AREA_KEYS);
+    for (const key of Object.keys(printableAreas)) {
+      if (!requiredKeys.has(key)) {
+        addError(`printableAreas.${key}`, 'Printable area key is not supported.');
+      }
+    }
+    for (const key of REQUIRED_PRINTABLE_AREA_KEYS) {
+      if (!(key in printableAreas)) {
+        addError(`printableAreas.${key}`, 'Required printable area is missing.');
+      }
     }
     for (const [key, area] of areaEntries) {
       if (!isRecord(area)) {

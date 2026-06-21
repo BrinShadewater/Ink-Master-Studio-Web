@@ -139,6 +139,33 @@ test('rejects missing or invalid production profile metadata', () => {
   assert.ok(fields.includes('printableAreas'));
 });
 
+test('rejects unsupported and missing printable area keys', () => {
+  const source = createProductionProfile();
+  const validArea = structuredClone(
+    source.printableAreas[printableAreaKey(ItemType.TSHIRT, 'front')],
+  );
+  const unsupported = {
+    ...source,
+    printableAreas: {
+      nonsense: validArea,
+    },
+  };
+
+  const unsupportedFields = validateProductionProfile(unsupported).errors.map(
+    (error) => error.field,
+  );
+  assert.ok(unsupportedFields.includes('printableAreas.nonsense'));
+
+  const missing = createProductionProfile();
+  const missingKey = printableAreaKey(ItemType.HAT, 'sleeve');
+  delete missing.printableAreas[missingKey];
+
+  const missingFields = validateProductionProfile(missing).errors.map(
+    (error) => error.field,
+  );
+  assert.ok(missingFields.includes(`printableAreas.${missingKey}`));
+});
+
 test('rejects malformed production defaults and package options', () => {
   const invalid = {
     ...createProductionProfile(),
