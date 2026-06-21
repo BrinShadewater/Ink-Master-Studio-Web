@@ -3,20 +3,26 @@ import test from 'node:test';
 
 import {
   createProductionProfile,
+  describeProfileChanges,
   duplicateProductionProfile,
   exportProductionProfiles,
+  getProfileUpdateState,
   importProductionProfiles,
   printableAreaKey,
   reviseProductionProfile,
   snapshotProductionProfile,
   validateProductionProfile,
 } from '../services/productionProfiles';
+import { createStudioJob } from '../services/jobModel';
 import {
+  addProfileToStore,
   archiveProfile,
   getDefaultProfile,
   loadProfileStore,
   migrateProfileStore,
+  replaceProfileInStore,
   saveProfileStore,
+  setDefaultProfile,
 } from '../services/profileStorage';
 import { ItemType, OutputFormat } from '../types';
 
@@ -302,6 +308,109 @@ test('duplicates and revises profiles without mutating the source', () => {
   assert.deepEqual(source, sourceSnapshot);
 });
 
+test('reports current, update-available, archived, and missing profile sources immutably', () => {
+  const applied = profileFixture('applied-profile', 'Applied', 100, 3);
+  const job = createStudioJob('Profile update states', applied);
+  const current = { ...structuredClone(applied), updatedAt: 101 };
+  const older = { ...structuredClone(applied), revision: 2, updatedAt: 99 };
+  const newer = { ...structuredClone(applied), revision: 4, updatedAt: 102 };
+  const archived = {
+    ...structuredClone(newer),
+    archivedAt: 103,
+  };
+  const snapshots = [job, current, older, newer, archived].map((value) =>
+    structuredClone(value));
+
+  assert.deepEqual(getProfileUpdateState(job, [current]), {
+    status: 'current',
+    source: current,
+  });
+  assert.deepEqual(getProfileUpdateState(job, [older]), {
+    status: 'current',
+    source: older,
+  });
+  assert.deepEqual(getProfileUpdateState(job, [newer]), {
+    status: 'update-available',
+    source: newer,
+  });
+  assert.deepEqual(getProfileUpdateState(job, [archived]), {
+    status: 'archived',
+    source: archived,
+  });
+  assert.deepEqual(getProfileUpdateState(job, []), {
+    status: 'missing',
+    source: null,
+  });
+  assert.deepEqual(
+    [job, current, older, newer, archived],
+    snapshots,
+  );
+});
+
+test('describes profile changes in deterministic human-readable groups', () => {
+  const applied = profileFixture('change-profile', 'Old DTG', 100, 2);
+  applied.description = 'Original description';
+  applied.printerName = 'Epson';
+  const source = structuredClone(applied);
+  source.revision = 3;
+  source.name = 'Updated DTF';
+  source.description = 'Updated description';
+  source.printerName = 'Brother';
+  source.method = 'DTF';
+  source.thresholds.targetDpi = 360;
+  source.thresholds.warningDpi = 240;
+  source.printableAreas[printableAreaKey(ItemType.TSHIRT, 'front')].widthInches = 14;
+  source.printableAreas[printableAreaKey(ItemType.HOODIE, 'back')].heightPercent = 48;
+  source.defaults.format = OutputFormat.PDF;
+  source.defaults.preserveTransparency = false;
+  source.defaults.packageOptions.namingPattern = '{job}_updated';
+  source.defaults.packageOptions.selectedMockupIndices = [6, 2];
+  const appliedSnapshot = structuredClone(applied);
+  const sourceSnapshot = structuredClone(source);
+
+  assert.deepEqual(describeProfileChanges(applied, source), [
+    {
+      id: 'printer-method',
+      label: 'Printer and method',
+      changes: [
+        'Name: Old DTG → Updated DTF',
+        'Description: Original description → Updated description',
+        'Printer: Epson → Brother',
+        'Method: DTG → DTF',
+      ],
+    },
+    {
+      id: 'thresholds',
+      label: 'Thresholds',
+      changes: [
+        'Target DPI: 300 → 360',
+        'Warning DPI: 200 → 240',
+      ],
+    },
+    {
+      id: 'printable-areas',
+      label: 'Printable areas',
+      changes: [
+        '2 printable areas changed: HOODIE:back, TSHIRT:front',
+        'Hoodie / Back — height percent: 52 → 48',
+        'T-shirt / Front — width inches: 15 → 14',
+      ],
+    },
+    {
+      id: 'defaults',
+      label: 'Output and package defaults',
+      changes: [
+        'Format: PNG → PDF',
+        'Preserve transparency: Yes → No',
+        'Naming pattern: {job}_{customer}_{garment}_{placement}_v{version} → {job}_updated',
+        'Selected mockup indices: 1, 2, 6 → 6, 2',
+      ],
+    },
+  ]);
+  assert.deepEqual(applied, appliedSnapshot);
+  assert.deepEqual(source, sourceSnapshot);
+});
+
 test('migrates empty storage to exactly one valid default Standard DTG profile', () => {
   const store = migrateProfileStore(null);
 
@@ -501,6 +610,59 @@ test('archives non-default profiles immutably while keeping the default', () => 
   assert.ok((archived.profiles[1].archivedAt ?? 0) >= other.updatedAt);
   assert.deepEqual(store, snapshot);
   assert.notEqual(archived.profiles[0], store.profiles[0]);
+});
+
+test('adds and replaces current profile records immutably', () => {
+  const original = profileFixture('original', 'Original', 100, 2);
+  const added = profileFixture('added', 'Added', 101);
+  const revised = { ...structuredClone(original), name: 'Revised', revision: 3 };
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: original.id,
+    profiles: [original],
+  };
+  const snapshot = structuredClone(store);
+
+  const withAdded = addProfileToStore(store, added);
+  const withRevision = replaceProfileInStore(withAdded, revised);
+
+  assert.deepEqual(store, snapshot);
+  assert.deepEqual(withAdded.profiles.map((profile) => profile.id), [
+    original.id,
+    added.id,
+  ]);
+  assert.equal(withRevision.profiles.length, 2);
+  assert.equal(withRevision.profiles[0].name, 'Revised');
+  assert.equal(withRevision.profiles[0].revision, 3);
+  assert.notEqual(withRevision.profiles[0], revised);
+  assert.throws(() => addProfileToStore(store, original), /already exists/i);
+  assert.throws(
+    () => replaceProfileInStore(store, added),
+    /was not found/i,
+  );
+});
+
+test('sets only active profiles as the immutable default', () => {
+  const active = profileFixture('active-default', 'Active', 100);
+  const other = profileFixture('other-default', 'Other', 101);
+  const archived = {
+    ...profileFixture('archived-default', 'Archived', 102),
+    archivedAt: 103,
+  };
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: active.id,
+    profiles: [active, other, archived],
+  };
+  const snapshot = structuredClone(store);
+
+  const updated = setDefaultProfile(store, other.id);
+
+  assert.equal(updated.defaultProfileId, other.id);
+  assert.deepEqual(store, snapshot);
+  assert.notEqual(updated.profiles[0], store.profiles[0]);
+  assert.throws(() => setDefaultProfile(store, 'missing'), /was not found/i);
+  assert.throws(() => setDefaultProfile(store, archived.id), /must be active/i);
 });
 
 test('ignores a replacement when archiving a non-default profile', () => {

@@ -3,6 +3,9 @@ import { AnimatedBackground } from './components/AnimatedBackground';
 import { Dropzone } from './components/Dropzone';
 import { Header } from './components/Header';
 import { JobLibrary } from './components/JobLibrary';
+import { ProfileManager } from './components/ProfileManager';
+import { ProfileSelector } from './components/ProfileSelector';
+import { ProfileUpdateReview } from './components/ProfileUpdateReview';
 import { TemplatesPopover } from './components/TemplatesPopover';
 import { Preview } from './components/Preview';
 import { StudioTopBar } from './components/StudioTopBar';
@@ -20,6 +23,7 @@ import {
   ShirtColor,
   ShopTemplate,
   StudioJob,
+  ProductionProfile,
   WorkspaceStage,
 } from './types';
 import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_SETTINGS } from './constants';
@@ -33,7 +37,12 @@ import {
 } from './services/imageProcessing';
 import { analyzeArtwork } from './services/artworkAnalysis';
 import { recommendRecipe, resolveRecipeSettings } from './services/recipes';
-import { createStudioJob, duplicateStudioJob, touchStudioJob } from './services/jobModel';
+import {
+  applyProductionProfileToJob,
+  createStudioJob,
+  duplicateStudioJob,
+  touchStudioJob,
+} from './services/jobModel';
 import { archiveJob, listJobs, saveJob } from './services/jobRepository';
 import { exportPortableJob, importPortableJob } from './services/portableJob';
 import {
@@ -50,8 +59,15 @@ import {
   validatePlacement,
 } from './services/placement';
 import { evaluatePreflight, getPreflightGate } from './services/preflight';
-import { getDefaultProfile, loadProfileStore } from './services/profileStorage';
-import { createProductionProfile, snapshotProductionProfile } from './services/productionProfiles';
+import {
+  getDefaultProfile,
+  loadProfileStore,
+  saveProfileStore,
+} from './services/profileStorage';
+import {
+  getProfileUpdateState,
+  snapshotProductionProfile,
+} from './services/productionProfiles';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { generateCustomerProof } from './services/proofBuilder';
 import {
@@ -104,10 +120,6 @@ const MOCKUP_FILES = [
   ['royal-blue', '/mockups/mockup-royalblue.png'],
 ] as const;
 
-const STANDARD_DTG_FALLBACK_PROFILE = createProductionProfile('Standard DTG');
-const STANDARD_DTG_FALLBACK_APPLIED = snapshotProductionProfile(STANDARD_DTG_FALLBACK_PROFILE);
-const BATCH_DEFAULT_PROFILE = getDefaultProfile(loadProfileStore());
-
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -131,15 +143,42 @@ const App: React.FC = () => {
   const [showJobs, setShowJobs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [shopTemplates, setShopTemplates] = useState<ShopTemplate[]>([]);
+  const [profileStore, setProfileStore] = useState(() => loadProfileStore());
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [profileUpdateSource, setProfileUpdateSource] = useState<ProductionProfile | null>(null);
 
   const originalImage = appState.image;
   const settings = appState.settings;
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
   const dpiInfo = analysis?.printQuality ?? null;
+  const defaultProductionProfile = useMemo(
+    () => getDefaultProfile(profileStore),
+    [profileStore],
+  );
+  const defaultAppliedProductionProfile = useMemo(
+    () => snapshotProductionProfile(defaultProductionProfile),
+    [defaultProductionProfile],
+  );
   const printSpecification = currentJob?.printSpecification ?? DEFAULT_PRINT_SPECIFICATION;
-  const appliedProductionProfile = currentJob?.productionProfile ?? STANDARD_DTG_FALLBACK_APPLIED;
+  const appliedProductionProfile = currentJob?.productionProfile ?? defaultAppliedProductionProfile;
   const activeProductionProfile = appliedProductionProfile.snapshot;
+  const profileUpdateState = useMemo(
+    () => currentJob
+      ? getProfileUpdateState(currentJob, profileStore.profiles)
+      : { status: 'current' as const, source: defaultProductionProfile },
+    [currentJob, defaultProductionProfile, profileStore.profiles],
+  );
+  const batchDefaultSettings = useMemo(
+    () => currentJob
+      ? settings
+      : {
+          ...settings,
+          format: defaultProductionProfile.defaults.format,
+          preserveTransparency: defaultProductionProfile.defaults.preserveTransparency,
+        },
+    [currentJob, defaultProductionProfile, settings],
+  );
   const fallbackPlacementKey = placementVariantKey(
     DEFAULT_PLACEMENT.itemType,
     DEFAULT_PLACEMENT.location,
@@ -278,6 +317,41 @@ const App: React.FC = () => {
     setAppState(state);
   };
 
+  const handleProfileStoreChange = (nextStore: typeof profileStore): boolean => {
+    try {
+      saveProfileStore(nextStore);
+      setProfileStore(nextStore);
+      return true;
+    } catch (storageError) {
+      console.error(storageError);
+      return false;
+    }
+  };
+
+  const applyProfileToCurrentJob = (profile: ProductionProfile) => {
+    if (!currentJob || profile.archivedAt !== null) return;
+    const applied = applyProductionProfileToJob(currentJob, profile);
+    const synchronized = transitionJobProductionState(
+      applied,
+      applied.settings,
+      profile,
+      true,
+    ).job;
+    setCurrentJob(synchronized);
+    addToHistory({
+      ...appState,
+      settings: structuredClone(synchronized.settings),
+    });
+    setProfileUpdateSource(null);
+  };
+
+  const handleAssignProfile = (profileId: string) => {
+    const profile = profileStore.profiles.find(
+      (candidate) => candidate.id === profileId && candidate.archivedAt === null,
+    );
+    if (profile) applyProfileToCurrentJob(profile);
+  };
+
   const addToExportHistory = (entry: Omit<ExportHistoryEntry, 'id'>) => {
     const storedEntry = { ...entry, id: `export_${Date.now()}` };
     setExportHistory((current) => [storedEntry, ...current].slice(0, 20));
@@ -318,8 +392,15 @@ const App: React.FC = () => {
     try {
       const base64 = await fileToBase64(file);
       const dataUrl = `data:${file.type};base64,${base64}`;
-      const next = { image: dataUrl, settings: DEFAULT_SETTINGS, hasUsedAi: false };
-      const job = createStudioJob(file.name.replace(/\.[^.]+$/, '') || 'Untitled job');
+      const job = createStudioJob(
+        file.name.replace(/\.[^.]+$/, '') || 'Untitled job',
+        defaultProductionProfile,
+      );
+      const next = {
+        image: dataUrl,
+        settings: structuredClone(job.settings),
+        hasUsedAi: false,
+      };
       job.sourceArtwork = {
         name: file.name,
         type: file.type,
@@ -640,13 +721,16 @@ const App: React.FC = () => {
           <button type="button" onClick={() => setShowJobs(true)} className="mt-3 rounded-lg px-5 py-2 text-xs font-bold text-indigo-300 hover:text-indigo-200">
             Open saved production job{jobs.length ? ` (${jobs.length})` : ''}
           </button>
+          <button type="button" onClick={() => setShowProfiles(true)} className="mt-1 rounded-lg px-5 py-2 text-xs font-bold text-slate-400 hover:text-white">
+            Manage production profiles
+          </button>
         </main>
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
             <BatchProcessor
               onClose={() => setShowBatch(false)}
-              defaultSettings={settings}
-              productionProfile={currentJob?.productionProfile.snapshot ?? BATCH_DEFAULT_PROFILE}
+              defaultSettings={batchDefaultSettings}
+              productionProfile={currentJob?.productionProfile.snapshot ?? defaultProductionProfile}
             />
           </Suspense>
         )}
@@ -660,6 +744,13 @@ const App: React.FC = () => {
             onArchive={(job) => void handleArchiveJob(job)}
             onExport={(job) => void handleExportJob(job)}
             onImport={(file) => void handleImportJob(file)}
+          />
+        )}
+        {showProfiles && (
+          <ProfileManager
+            store={profileStore}
+            onStoreChange={handleProfileStoreChange}
+            onClose={() => setShowProfiles(false)}
           />
         )}
       </div>
@@ -682,6 +773,20 @@ const App: React.FC = () => {
         onBatch={() => setShowBatch(true)}
         onUndo={() => canUndo && setHistoryIndex((index) => index - 1)}
         onRedo={() => canRedo && setHistoryIndex((index) => index + 1)}
+        productionProfile={(
+          <ProfileSelector
+            applied={appliedProductionProfile}
+            profiles={profileStore.profiles}
+            updateState={profileUpdateState}
+            onAssign={handleAssignProfile}
+            onApplyUpdate={() => {
+              if (profileUpdateState.status === 'update-available' && profileUpdateState.source) {
+                setProfileUpdateSource(structuredClone(profileUpdateState.source));
+              }
+            }}
+            onManage={() => setShowProfiles(true)}
+          />
+        )}
         templates={(
           <TemplatesPopover
             templates={shopTemplates}
@@ -806,8 +911,8 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
           <BatchProcessor
             onClose={() => setShowBatch(false)}
-            defaultSettings={settings}
-            productionProfile={currentJob?.productionProfile.snapshot ?? BATCH_DEFAULT_PROFILE}
+            defaultSettings={batchDefaultSettings}
+            productionProfile={currentJob?.productionProfile.snapshot ?? defaultProductionProfile}
           />
         </Suspense>
       )}
@@ -821,6 +926,21 @@ const App: React.FC = () => {
           onArchive={(job) => void handleArchiveJob(job)}
           onExport={(job) => void handleExportJob(job)}
           onImport={(file) => void handleImportJob(file)}
+        />
+      )}
+      {showProfiles && (
+        <ProfileManager
+          store={profileStore}
+          onStoreChange={handleProfileStoreChange}
+          onClose={() => setShowProfiles(false)}
+        />
+      )}
+      {currentJob && profileUpdateSource && (
+        <ProfileUpdateReview
+          applied={currentJob.productionProfile}
+          source={profileUpdateSource}
+          onCancel={() => setProfileUpdateSource(null)}
+          onApply={() => applyProfileToCurrentJob(profileUpdateSource)}
         />
       )}
     </div>

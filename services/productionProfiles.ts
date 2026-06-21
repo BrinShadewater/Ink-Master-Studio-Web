@@ -10,6 +10,7 @@ import {
   PrintableArea,
   ProductionProfile,
   ProfileValidationError,
+  StudioJob,
 } from '../types';
 
 const createId = (prefix: string) =>
@@ -127,6 +128,219 @@ export const reviseProductionProfile = (
   createdAt: profile.createdAt,
   updatedAt: Date.now(),
 });
+
+export type ProfileUpdateStatus =
+  | 'current'
+  | 'update-available'
+  | 'archived'
+  | 'missing';
+
+export interface ProfileUpdateState {
+  status: ProfileUpdateStatus;
+  source: ProductionProfile | null;
+}
+
+export const getProfileUpdateState = (
+  job: StudioJob,
+  profiles: ProductionProfile[],
+): ProfileUpdateState => {
+  const source = profiles.find(
+    (profile) => profile.id === job.productionProfile.profileId,
+  ) ?? null;
+  if (!source) return { status: 'missing', source: null };
+  if (source.archivedAt !== null) return { status: 'archived', source };
+  return {
+    status: source.revision > job.productionProfile.profileRevision
+      ? 'update-available'
+      : 'current',
+    source,
+  };
+};
+
+export interface ProfileChangeGroup {
+  id: 'printer-method' | 'thresholds' | 'printable-areas' | 'defaults';
+  label: string;
+  changes: string[];
+}
+
+const readableValue = (value: string | number | boolean): string => {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+};
+
+const describeChange = (
+  label: string,
+  before: string | number | boolean,
+  after: string | number | boolean,
+): string | null => (
+  Object.is(before, after)
+    ? null
+    : `${label}: ${readableValue(before)} → ${readableValue(after)}`
+);
+
+const readablePrintableAreaKey = (key: string): string => {
+  const [product, location] = key.split(':');
+  const products: Record<string, string> = {
+    TSHIRT: 'T-shirt',
+    HOODIE: 'Hoodie',
+    HAT: 'Hat',
+    MUG: 'Mug',
+    TOTE: 'Tote',
+  };
+  const locations: Record<string, string> = {
+    front: 'Front',
+    back: 'Back',
+    'left-chest': 'Left chest',
+    sleeve: 'Sleeve',
+  };
+  return `${products[product] ?? product} / ${locations[location] ?? location}`;
+};
+
+export const describeProfileChanges = (
+  appliedSnapshot: ProductionProfile,
+  source: ProductionProfile,
+): ProfileChangeGroup[] => {
+  const groups: ProfileChangeGroup[] = [];
+  const printerChanges = [
+    describeChange('Name', appliedSnapshot.name, source.name),
+    describeChange('Description', appliedSnapshot.description, source.description),
+    describeChange('Printer', appliedSnapshot.printerName, source.printerName),
+    describeChange('Method', appliedSnapshot.method, source.method),
+  ].filter((change): change is string => change !== null);
+  if (printerChanges.length > 0) {
+    groups.push({
+      id: 'printer-method',
+      label: 'Printer and method',
+      changes: printerChanges,
+    });
+  }
+
+  const thresholdFields = [
+    ['targetDpi', 'Target DPI'],
+    ['warningDpi', 'Warning DPI'],
+    ['criticalDpi', 'Critical DPI'],
+    ['significantUpscaleRatio', 'Significant upscale ratio'],
+    ['extremeUpscaleRatio', 'Extreme upscale ratio'],
+  ] as const;
+  const thresholdChanges = thresholdFields
+    .map(([field, label]) => describeChange(
+      label,
+      appliedSnapshot.thresholds[field],
+      source.thresholds[field],
+    ))
+    .filter((change): change is string => change !== null);
+  if (thresholdChanges.length > 0) {
+    groups.push({
+      id: 'thresholds',
+      label: 'Thresholds',
+      changes: thresholdChanges,
+    });
+  }
+
+  const printableAreaFields = [
+    ['widthInches', 'width inches'],
+    ['heightInches', 'height inches'],
+    ['xPercent', 'x percent'],
+    ['yPercent', 'y percent'],
+    ['widthPercent', 'width percent'],
+    ['heightPercent', 'height percent'],
+  ] as const;
+  const changedAreaKeys = Array.from(new Set([
+    ...Object.keys(appliedSnapshot.printableAreas),
+    ...Object.keys(source.printableAreas),
+  ]))
+    .sort((left, right) => left.localeCompare(right))
+    .filter((key) => stableSerialize(appliedSnapshot.printableAreas[key])
+      !== stableSerialize(source.printableAreas[key]));
+  if (changedAreaKeys.length > 0) {
+    const areaChanges = changedAreaKeys.flatMap((key) => {
+      const before = appliedSnapshot.printableAreas[key];
+      const after = source.printableAreas[key];
+      if (!before) return [`${key} — area added`];
+      if (!after) return [`${key} — area removed`];
+      return printableAreaFields
+        .map(([field, label]) => describeChange(
+          `${readablePrintableAreaKey(key)} — ${label}`,
+          before[field],
+          after[field],
+        ))
+        .filter((change): change is string => change !== null);
+    });
+    groups.push({
+      id: 'printable-areas',
+      label: 'Printable areas',
+      changes: [
+        `${changedAreaKeys.length} printable area${changedAreaKeys.length === 1 ? '' : 's'} changed: ${changedAreaKeys.join(', ')}`,
+        ...areaChanges,
+      ],
+    });
+  }
+
+  const appliedPackage = appliedSnapshot.defaults.packageOptions;
+  const sourcePackage = source.defaults.packageOptions;
+  const defaultChanges = [
+    describeChange('Format', appliedSnapshot.defaults.format, source.defaults.format),
+    describeChange(
+      'Preserve transparency',
+      appliedSnapshot.defaults.preserveTransparency,
+      source.defaults.preserveTransparency,
+    ),
+    describeChange(
+      'Include underbase',
+      appliedSnapshot.defaults.includeUnderbase,
+      source.defaults.includeUnderbase,
+    ),
+    describeChange(
+      'Naming pattern',
+      appliedPackage.namingPattern,
+      sourcePackage.namingPattern,
+    ),
+    describeChange(
+      'Include print master',
+      appliedPackage.includePrintMaster,
+      sourcePackage.includePrintMaster,
+    ),
+    describeChange(
+      'Include production PDF',
+      appliedPackage.includeProductionPdf,
+      sourcePackage.includeProductionPdf,
+    ),
+    describeChange(
+      'Include mockups',
+      appliedPackage.includeMockups,
+      sourcePackage.includeMockups,
+    ),
+    describeChange(
+      'Selected mockup indices',
+      appliedPackage.selectedMockupIndices.join(', '),
+      sourcePackage.selectedMockupIndices.join(', '),
+    ),
+    describeChange(
+      'Package underbase',
+      appliedPackage.includeUnderbase,
+      sourcePackage.includeUnderbase,
+    ),
+    describeChange(
+      'Include summary',
+      appliedPackage.includeSummary,
+      sourcePackage.includeSummary,
+    ),
+    describeChange(
+      'Include manifest',
+      appliedPackage.includeManifest,
+      sourcePackage.includeManifest,
+    ),
+  ].filter((change): change is string => change !== null);
+  if (defaultChanges.length > 0) {
+    groups.push({
+      id: 'defaults',
+      label: 'Output and package defaults',
+      changes: defaultChanges,
+    });
+  }
+
+  return groups;
+};
 
 export const validateProductionProfile = (
   profile: unknown,

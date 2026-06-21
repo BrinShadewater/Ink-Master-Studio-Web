@@ -112,6 +112,60 @@ export const getDefaultProfile = (
   return cloneProfile(profile);
 };
 
+const cloneStore = (
+  store: ProductionProfileStore,
+): ProductionProfileStore => ({
+  schemaVersion: 1,
+  defaultProfileId: store.defaultProfileId,
+  profiles: store.profiles.map(cloneProfile),
+});
+
+export const addProfileToStore = (
+  store: ProductionProfileStore,
+  profile: ProductionProfile,
+): ProductionProfileStore => {
+  if (store.profiles.some((candidate) => candidate.id === profile.id)) {
+    throw new Error(`Production profile "${profile.id}" already exists.`);
+  }
+  const cloned = cloneStore(store);
+  return {
+    ...cloned,
+    profiles: [...cloned.profiles, cloneProfile(profile)],
+  };
+};
+
+export const replaceProfileInStore = (
+  store: ProductionProfileStore,
+  profile: ProductionProfile,
+): ProductionProfileStore => {
+  if (!store.profiles.some((candidate) => candidate.id === profile.id)) {
+    throw new Error(`Production profile "${profile.id}" was not found.`);
+  }
+  const cloned = cloneStore(store);
+  return {
+    ...cloned,
+    profiles: cloned.profiles.map((candidate) =>
+      candidate.id === profile.id ? cloneProfile(profile) : candidate),
+  };
+};
+
+export const setDefaultProfile = (
+  store: ProductionProfileStore,
+  profileId: string,
+): ProductionProfileStore => {
+  const profile = store.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    throw new Error(`Production profile "${profileId}" was not found.`);
+  }
+  if (profile.archivedAt !== null) {
+    throw new Error('Default production profile must be active.');
+  }
+  return {
+    ...cloneStore(store),
+    defaultProfileId: profileId,
+  };
+};
+
 export const archiveProfile = (
   store: ProductionProfileStore,
   profileId: string,
