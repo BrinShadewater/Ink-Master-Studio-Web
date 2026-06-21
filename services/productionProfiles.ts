@@ -3,6 +3,7 @@ import {
   DEFAULT_PRODUCTION_THRESHOLDS,
 } from '../constants';
 import {
+  AppliedProductionProfile,
   ItemType,
   OutputFormat,
   PlacementLocation,
@@ -69,14 +70,18 @@ export const createProductionProfile = (
 
 export const snapshotProductionProfile = (
   profile: ProductionProfile,
-): ProductionProfile => structuredClone(profile);
+): AppliedProductionProfile => ({
+  profileId: profile.id,
+  profileRevision: profile.revision,
+  snapshot: structuredClone(profile),
+});
 
 export const duplicateProductionProfile = (
   profile: ProductionProfile,
 ): ProductionProfile => {
   const timestamp = Date.now();
   return {
-    ...snapshotProductionProfile(profile),
+    ...snapshotProductionProfile(profile).snapshot,
     id: createId('profile'),
     revision: 1,
     name: `${profile.name} copy`,
@@ -95,7 +100,7 @@ export const reviseProductionProfile = (
   profile: ProductionProfile,
   patch: ProductionProfilePatch,
 ): ProductionProfile => ({
-  ...snapshotProductionProfile(profile),
+  ...snapshotProductionProfile(profile).snapshot,
   ...structuredClone(patch),
   schemaVersion: profile.schemaVersion,
   id: profile.id,

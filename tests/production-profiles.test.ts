@@ -6,6 +6,7 @@ import {
   duplicateProductionProfile,
   printableAreaKey,
   reviseProductionProfile,
+  snapshotProductionProfile,
   validateProductionProfile,
 } from '../services/productionProfiles';
 import { ItemType, OutputFormat } from '../types';
@@ -47,6 +48,18 @@ test('reports invalid threshold ordering and printable dimensions', () => {
   assert.equal(result.valid, false);
   assert.ok(fields.includes('thresholds.criticalDpi'));
   assert.ok(fields.some((field) => field.endsWith('.widthInches')));
+});
+
+test('wraps an immutable production profile snapshot with its applied revision', () => {
+  const profile = createProductionProfile('Applied profile');
+  const applied = snapshotProductionProfile(profile);
+
+  assert.equal(applied.profileId, profile.id);
+  assert.equal(applied.profileRevision, profile.revision);
+  assert.deepEqual(applied.snapshot, profile);
+  assert.notEqual(applied.snapshot, profile);
+  assert.notEqual(applied.snapshot.thresholds, profile.thresholds);
+  assert.notEqual(applied.snapshot.defaults.packageOptions, profile.defaults.packageOptions);
 });
 
 test('duplicates and revises profiles without mutating the source', () => {
