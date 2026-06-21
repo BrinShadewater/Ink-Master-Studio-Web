@@ -110,59 +110,141 @@ export const reviseProductionProfile = (
 });
 
 export const validateProductionProfile = (
-  profile: ProductionProfile,
+  profile: unknown,
 ): { valid: boolean; errors: ProfileValidationError[] } => {
   const errors: ProfileValidationError[] = [];
   const addError = (field: string, message: string) => {
     errors.push({ field, message });
   };
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
 
-  if (profile.thresholds.targetDpi <= 0) {
-    addError('thresholds.targetDpi', 'Target DPI must be greater than 0.');
-  }
-  if (
-    profile.thresholds.warningDpi <= 0
-    || profile.thresholds.warningDpi > profile.thresholds.targetDpi
-  ) {
-    addError('thresholds.warningDpi', 'Warning DPI must be greater than 0 and no greater than target DPI.');
-  }
-  if (
-    profile.thresholds.criticalDpi <= 0
-    || profile.thresholds.criticalDpi >= profile.thresholds.warningDpi
-  ) {
-    addError('thresholds.criticalDpi', 'Critical DPI must be greater than 0 and less than warning DPI.');
-  }
-  if (
-    profile.thresholds.significantUpscaleRatio <= 0
-    || profile.thresholds.significantUpscaleRatio >= profile.thresholds.extremeUpscaleRatio
-  ) {
-    addError(
-      'thresholds.significantUpscaleRatio',
-      'Significant upscale ratio must be greater than 0 and less than the extreme ratio.',
-    );
-  }
-  if (profile.thresholds.extremeUpscaleRatio <= 0) {
-    addError('thresholds.extremeUpscaleRatio', 'Extreme upscale ratio must be greater than 0.');
+  if (!isRecord(profile)) {
+    addError('profile', 'Production profile must be an object.');
+    return { valid: false, errors };
   }
 
-  for (const [key, area] of Object.entries(profile.printableAreas)) {
-    if (area.widthInches <= 0) {
-      addError(`printableAreas.${key}.widthInches`, 'Printable width must be greater than 0.');
+  const thresholds = profile.thresholds;
+  if (!isRecord(thresholds)) {
+    addError('thresholds', 'Production thresholds must be an object.');
+  } else {
+    const {
+      targetDpi,
+      warningDpi,
+      criticalDpi,
+      significantUpscaleRatio,
+      extremeUpscaleRatio,
+    } = thresholds;
+
+    if (!isFiniteNumber(targetDpi) || targetDpi <= 0) {
+      addError('thresholds.targetDpi', 'Target DPI must be greater than 0.');
     }
-    if (area.heightInches <= 0) {
-      addError(`printableAreas.${key}.heightInches`, 'Printable height must be greater than 0.');
+    if (
+      !isFiniteNumber(warningDpi)
+      || warningDpi <= 0
+      || (isFiniteNumber(targetDpi) && warningDpi > targetDpi)
+    ) {
+      addError(
+        'thresholds.warningDpi',
+        'Warning DPI must be greater than 0 and no greater than target DPI.',
+      );
     }
-    if (area.xPercent < 0 || area.xPercent > 100) {
-      addError(`printableAreas.${key}.xPercent`, 'Preview x position must be between 0 and 100.');
+    if (
+      !isFiniteNumber(criticalDpi)
+      || criticalDpi <= 0
+      || (isFiniteNumber(warningDpi) && criticalDpi >= warningDpi)
+    ) {
+      addError(
+        'thresholds.criticalDpi',
+        'Critical DPI must be greater than 0 and less than warning DPI.',
+      );
     }
-    if (area.yPercent < 0 || area.yPercent > 100) {
-      addError(`printableAreas.${key}.yPercent`, 'Preview y position must be between 0 and 100.');
+    if (
+      !isFiniteNumber(significantUpscaleRatio)
+      || significantUpscaleRatio <= 0
+      || (
+        isFiniteNumber(extremeUpscaleRatio)
+        && significantUpscaleRatio >= extremeUpscaleRatio
+      )
+    ) {
+      addError(
+        'thresholds.significantUpscaleRatio',
+        'Significant upscale ratio must be greater than 0 and less than the extreme ratio.',
+      );
     }
-    if (area.widthPercent <= 0 || area.xPercent + area.widthPercent > 100) {
-      addError(`printableAreas.${key}.widthPercent`, 'Preview width must be positive and remain within 100%.');
+    if (!isFiniteNumber(extremeUpscaleRatio) || extremeUpscaleRatio <= 0) {
+      addError(
+        'thresholds.extremeUpscaleRatio',
+        'Extreme upscale ratio must be greater than 0.',
+      );
     }
-    if (area.heightPercent <= 0 || area.yPercent + area.heightPercent > 100) {
-      addError(`printableAreas.${key}.heightPercent`, 'Preview height must be positive and remain within 100%.');
+  }
+
+  const printableAreas = profile.printableAreas;
+  if (!isRecord(printableAreas)) {
+    addError('printableAreas', 'Printable areas must be an object.');
+  } else {
+    for (const [key, area] of Object.entries(printableAreas)) {
+      if (!isRecord(area)) {
+        addError(`printableAreas.${key}`, 'Printable area must be an object.');
+        continue;
+      }
+
+      const {
+        widthInches,
+        heightInches,
+        xPercent,
+        yPercent,
+        widthPercent,
+        heightPercent,
+      } = area;
+
+      if (!isFiniteNumber(widthInches) || widthInches <= 0) {
+        addError(
+          `printableAreas.${key}.widthInches`,
+          'Printable width must be greater than 0.',
+        );
+      }
+      if (!isFiniteNumber(heightInches) || heightInches <= 0) {
+        addError(
+          `printableAreas.${key}.heightInches`,
+          'Printable height must be greater than 0.',
+        );
+      }
+      if (!isFiniteNumber(xPercent) || xPercent < 0 || xPercent > 100) {
+        addError(
+          `printableAreas.${key}.xPercent`,
+          'Preview x position must be between 0 and 100.',
+        );
+      }
+      if (!isFiniteNumber(yPercent) || yPercent < 0 || yPercent > 100) {
+        addError(
+          `printableAreas.${key}.yPercent`,
+          'Preview y position must be between 0 and 100.',
+        );
+      }
+      if (
+        !isFiniteNumber(widthPercent)
+        || widthPercent <= 0
+        || (isFiniteNumber(xPercent) && xPercent + widthPercent > 100)
+      ) {
+        addError(
+          `printableAreas.${key}.widthPercent`,
+          'Preview width must be positive and remain within 100%.',
+        );
+      }
+      if (
+        !isFiniteNumber(heightPercent)
+        || heightPercent <= 0
+        || (isFiniteNumber(yPercent) && yPercent + heightPercent > 100)
+      ) {
+        addError(
+          `printableAreas.${key}.heightPercent`,
+          'Preview height must be positive and remain within 100%.',
+        );
+      }
     }
   }
 
