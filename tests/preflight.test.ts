@@ -145,6 +145,12 @@ test('classifies fractional DPI immediately below and at the critical boundary',
     DEFAULT_SETTINGS,
     profile,
   ).find((entry) => entry.id === 'resolution');
+  const justBelowCritical = evaluatePreflight(
+    { ...analysis, width: 1499.6, height: 1499.6 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
   const atCritical = evaluatePreflight(
     { ...analysis, width: 1500, height: 1500 },
     squareSpecification,
@@ -153,9 +159,12 @@ test('classifies fractional DPI immediately below and at the critical boundary',
   ).find((entry) => entry.id === 'resolution');
 
   assert.equal(belowCritical?.severity, 'critical');
-  assert.match(belowCritical?.message ?? '', /150 DPI/);
+  assert.match(belowCritical?.message ?? '', /149\.6 DPI/);
+  assert.equal(justBelowCritical?.severity, 'critical');
+  assert.match(justBelowCritical?.message ?? '', /149\.9 DPI/);
   assert.equal(atCritical?.severity, 'warning');
   assert.match(atCritical?.message ?? '', /150 DPI/);
+  assert.doesNotMatch(atCritical?.message ?? '', /150\.0 DPI/);
 });
 
 test('classifies fractional DPI immediately below and at the warning boundary', () => {
@@ -171,6 +180,12 @@ test('classifies fractional DPI immediately below and at the warning boundary', 
     DEFAULT_SETTINGS,
     profile,
   ).find((entry) => entry.id === 'resolution');
+  const justBelowWarning = evaluatePreflight(
+    { ...analysis, width: 1999.6, height: 1999.6 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
   const atWarning = evaluatePreflight(
     { ...analysis, width: 2000, height: 2000 },
     squareSpecification,
@@ -179,9 +194,12 @@ test('classifies fractional DPI immediately below and at the warning boundary', 
   ).find((entry) => entry.id === 'resolution');
 
   assert.equal(belowWarning?.severity, 'warning');
-  assert.match(belowWarning?.message ?? '', /200 DPI/);
+  assert.match(belowWarning?.message ?? '', /199\.6 DPI/);
+  assert.equal(justBelowWarning?.severity, 'warning');
+  assert.match(justBelowWarning?.message ?? '', /199\.9 DPI/);
   assert.equal(atWarning?.severity, 'pass');
   assert.match(atWarning?.message ?? '', /200 DPI/);
+  assert.doesNotMatch(atWarning?.message ?? '', /200\.0 DPI/);
 });
 
 test('describes a tolerated DPI below the ideal target honestly', () => {

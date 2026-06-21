@@ -24,6 +24,11 @@ const calculateRawEffectiveDpi = (
   heightPixels / Math.max(0.1, specification.heightInches),
 );
 
+const formatDpi = (dpi: number) => {
+  if (Number.isInteger(dpi)) return String(dpi);
+  return (Math.floor(dpi * 10) / 10).toFixed(1);
+};
+
 export const calculateEffectiveDpi = (
   widthPixels: number,
   heightPixels: number,
@@ -41,7 +46,7 @@ export const evaluatePreflight = (
     analysis.height,
     specification,
   );
-  const displayedEffectiveDpi = Math.round(rawEffectiveDpi);
+  const displayedEffectiveDpi = formatDpi(rawEffectiveDpi);
   const {
     targetDpi,
     warningDpi,
