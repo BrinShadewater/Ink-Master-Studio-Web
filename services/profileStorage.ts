@@ -85,10 +85,14 @@ export const migrateProfileStore = (
 };
 
 export const loadProfileStore = (): ProductionProfileStore => {
-  const raw = typeof localStorage === 'undefined'
-    ? null
-    : localStorage.getItem(PROFILE_STORAGE_KEY);
-  return migrateProfileStore(raw);
+  try {
+    const raw = typeof localStorage === 'undefined'
+      ? null
+      : localStorage.getItem(PROFILE_STORAGE_KEY);
+    return migrateProfileStore(raw);
+  } catch {
+    return migrateProfileStore(null);
+  }
 };
 
 export const saveProfileStore = (store: ProductionProfileStore): void => {
@@ -105,7 +109,7 @@ export const getDefaultProfile = (
   if (!profile) {
     throw new Error('Production profile store has no active default profile.');
   }
-  return profile;
+  return cloneProfile(profile);
 };
 
 export const archiveProfile = (
@@ -144,7 +148,9 @@ export const archiveProfile = (
   const timestamp = Math.max(Date.now(), profile.updatedAt);
   return {
     schemaVersion: 1,
-    defaultProfileId: replacement?.id ?? store.defaultProfileId,
+    defaultProfileId: isDefault && replacement
+      ? replacement.id
+      : store.defaultProfileId,
     profiles: store.profiles.map((candidate) => {
       const cloned = cloneProfile(candidate);
       return candidate.id === profileId

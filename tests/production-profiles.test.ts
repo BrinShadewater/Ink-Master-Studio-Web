@@ -403,6 +403,88 @@ test('loads and saves migrated profile stores only through available localStorag
   }
 });
 
+test('repairs profile storage when localStorage access or reads throw', () => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+
+  try {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('storage access blocked');
+      },
+    });
+    const blockedAccess = loadProfileStore();
+    assert.equal(blockedAccess.profiles.length, 1);
+    assert.equal(blockedAccess.profiles[0].name, 'Standard DTG');
+    assert.equal(blockedAccess.defaultProfileId, blockedAccess.profiles[0].id);
+    assert.equal(validateProductionProfile(blockedAccess.profiles[0]).valid, true);
+
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem() {
+          throw new Error('storage read blocked');
+        },
+      },
+    });
+    const blockedRead = loadProfileStore();
+    assert.equal(blockedRead.profiles.length, 1);
+    assert.equal(blockedRead.profiles[0].name, 'Standard DTG');
+    assert.equal(blockedRead.defaultProfileId, blockedRead.profiles[0].id);
+    assert.equal(validateProductionProfile(blockedRead.profiles[0]).valid, true);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', originalDescriptor);
+    } else {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    }
+  }
+});
+
+test('lets profile storage save failures propagate', () => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      setItem() {
+        throw new Error('storage write blocked');
+      },
+    },
+  });
+
+  try {
+    assert.throws(
+      () => saveProfileStore(migrateProfileStore(null)),
+      /storage write blocked/,
+    );
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', originalDescriptor);
+    } else {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    }
+  }
+});
+
+test('returns an isolated clone of the active default profile', () => {
+  const profile = profileFixture('default-clone', 'Default clone', 100);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: profile.id,
+    profiles: [profile],
+  };
+  const returned = getDefaultProfile(store);
+  const frontKey = printableAreaKey(ItemType.TSHIRT, 'front');
+
+  returned.thresholds.targetDpi = 72;
+  returned.printableAreas[frontKey].widthInches = 1;
+  returned.defaults.packageOptions.selectedMockupIndices.push(99);
+
+  assert.equal(profile.thresholds.targetDpi, 300);
+  assert.equal(profile.printableAreas[frontKey].widthInches, 15);
+  assert.deepEqual(profile.defaults.packageOptions.selectedMockupIndices, [1, 2, 6]);
+});
+
 test('archives non-default profiles immutably while keeping the default', () => {
   const defaultProfile = profileFixture('default', 'Default', 100);
   const other = profileFixture('other', 'Other', 101);
@@ -419,6 +501,26 @@ test('archives non-default profiles immutably while keeping the default', () => 
   assert.ok((archived.profiles[1].archivedAt ?? 0) >= other.updatedAt);
   assert.deepEqual(store, snapshot);
   assert.notEqual(archived.profiles[0], store.profiles[0]);
+});
+
+test('ignores a replacement when archiving a non-default profile', () => {
+  const defaultProfile = profileFixture('default', 'Default', 100);
+  const archivedTarget = profileFixture('target', 'Target', 101);
+  const suppliedReplacement = profileFixture('replacement', 'Replacement', 102);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: defaultProfile.id,
+    profiles: [defaultProfile, archivedTarget, suppliedReplacement],
+  };
+
+  const archived = archiveProfile(
+    store,
+    archivedTarget.id,
+    suppliedReplacement.id,
+  );
+
+  assert.equal(archived.defaultProfileId, defaultProfile.id);
+  assert.notEqual(archived.profiles[1].archivedAt, null);
 });
 
 test('requires and applies an active replacement when archiving the default', () => {
@@ -576,6 +678,28 @@ test('imports divergent same-ID same-revision profiles as independent conflict c
   assert.equal(copy.revision, 1);
   assert.equal(copy.name, 'Incoming name (conflict)');
   assert.deepEqual(result.skippedIds, []);
+});
+
+test('normalizes archived same-revision conflicts into active fresh duplicates', () => {
+  const local = profileFixture('archived-conflict', 'Local', 100, 3);
+  const incoming = {
+    ...structuredClone(local),
+    name: 'Archived incoming',
+    createdAt: 1,
+    updatedAt: 2,
+    archivedAt: 3,
+  };
+  const beforeImport = Date.now();
+  const result = importProductionProfiles(exportProductionProfiles([incoming]), [local]);
+  const copy = result.profiles[1];
+
+  assert.notEqual(copy.id, incoming.id);
+  assert.equal(copy.revision, 1);
+  assert.equal(copy.name, 'Archived incoming (conflict)');
+  assert.equal(copy.archivedAt, null);
+  assert.ok(copy.createdAt >= beforeImport);
+  assert.ok(copy.updatedAt >= beforeImport);
+  assert.equal(copy.createdAt, copy.updatedAt);
 });
 
 test('replaces newer revisions only when confirmed and skips declined or older revisions', () => {

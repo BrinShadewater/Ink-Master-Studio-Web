@@ -496,12 +496,9 @@ export const importProductionProfiles = (
       if (stableSerialize(incoming) === stableSerialize(local)) {
         skippedIds.push(incoming.id);
       } else {
-        merged.push({
-          ...cloneProfile(incoming),
-          id: createId('profile'),
-          revision: 1,
-          name: `${incoming.name} (conflict)`,
-        });
+        const conflict = duplicateProductionProfile(incoming);
+        conflict.name = `${incoming.name} (conflict)`;
+        merged.push(conflict);
       }
       continue;
     }
