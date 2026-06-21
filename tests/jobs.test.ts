@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 
 import {
   applyProductionProfileToJob,
+  applyProductionProfileTransitionToJob,
   createStudioJob,
   duplicateStudioJob,
   migrateStudioJob,
@@ -26,7 +27,7 @@ const customProfile = () => {
   profile.defaults.packageOptions.namingPattern = '{order}_{placement}_custom';
   profile.defaults.packageOptions.selectedMockupIndices = [0, 4];
   profile.defaults.packageOptions.includeMockups = true;
-  profile.defaults.packageOptions.includeUnderbase = false;
+  profile.defaults.packageOptions.includeUnderbase = true;
   return profile;
 };
 
@@ -244,6 +245,24 @@ test('applies a production profile as one immutable job revision while preservin
   assert.notEqual(
     applied.packageOptions.selectedMockupIndices,
     nextProfile.defaults.packageOptions.selectedMockupIndices,
+  );
+});
+
+test('applies the complete profile transition once and resets acknowledgement', () => {
+  const source = createStudioJob('Complete profile transition');
+  source.revision = 7;
+  source.acknowledgedPreflightRevision = 7;
+
+  const applied = applyProductionProfileTransitionToJob(source, customProfile());
+
+  assert.equal(applied.revision, 8);
+  assert.equal(applied.acknowledgedPreflightRevision, null);
+  assert.equal(applied.productionProfile.profileRevision, 4);
+  assert.equal(applied.settings.format, OutputFormat.PDF);
+  assert.equal(applied.printSpecification.method, 'DTF');
+  assert.equal(
+    applied.placements[applied.activePlacementKey].itemType,
+    applied.settings.itemType,
   );
 });
 

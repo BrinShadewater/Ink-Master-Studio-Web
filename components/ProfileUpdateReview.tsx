@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { AppliedProductionProfile, ProductionProfile } from '../types';
 import { describeProfileChanges } from '../services/productionProfiles';
+import { useAccessibleDialog } from './useAccessibleDialog';
 
 interface ProfileUpdateReviewProps {
   applied: AppliedProductionProfile;
@@ -16,8 +17,15 @@ export const ProfileUpdateReview: React.FC<ProfileUpdateReviewProps> = ({
   onCancel,
 }) => {
   const groups = describeProfileChanges(applied.snapshot, source);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const closeDialog = useCallback(() => onCancel(), [onCancel]);
+  const dialogRef = useAccessibleDialog({
+    open: true,
+    onClose: closeDialog,
+    initialFocusRef: cancelButtonRef,
+  });
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="profile-update-title">
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="profile-update-title">
       <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl shadow-black/60">
         <header className="border-b border-slate-800 px-5 py-4">
           <h2 id="profile-update-title" className="text-lg font-black text-white">Review profile revision</h2>
@@ -41,7 +49,7 @@ export const ProfileUpdateReview: React.FC<ProfileUpdateReviewProps> = ({
           </p>
         </div>
         <footer className="flex flex-col-reverse gap-2 border-t border-slate-800 px-5 py-4 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-300 hover:border-slate-500">Cancel</button>
+          <button ref={cancelButtonRef} type="button" onClick={onCancel} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-300 hover:border-slate-500">Cancel</button>
           <button type="button" onClick={onApply} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-500">Apply profile revision</button>
         </footer>
       </div>

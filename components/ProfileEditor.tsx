@@ -7,7 +7,10 @@ import {
   ProductionThresholds,
   ProfileValidationError,
 } from '../types';
-import { parseSelectedMockupIndices } from '../services/productionProfiles';
+import {
+  normalizeProfileUnderbase,
+  parseSelectedMockupIndices,
+} from '../services/productionProfiles';
 
 interface ProfileEditorProps {
   profile: ProductionProfile;
@@ -15,6 +18,7 @@ interface ProfileEditorProps {
   onChange: (profile: ProductionProfile) => void;
   onSave: () => void;
   onCancel: () => void;
+  saveDisabledReason?: string | null;
 }
 
 const inputClassName =
@@ -118,6 +122,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   onChange,
   onSave,
   onCancel,
+  saveDisabledReason,
 }) => {
   const updateThreshold = (
     field: keyof ProductionThresholds,
@@ -195,7 +200,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const nameInvalid = validationErrors.some((error) => error.field === 'name');
   const canSave = profile.name.trim().length > 0
     && validationErrors.length === 0
-    && selectedIndicesDraftError === null;
+    && selectedIndicesDraftError === null
+    && !saveDisabledReason;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -307,7 +313,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           <h3 id="profile-output-heading" className="text-sm font-black text-white">Artwork defaults</h3>
           <div className="grid gap-2 sm:grid-cols-2">
             <BooleanInput field="defaults.preserveTransparency" label="Preserve transparency" checked={profile.defaults.preserveTransparency} errors={validationErrors} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, preserveTransparency: checked } })} />
-            <BooleanInput field="defaults.includeUnderbase" label="Include underbase" checked={profile.defaults.includeUnderbase} errors={validationErrors} onChange={(checked) => onChange({ ...profile, defaults: { ...profile.defaults, includeUnderbase: checked } })} />
+            <BooleanInput field="defaults.includeUnderbase" label="Include underbase" checked={profile.defaults.includeUnderbase} errors={validationErrors} onChange={(checked) => onChange(normalizeProfileUnderbase(profile, checked))} />
           </div>
         </section>
 
@@ -381,7 +387,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <BooleanInput field="defaults.packageOptions.includePrintMaster" label="Include print master" checked={profile.defaults.packageOptions.includePrintMaster} errors={validationErrors} onChange={(checked) => updatePackageOption('includePrintMaster', checked)} />
             <BooleanInput field="defaults.packageOptions.includeProductionPdf" label="Include production PDF" checked={profile.defaults.packageOptions.includeProductionPdf} errors={validationErrors} onChange={(checked) => updatePackageOption('includeProductionPdf', checked)} />
             <BooleanInput field="defaults.packageOptions.includeMockups" label="Include mockups" checked={profile.defaults.packageOptions.includeMockups} errors={validationErrors} onChange={(checked) => updatePackageOption('includeMockups', checked)} />
-            <BooleanInput field="defaults.packageOptions.includeUnderbase" label="Package includes underbase" checked={profile.defaults.packageOptions.includeUnderbase} errors={validationErrors} onChange={(checked) => updatePackageOption('includeUnderbase', checked)} />
+            <BooleanInput field="defaults.packageOptions.includeUnderbase" label="Package includes underbase" checked={profile.defaults.packageOptions.includeUnderbase} errors={validationErrors} onChange={(checked) => onChange(normalizeProfileUnderbase(profile, checked))} />
             <BooleanInput field="defaults.packageOptions.includeSummary" label="Include summary" checked={profile.defaults.packageOptions.includeSummary} errors={validationErrors} onChange={(checked) => updatePackageOption('includeSummary', checked)} />
             <BooleanInput field="defaults.packageOptions.includeManifest" label="Include manifest" checked={profile.defaults.packageOptions.includeManifest} errors={validationErrors} onChange={(checked) => updatePackageOption('includeManifest', checked)} />
           </div>
@@ -389,6 +395,9 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       </div>
 
       <footer className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur sm:flex-row sm:justify-end sm:px-6">
+        {saveDisabledReason && (
+          <p className="self-center text-xs text-slate-500 sm:mr-auto">{saveDisabledReason}</p>
+        )}
         <button type="button" onClick={onCancel} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-300 hover:border-slate-500 hover:text-white">Cancel</button>
         <button type="button" disabled={!canSave} onClick={onSave} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">Save profile</button>
       </footer>

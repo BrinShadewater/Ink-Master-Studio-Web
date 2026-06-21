@@ -3,7 +3,11 @@ import {
   DEFAULT_PROOF_BRANDING,
   DEFAULT_SETTINGS,
 } from '../constants';
-import { DEFAULT_PLACEMENT, placementVariantKey } from './placement';
+import {
+  DEFAULT_PLACEMENT,
+  placementVariantKey,
+  synchronizeJobProductionState,
+} from './placement';
 import {
   createProductionProfile,
   snapshotProductionProfile,
@@ -225,6 +229,18 @@ export const applyProductionProfileToJob = (
     },
     packageOptions: packageOptionsFromProfile(profile),
   });
+};
+
+export const applyProductionProfileTransitionToJob = (
+  job: StudioJob,
+  profile: ProductionProfile,
+): StudioJob => {
+  const applied = applyProductionProfileToJob(job, profile);
+  return synchronizeJobProductionState(
+    applied,
+    applied.settings,
+    profile,
+  ).job;
 };
 
 export const duplicateStudioJob = (job: StudioJob): StudioJob => {

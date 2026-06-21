@@ -50,6 +50,10 @@ export const printableAreaKey = (
 const REQUIRED_PRINTABLE_AREA_KEYS = Object.values(ItemType).flatMap((itemType) =>
   LOCATIONS.map((location) => printableAreaKey(itemType, location)));
 
+export const isProductionProfileImportFileSizeAllowed = (
+  sizeBytes: number,
+): boolean => sizeBytes <= 5 * 1024 * 1024;
+
 export const createDefaultPrintableAreas = (): Record<string, PrintableArea> => {
   const printableAreas: Record<string, PrintableArea> = {};
   for (const itemType of Object.values(ItemType)) {
@@ -127,6 +131,37 @@ export const reviseProductionProfile = (
   revision: profile.revision + 1,
   createdAt: profile.createdAt,
   updatedAt: Date.now(),
+});
+
+const editableProfileContent = (profile: ProductionProfile) => ({
+  name: profile.name,
+  description: profile.description,
+  printerName: profile.printerName,
+  method: profile.method,
+  thresholds: profile.thresholds,
+  printableAreas: profile.printableAreas,
+  defaults: profile.defaults,
+});
+
+export const productionProfilesHaveSameEditableContent = (
+  left: ProductionProfile,
+  right: ProductionProfile,
+): boolean => stableSerialize(editableProfileContent(left))
+  === stableSerialize(editableProfileContent(right));
+
+export const normalizeProfileUnderbase = (
+  profile: ProductionProfile,
+  includeUnderbase: boolean,
+): ProductionProfile => ({
+  ...structuredClone(profile),
+  defaults: {
+    ...structuredClone(profile.defaults),
+    includeUnderbase,
+    packageOptions: {
+      ...structuredClone(profile.defaults.packageOptions),
+      includeUnderbase,
+    },
+  },
 });
 
 export type ProfileUpdateStatus =
@@ -470,6 +505,15 @@ export const validateProductionProfile = (
           );
         }
       }
+      if (
+        typeof defaults.includeUnderbase === 'boolean'
+        && typeof packageOptions.includeUnderbase === 'boolean'
+        && defaults.includeUnderbase !== packageOptions.includeUnderbase
+      ) {
+        const message = 'Underbase defaults must match.';
+        addError('defaults.includeUnderbase', message);
+        addError('defaults.packageOptions.includeUnderbase', message);
+      }
 
       const selectedMockupIndices = packageOptions.selectedMockupIndices;
       if (
@@ -698,6 +742,11 @@ export const importProductionProfiles = (
     errors.push({
       field: 'profiles',
       message: 'Portable profile envelope must contain a profiles array.',
+    });
+  } else if (parsed.profiles.length > 500) {
+    errors.push({
+      field: 'profiles',
+      message: 'Portable profile files may contain at most 500 profiles.',
     });
   }
 

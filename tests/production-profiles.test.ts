@@ -8,8 +8,11 @@ import {
   exportProductionProfiles,
   getProfileUpdateState,
   importProductionProfiles,
+  isProductionProfileImportFileSizeAllowed,
+  normalizeProfileUnderbase,
   parseSelectedMockupIndices,
   printableAreaKey,
+  productionProfilesHaveSameEditableContent,
   reviseProductionProfile,
   snapshotProductionProfile,
   validateProductionProfile,
@@ -21,6 +24,7 @@ import {
   getDefaultProfile,
   loadProfileStore,
   migrateProfileStore,
+  proposeImportedProfileStore,
   replaceProfileInStore,
   saveProfileStore,
   setDefaultProfile,
@@ -437,6 +441,48 @@ test('rejects incomplete and invalid selected mockup index drafts', () => {
   }
 });
 
+test('compares only editable production profile content deeply', () => {
+  const original = profileFixture('editable-equality', 'Editable equality', 100, 2);
+  const metadataOnly = {
+    ...structuredClone(original),
+    revision: 9,
+    createdAt: 1,
+    updatedAt: 999,
+  };
+  const nestedChange = structuredClone(metadataOnly);
+  nestedChange.defaults.packageOptions.includeSummary = false;
+
+  assert.equal(
+    productionProfilesHaveSameEditableContent(original, metadataOnly),
+    true,
+  );
+  assert.equal(
+    productionProfilesHaveSameEditableContent(original, nestedChange),
+    false,
+  );
+});
+
+test('normalizes both underbase defaults together without mutation', () => {
+  const profile = createProductionProfile('Underbase');
+  const snapshot = structuredClone(profile);
+  const normalized = normalizeProfileUnderbase(profile, true);
+
+  assert.equal(normalized.defaults.includeUnderbase, true);
+  assert.equal(normalized.defaults.packageOptions.includeUnderbase, true);
+  assert.deepEqual(profile, snapshot);
+});
+
+test('rejects profiles whose underbase defaults disagree on both fields', () => {
+  const profile = createProductionProfile('Mismatched underbase');
+  profile.defaults.includeUnderbase = true;
+  profile.defaults.packageOptions.includeUnderbase = false;
+
+  const fields = validateProductionProfile(profile).errors.map((error) => error.field);
+
+  assert.ok(fields.includes('defaults.includeUnderbase'));
+  assert.ok(fields.includes('defaults.packageOptions.includeUnderbase'));
+});
+
 test('migrates empty storage to exactly one valid default Standard DTG profile', () => {
   const store = migrateProfileStore(null);
 
@@ -691,6 +737,52 @@ test('sets only active profiles as the immutable default', () => {
   assert.throws(() => setDefaultProfile(store, archived.id), /must be active/i);
 });
 
+test('proposes a deterministic replacement when import archives the current default', () => {
+  const currentDefault = profileFixture('current-default', 'Current', 100);
+  const newestZ = profileFixture('z-newest', 'Newest Z', 200);
+  const newestA = profileFixture('a-newest', 'Newest A', 200);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: currentDefault.id,
+    profiles: [currentDefault, newestZ, newestA],
+  };
+  const imported = [
+    { ...structuredClone(currentDefault), revision: 2, updatedAt: 201, archivedAt: 201 },
+    newestZ,
+    newestA,
+  ];
+
+  const proposal = proposeImportedProfileStore(store, imported);
+
+  assert.equal(proposal.status, 'replacement-required');
+  if (proposal.status === 'replacement-required') {
+    assert.equal(proposal.replacement.id, newestA.id);
+    assert.equal(proposal.store.defaultProfileId, currentDefault.id);
+  }
+});
+
+test('keeps a valid imported default and rejects import with no active replacement', () => {
+  const currentDefault = profileFixture('kept-default', 'Kept', 100);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: currentDefault.id,
+    profiles: [currentDefault],
+  };
+  const ready = proposeImportedProfileStore(store, [currentDefault]);
+  const blocked = proposeImportedProfileStore(store, [{
+    ...structuredClone(currentDefault),
+    revision: 2,
+    updatedAt: 101,
+    archivedAt: 101,
+  }]);
+
+  assert.equal(ready.status, 'ready');
+  assert.deepEqual(blocked, {
+    status: 'error',
+    message: 'Imported profiles contain no active replacement for the current default.',
+  });
+});
+
 test('ignores a replacement when archiving a non-default profile', () => {
   const defaultProfile = profileFixture('default', 'Default', 100);
   const archivedTarget = profileFixture('target', 'Target', 101);
@@ -806,6 +898,28 @@ test('rejects invalid envelopes and invalid profiles atomically with all errors'
   assert.deepEqual(invalidIncoming.profiles, localSnapshot);
   assert.deepEqual(invalidIncoming.skippedIds, []);
   assert.deepEqual(locals, localSnapshot);
+});
+
+test('rejects portable envelopes over 500 profiles atomically', () => {
+  const local = profileFixture('bounded-local', 'Local', 100);
+  const incoming = Array.from({ length: 501 }, (_, index) =>
+    profileFixture(`bounded-${index}`, `Bounded ${index}`, 101 + index));
+  const result = importProductionProfiles(
+    exportProductionProfiles(incoming),
+    [local],
+  );
+
+  assert.deepEqual(result.profiles, [local]);
+  assert.deepEqual(result.skippedIds, []);
+  assert.deepEqual(result.errors, [{
+    field: 'profiles',
+    message: 'Portable profile files may contain at most 500 profiles.',
+  }]);
+});
+
+test('allows profile imports through 5 MB and rejects larger files', () => {
+  assert.equal(isProductionProfileImportFileSizeAllowed(5 * 1024 * 1024), true);
+  assert.equal(isProductionProfileImportFileSizeAllowed(5 * 1024 * 1024 + 1), false);
 });
 
 test('rejects missing, non-string, and invalid exported timestamps atomically', () => {

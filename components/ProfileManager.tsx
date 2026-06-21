@@ -1,21 +1,24 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ProductionProfile, ProductionProfileStore } from '../types';
 import {
   createProductionProfile,
   duplicateProductionProfile,
   exportProductionProfiles,
   importProductionProfiles,
+  isProductionProfileImportFileSizeAllowed,
+  productionProfilesHaveSameEditableContent,
   reviseProductionProfile,
   validateProductionProfile,
 } from '../services/productionProfiles';
 import {
   addProfileToStore,
   archiveProfile,
-  migrateProfileStore,
+  proposeImportedProfileStore,
   replaceProfileInStore,
   setDefaultProfile,
 } from '../services/profileStorage';
 import { ProfileEditor } from './ProfileEditor';
+import { useAccessibleDialog } from './useAccessibleDialog';
 
 interface ProfileManagerProps {
   store: ProductionProfileStore;
@@ -66,6 +69,8 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   const [managerError, setManagerError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const archiveCancelRef = useRef<HTMLButtonElement>(null);
   const visibleProfiles = store.profiles.filter(
     (profile) => showArchived || profile.archivedAt === null,
   );
@@ -74,6 +79,30 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
     () => editor ? validateProductionProfile(editor.draft) : { valid: true, errors: [] },
     [editor],
   );
+  const editorUnchanged = Boolean(
+    editor?.mode === 'edit'
+    && editor.original
+    && productionProfilesHaveSameEditableContent(editor.original, editor.draft),
+  );
+  const closeMainDialog = useCallback(() => {
+    if (editor) setEditor(null);
+    else onClose();
+  }, [editor, onClose]);
+  const cancelArchiveDialog = useCallback(() => {
+    setArchiveTargetId(null);
+    setReplacementId('');
+  }, []);
+  const managerDialogRef = useAccessibleDialog({
+    open: true,
+    topmost: archiveTargetId === null,
+    onClose: closeMainDialog,
+    initialFocusRef: closeButtonRef,
+  });
+  const archiveDialogRef = useAccessibleDialog({
+    open: archiveTargetId !== null,
+    onClose: cancelArchiveDialog,
+    initialFocusRef: archiveCancelRef,
+  });
 
   const reportError = (message: string) => {
     setManagerError(message);
@@ -97,7 +126,12 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   };
 
   const saveEditor = () => {
-    if (!editor || !validation.valid || !editor.draft.name.trim()) return;
+    if (
+      !editor
+      || !validation.valid
+      || !editor.draft.name.trim()
+      || editorUnchanged
+    ) return;
     try {
       const next = editor.mode === 'create'
         ? addProfileToStore(store, editor.draft)
@@ -170,6 +204,10 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   const handleImport = async (file: File) => {
     setImportErrors([]);
     setManagerError(null);
+    if (!isProductionProfileImportFileSizeAllowed(file.size)) {
+      setImportErrors(['profiles: Production profile files must be 5 MB or smaller.']);
+      return;
+    }
     try {
       const result = importProductionProfiles(
         await file.text(),
@@ -182,12 +220,20 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
         setImportErrors(result.errors.map((error) => `${error.field}: ${error.message}`));
         return;
       }
-      const repaired = migrateProfileStore(JSON.stringify({
-        schemaVersion: 1,
-        defaultProfileId: store.defaultProfileId,
-        profiles: result.profiles,
-      }));
-      commitStore(repaired);
+      const proposal = proposeImportedProfileStore(store, result.profiles);
+      if (proposal.status === 'error') {
+        setImportErrors([`profiles: ${proposal.message}`]);
+        return;
+      }
+      if (proposal.status === 'replacement-required') {
+        const confirmed = window.confirm(
+          `The imported revision archives or removes the current default. Set "${proposal.replacement.name}" (r${proposal.replacement.revision}) as the new default?`,
+        );
+        if (!confirmed) return;
+        commitStore(setDefaultProfile(proposal.store, proposal.replacement.id));
+        return;
+      }
+      commitStore(proposal.store);
     } catch (error) {
       setImportErrors([
         error instanceof Error ? error.message : 'The profile file could not be imported.',
@@ -196,7 +242,8 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="profile-manager-title">
+    <>
+    <div ref={managerDialogRef} tabIndex={-1} inert={archiveTargetId !== null ? true : undefined} aria-hidden={archiveTargetId !== null || undefined} className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="profile-manager-title">
       <div className="flex h-dvh w-full flex-col overflow-hidden border-slate-700 bg-slate-950 shadow-2xl shadow-black/60 sm:h-auto sm:max-h-[92dvh] sm:max-w-5xl sm:rounded-2xl sm:border">
         <header className="flex items-center justify-between gap-4 border-b border-slate-800 px-4 py-4 sm:px-6">
           <div className="min-w-0">
@@ -207,7 +254,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
               {editor ? 'Profile changes remain a draft until they save locally.' : 'Manage printer defaults, printable areas, and production output.'}
             </p>
           </div>
-          <button type="button" onClick={editor ? () => setEditor(null) : onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+          <button ref={closeButtonRef} type="button" onClick={closeMainDialog} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
             {editor ? 'Back' : 'Close'}
           </button>
         </header>
@@ -230,6 +277,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
             onChange={(draft) => setEditor((current) => current ? { ...current, draft } : current)}
             onSave={saveEditor}
             onCancel={() => setEditor(null)}
+            saveDisabledReason={editorUnchanged ? 'No profile changes to save.' : null}
           />
         ) : (
           <>
@@ -303,9 +351,9 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
           </>
         )}
       </div>
-
+    </div>
       {archiveTargetId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="archive-default-title">
+        <div ref={archiveDialogRef} tabIndex={-1} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="archive-default-title">
           <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-950 p-5 shadow-2xl">
             <h3 id="archive-default-title" className="text-base font-black text-white">Choose a replacement default</h3>
             <p className="mt-2 text-xs leading-relaxed text-slate-400">The current default cannot be archived until another active profile becomes the default.</p>
@@ -318,12 +366,12 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
               </select>
             </label>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => { setArchiveTargetId(null); setReplacementId(''); }} className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300">Cancel</button>
+              <button ref={archiveCancelRef} type="button" onClick={cancelArchiveDialog} className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300">Cancel</button>
               <button type="button" onClick={confirmDefaultArchive} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500">Set replacement and archive</button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };

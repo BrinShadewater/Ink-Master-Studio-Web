@@ -34,6 +34,45 @@ const selectLatestActiveProfile = (
     .sort((left, right) =>
       right.updatedAt - left.updatedAt || left.id.localeCompare(right.id))[0];
 
+export type ImportedProfileStoreProposal =
+  | { status: 'ready'; store: ProductionProfileStore }
+  | {
+      status: 'replacement-required';
+      store: ProductionProfileStore;
+      replacement: ProductionProfile;
+    }
+  | { status: 'error'; message: string };
+
+export const proposeImportedProfileStore = (
+  currentStore: ProductionProfileStore,
+  importedProfiles: ProductionProfile[],
+): ImportedProfileStoreProposal => {
+  const profiles = importedProfiles.map(cloneProfile);
+  const proposedStore: ProductionProfileStore = {
+    schemaVersion: 1,
+    defaultProfileId: currentStore.defaultProfileId,
+    profiles,
+  };
+  const currentDefault = profiles.find(
+    (profile) =>
+      profile.id === currentStore.defaultProfileId
+      && profile.archivedAt === null,
+  );
+  if (currentDefault) return { status: 'ready', store: proposedStore };
+  const replacement = selectLatestActiveProfile(profiles);
+  if (!replacement) {
+    return {
+      status: 'error',
+      message: 'Imported profiles contain no active replacement for the current default.',
+    };
+  }
+  return {
+    status: 'replacement-required',
+    store: proposedStore,
+    replacement: cloneProfile(replacement),
+  };
+};
+
 export const migrateProfileStore = (
   raw: string | null,
 ): ProductionProfileStore => {

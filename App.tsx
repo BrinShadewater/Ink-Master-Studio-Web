@@ -38,7 +38,7 @@ import {
 import { analyzeArtwork } from './services/artworkAnalysis';
 import { recommendRecipe, resolveRecipeSettings } from './services/recipes';
 import {
-  applyProductionProfileToJob,
+  applyProductionProfileTransitionToJob,
   createStudioJob,
   duplicateStudioJob,
   touchStudioJob,
@@ -330,18 +330,15 @@ const App: React.FC = () => {
 
   const applyProfileToCurrentJob = (profile: ProductionProfile) => {
     if (!currentJob || profile.archivedAt !== null) return;
-    const applied = applyProductionProfileToJob(currentJob, profile);
-    const synchronized = transitionJobProductionState(
-      applied,
-      applied.settings,
-      profile,
-      true,
-    ).job;
-    setCurrentJob(synchronized);
-    addToHistory({
+    const transitioned = applyProductionProfileTransitionToJob(currentJob, profile);
+    setCurrentJob(transitioned);
+    const nextState = {
       ...appState,
-      settings: structuredClone(synchronized.settings),
-    });
+      settings: structuredClone(transitioned.settings),
+    };
+    setHistory([nextState]);
+    setHistoryIndex(0);
+    setAppState(nextState);
     setProfileUpdateSource(null);
   };
 
