@@ -126,6 +126,114 @@ export const validateProductionProfile = (
     return { valid: false, errors };
   }
 
+  if (profile.schemaVersion !== 1) {
+    addError('schemaVersion', 'Schema version must be 1.');
+  }
+  if (typeof profile.id !== 'string' || profile.id.trim().length === 0) {
+    addError('id', 'Profile ID must be a non-empty string.');
+  }
+  if (
+    typeof profile.revision !== 'number'
+    || !Number.isInteger(profile.revision)
+    || profile.revision < 1
+  ) {
+    addError('revision', 'Profile revision must be an integer of at least 1.');
+  }
+  if (typeof profile.name !== 'string' || profile.name.trim().length === 0) {
+    addError('name', 'Profile name must be a non-empty string.');
+  }
+  if (typeof profile.description !== 'string') {
+    addError('description', 'Profile description must be a string.');
+  }
+  if (typeof profile.printerName !== 'string') {
+    addError('printerName', 'Printer name must be a string.');
+  }
+  if (profile.method !== 'DTG' && profile.method !== 'DTF') {
+    addError('method', 'Production method must be DTG or DTF.');
+  }
+  if (!isFiniteNumber(profile.createdAt) || profile.createdAt < 0) {
+    addError('createdAt', 'Created timestamp must be a nonnegative finite number.');
+  }
+  if (!isFiniteNumber(profile.updatedAt) || profile.updatedAt < 0) {
+    addError('updatedAt', 'Updated timestamp must be a nonnegative finite number.');
+  }
+  if (
+    profile.archivedAt !== null
+    && (!isFiniteNumber(profile.archivedAt) || profile.archivedAt < 0)
+  ) {
+    addError(
+      'archivedAt',
+      'Archived timestamp must be null or a nonnegative finite number.',
+    );
+  }
+
+  const defaults = profile.defaults;
+  if (!isRecord(defaults)) {
+    addError('defaults', 'Production defaults must be an object.');
+  } else {
+    if (!Object.values(OutputFormat).includes(defaults.format as OutputFormat)) {
+      addError('defaults.format', 'Default format must be a supported output format.');
+    }
+    if (typeof defaults.preserveTransparency !== 'boolean') {
+      addError(
+        'defaults.preserveTransparency',
+        'Preserve transparency must be a boolean.',
+      );
+    }
+    if (typeof defaults.includeUnderbase !== 'boolean') {
+      addError('defaults.includeUnderbase', 'Include underbase must be a boolean.');
+    }
+
+    const packageOptions = defaults.packageOptions;
+    if (!isRecord(packageOptions)) {
+      addError(
+        'defaults.packageOptions',
+        'Production package options must be an object.',
+      );
+    } else {
+      if (typeof packageOptions.namingPattern !== 'string') {
+        addError(
+          'defaults.packageOptions.namingPattern',
+          'Naming pattern must be a string.',
+        );
+      }
+
+      const booleanOptionFields = [
+        'includePrintMaster',
+        'includeProductionPdf',
+        'includeMockups',
+        'includeUnderbase',
+        'includeSummary',
+        'includeManifest',
+      ] as const;
+      for (const field of booleanOptionFields) {
+        if (typeof packageOptions[field] !== 'boolean') {
+          addError(
+            `defaults.packageOptions.${field}`,
+            `${field} must be a boolean.`,
+          );
+        }
+      }
+
+      const selectedMockupIndices = packageOptions.selectedMockupIndices;
+      if (
+        !Array.isArray(selectedMockupIndices)
+        || !selectedMockupIndices.every(
+          (value) =>
+            typeof value === 'number'
+            && Number.isFinite(value)
+            && Number.isInteger(value)
+            && value >= 0,
+        )
+      ) {
+        addError(
+          'defaults.packageOptions.selectedMockupIndices',
+          'Selected mockup indices must be nonnegative finite integers.',
+        );
+      }
+    }
+  }
+
   const thresholds = profile.thresholds;
   if (!isRecord(thresholds)) {
     addError('thresholds', 'Production thresholds must be an object.');
@@ -186,7 +294,11 @@ export const validateProductionProfile = (
   if (!isRecord(printableAreas)) {
     addError('printableAreas', 'Printable areas must be an object.');
   } else {
-    for (const [key, area] of Object.entries(printableAreas)) {
+    const areaEntries = Object.entries(printableAreas);
+    if (areaEntries.length === 0) {
+      addError('printableAreas', 'At least one printable area is required.');
+    }
+    for (const [key, area] of areaEntries) {
       if (!isRecord(area)) {
         addError(`printableAreas.${key}`, 'Printable area must be an object.');
         continue;

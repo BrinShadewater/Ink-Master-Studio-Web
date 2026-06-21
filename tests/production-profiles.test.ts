@@ -106,6 +106,105 @@ test('rejects non-finite threshold and printable area values', () => {
   assert.ok(fields.includes('printableAreas.HOODIE:back.xPercent'));
 });
 
+test('rejects missing or invalid production profile metadata', () => {
+  const invalid = {
+    ...createProductionProfile(),
+    schemaVersion: 2,
+    id: '',
+    revision: 0,
+    name: '',
+    description: null,
+    printerName: 42,
+    method: 'SCREEN_PRINT',
+    createdAt: Number.NaN,
+    updatedAt: -1,
+    archivedAt: Number.POSITIVE_INFINITY,
+    printableAreas: {},
+  };
+
+  const result = validateProductionProfile(invalid);
+  const fields = result.errors.map((error) => error.field);
+
+  assert.equal(result.valid, false);
+  assert.ok(fields.includes('schemaVersion'));
+  assert.ok(fields.includes('id'));
+  assert.ok(fields.includes('revision'));
+  assert.ok(fields.includes('name'));
+  assert.ok(fields.includes('description'));
+  assert.ok(fields.includes('printerName'));
+  assert.ok(fields.includes('method'));
+  assert.ok(fields.includes('createdAt'));
+  assert.ok(fields.includes('updatedAt'));
+  assert.ok(fields.includes('archivedAt'));
+  assert.ok(fields.includes('printableAreas'));
+});
+
+test('rejects malformed production defaults and package options', () => {
+  const invalid = {
+    ...createProductionProfile(),
+    defaults: {
+      format: 'TIFF',
+      preserveTransparency: 'yes',
+      includeUnderbase: null,
+      packageOptions: {
+        namingPattern: 42,
+        includePrintMaster: 'yes',
+        includeProductionPdf: null,
+        includeMockups: 1,
+        selectedMockupIndices: [0, -1, 1.5, Number.NaN],
+        includeUnderbase: 'no',
+        includeSummary: undefined,
+        includeManifest: {},
+      },
+    },
+  };
+
+  const result = validateProductionProfile(invalid);
+  const fields = result.errors.map((error) => error.field);
+
+  assert.equal(result.valid, false);
+  assert.ok(fields.includes('defaults.format'));
+  assert.ok(fields.includes('defaults.preserveTransparency'));
+  assert.ok(fields.includes('defaults.includeUnderbase'));
+  assert.ok(fields.includes('defaults.packageOptions.namingPattern'));
+  assert.ok(fields.includes('defaults.packageOptions.includePrintMaster'));
+  assert.ok(fields.includes('defaults.packageOptions.includeProductionPdf'));
+  assert.ok(fields.includes('defaults.packageOptions.includeMockups'));
+  assert.ok(fields.includes('defaults.packageOptions.selectedMockupIndices'));
+  assert.ok(fields.includes('defaults.packageOptions.includeUnderbase'));
+  assert.ok(fields.includes('defaults.packageOptions.includeSummary'));
+  assert.ok(fields.includes('defaults.packageOptions.includeManifest'));
+});
+
+test('rejects missing defaults and package option containers without throwing', () => {
+  const missingDefaults = {
+    ...createProductionProfile(),
+    defaults: null,
+  };
+  const missingPackageOptions = {
+    ...createProductionProfile(),
+    defaults: {
+      format: OutputFormat.PNG,
+      preserveTransparency: true,
+      includeUnderbase: false,
+      packageOptions: null,
+    },
+  };
+
+  assert.doesNotThrow(() => validateProductionProfile(missingDefaults));
+  assert.doesNotThrow(() => validateProductionProfile(missingPackageOptions));
+  assert.ok(
+    validateProductionProfile(missingDefaults).errors.some(
+      (error) => error.field === 'defaults',
+    ),
+  );
+  assert.ok(
+    validateProductionProfile(missingPackageOptions).errors.some(
+      (error) => error.field === 'defaults.packageOptions',
+    ),
+  );
+});
+
 test('wraps an immutable production profile snapshot with its applied revision', () => {
   const profile = createProductionProfile('Applied profile');
   const applied = snapshotProductionProfile(profile);
