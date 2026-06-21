@@ -13,8 +13,11 @@ import {
   placementToMockupPercent,
   placementVariantKey,
   storePlacementVariant,
+  synchronizeJobProductionState,
   validatePlacement,
 } from '../services/placement';
+import { DEFAULT_SETTINGS } from '../constants';
+import { createStudioJob } from '../services/jobModel';
 import {
   createProductionProfile,
   printableAreaKey,
@@ -365,4 +368,36 @@ test('conversion functions reject non-finite geometry before calculating percent
     ),
     /finite numeric values/i,
   );
+});
+
+test('synchronizes job settings and placement product through history changes', () => {
+  const profile = standardProfile();
+  const job = createStudioJob('History product', profile);
+  job.metadata.notes = 'preserve me';
+  job.settings = { ...DEFAULT_SETTINGS, itemType: ItemType.TSHIRT, grain: 17 };
+  const nextSettings = { ...job.settings, itemType: ItemType.HAT };
+
+  const synchronized = synchronizeJobProductionState(job, nextSettings, profile);
+  const activePlacement = synchronized.job.placements[synchronized.job.activePlacementKey];
+
+  assert.equal(synchronized.changed, true);
+  assert.equal(synchronized.job.settings.itemType, ItemType.HAT);
+  assert.equal(activePlacement.itemType, ItemType.HAT);
+  assert.equal(
+    synchronized.job.activePlacementKey,
+    placementVariantKey(ItemType.HAT, activePlacement.location, activePlacement.garmentSize),
+  );
+  assert.equal(synchronized.job.settings.grain, 17);
+  assert.equal(synchronized.job.metadata.notes, 'preserve me');
+  assert.equal(job.settings.itemType, ItemType.TSHIRT);
+});
+
+test('does not report a production-state change when job settings and placement already agree', () => {
+  const profile = standardProfile();
+  const job = createStudioJob('Already synchronized', profile);
+
+  const synchronized = synchronizeJobProductionState(job, job.settings, profile);
+
+  assert.equal(synchronized.changed, false);
+  assert.equal(synchronized.job, job);
 });

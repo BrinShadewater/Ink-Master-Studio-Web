@@ -6,7 +6,9 @@ import {
   PlacementPreset,
   PreflightFinding,
   PrintableArea,
+  ProcessingSettings,
   ProductionProfile,
+  StudioJob,
 } from '../types';
 import { printableAreaKey } from './productionProfiles';
 
@@ -209,6 +211,38 @@ export const ensurePlacementForProduct = (
       };
   const stored = storePlacementVariant(placements, placement);
   return { ...stored, placement };
+};
+
+export const synchronizeJobProductionState = (
+  job: StudioJob,
+  settings: ProcessingSettings,
+  profile: ProductionProfile,
+): { job: StudioJob; changed: boolean } => {
+  const synchronized = ensurePlacementForProduct(
+    job.placements,
+    job.activePlacementKey,
+    settings.itemType,
+    profile,
+  );
+  const activePlacement = job.placements[synchronized.activePlacementKey];
+  const settingsMatch = JSON.stringify(job.settings) === JSON.stringify(settings);
+  const placementMatches = activePlacement
+    && JSON.stringify(activePlacement) === JSON.stringify(synchronized.placement);
+  const keyMatches = job.activePlacementKey === synchronized.activePlacementKey;
+
+  if (settingsMatch && placementMatches && keyMatches) {
+    return { job, changed: false };
+  }
+
+  return {
+    changed: true,
+    job: {
+      ...job,
+      settings: structuredClone(settings),
+      activePlacementKey: synchronized.activePlacementKey,
+      placements: synchronized.placements,
+    },
+  };
 };
 
 export const applyPlacementPreset = (

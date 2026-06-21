@@ -46,6 +46,7 @@ import {
   placementToMockupPercent,
   placementVariantKey,
   storePlacementVariant,
+  synchronizeJobProductionState,
   validatePlacement,
 } from './services/placement';
 import { evaluatePreflight, getPreflightGate } from './services/preflight';
@@ -229,23 +230,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!currentJob) return;
-    const synchronized = ensurePlacementForProduct(
-      currentJob.placements,
-      currentJob.activePlacementKey,
-      settings.itemType,
-      activeProductionProfile,
-    );
-    const storedPlacement = currentJob.placements[synchronized.activePlacementKey];
-    if (
-      currentJob.activePlacementKey === synchronized.activePlacementKey
-      && storedPlacement?.itemType === settings.itemType
-    ) return;
-    setCurrentJob((job) => job ? touchStudioJob({
-      ...job,
-      activePlacementKey: synchronized.activePlacementKey,
-      placements: synchronized.placements,
-    }) : job);
-  }, [activeProductionProfile, currentJob?.activePlacementKey, currentJob?.id, settings.itemType]);
+    setCurrentJob((job) => {
+      if (!job) return job;
+      const synchronized = synchronizeJobProductionState(
+        job,
+        settings,
+        job.productionProfile.snapshot,
+      );
+      return synchronized.changed ? touchStudioJob(synchronized.job) : job;
+    });
+  }, [activeProductionProfile, currentJob?.activePlacementKey, currentJob?.id, settings]);
 
   useEffect(() => {
     const state = history[historyIndex];
@@ -306,19 +300,14 @@ const App: React.FC = () => {
     setAppState(next);
     if (commit) {
       addToHistory(next);
-      updateCurrentJob((job) => {
-        const synchronized = ensurePlacementForProduct(
-          job.placements,
-          job.activePlacementKey,
-          nextSettings.itemType,
+      setCurrentJob((job) => {
+        if (!job) return job;
+        const synchronized = synchronizeJobProductionState(
+          job,
+          nextSettings,
           job.productionProfile.snapshot,
         );
-        return {
-          ...job,
-          settings: nextSettings,
-          activePlacementKey: synchronized.activePlacementKey,
-          placements: synchronized.placements,
-        };
+        return synchronized.changed ? touchStudioJob(synchronized.job) : job;
       });
     }
   };
@@ -374,7 +363,7 @@ const App: React.FC = () => {
     const nextSettings = savedSettings ?? resolveRecipeSettings(recipeId, analysis, settings);
     setSelectedRecipeId(recipeId);
     handleSettingsChange(nextSettings, true);
-    updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId, settings: nextSettings }));
+    updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId }), false);
     setStage('prepare');
   };
 
@@ -396,7 +385,15 @@ const App: React.FC = () => {
       settings: { ...checkpoint.settings },
       hasUsedAi: appState.hasUsedAi,
     });
-    updateCurrentJob((job) => ({ ...job, settings: { ...checkpoint.settings } }));
+    setCurrentJob((job) => {
+      if (!job) return job;
+      const synchronized = synchronizeJobProductionState(
+        job,
+        checkpoint.settings,
+        job.productionProfile.snapshot,
+      );
+      return synchronized.changed ? touchStudioJob(synchronized.job) : job;
+    });
   };
 
   const handleOpenJob = async (job: StudioJob) => {
