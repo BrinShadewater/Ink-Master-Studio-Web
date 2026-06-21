@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { DEFAULT_PRINT_SPECIFICATION } from '../constants';
-import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, RecipeId } from '../types';
+import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, ProductionProfile, RecipeId } from '../types';
 import { analyzeArtwork } from '../services/artworkAnalysis';
 import { fileToBase64, processImage } from '../services/imageProcessing';
 import { evaluatePreflight } from '../services/preflight';
@@ -15,6 +15,7 @@ import {
 interface BatchProcessorProps {
   onClose: () => void;
   defaultSettings: ProcessingSettings;
+  productionProfile: ProductionProfile;
 }
 
 interface GuidedBatchItem {
@@ -40,7 +41,11 @@ const downloadBlob = (blob: Blob, filename: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
 };
 
-export const BatchProcessor: React.FC<BatchProcessorProps> = ({ onClose, defaultSettings }) => {
+export const BatchProcessor: React.FC<BatchProcessorProps> = ({
+  onClose,
+  defaultSettings,
+  productionProfile,
+}) => {
   const [items, setItems] = useState<GuidedBatchItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -55,7 +60,12 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({ onClose, default
       const analysis = await analyzeArtwork(dataUrl);
       const recommendation = recommendRecipe(analysis);
       const settings = resolveRecipeSettings(recommendation.recipeId, analysis, defaultSettings);
-      const findings = evaluatePreflight(analysis, DEFAULT_PRINT_SPECIFICATION, settings);
+      const findings = evaluatePreflight(
+        analysis,
+        DEFAULT_PRINT_SPECIFICATION,
+        settings,
+        productionProfile,
+      );
       updateItem(item.id, {
         status: 'processing',
         analysis,

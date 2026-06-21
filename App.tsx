@@ -9,6 +9,7 @@ import { StudioTopBar } from './components/StudioTopBar';
 import { VersionsPopover } from './components/VersionsPopover';
 import { WorkflowInspector } from './components/WorkflowInspector';
 import { Checkpoint } from './components/CheckpointBar';
+import { AppliedProductionProfileContext } from './components/PreflightPanel';
 import {
   ArtworkAnalysis,
   ExportHistoryEntry,
@@ -37,6 +38,8 @@ import { archiveJob, listJobs, saveJob } from './services/jobRepository';
 import { exportPortableJob, importPortableJob } from './services/portableJob';
 import { DEFAULT_PLACEMENT, mockupPercentToPlacement, placementToMockupPercent } from './services/placement';
 import { evaluatePreflight } from './services/preflight';
+import { getDefaultProfile, loadProfileStore } from './services/profileStorage';
+import { createProductionProfile, snapshotProductionProfile } from './services/productionProfiles';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { generateCustomerProof } from './services/proofBuilder';
 import {
@@ -89,6 +92,10 @@ const MOCKUP_FILES = [
   ['royal-blue', '/mockups/mockup-royalblue.png'],
 ] as const;
 
+const STANDARD_DTG_FALLBACK_PROFILE = createProductionProfile('Standard DTG');
+const STANDARD_DTG_FALLBACK_APPLIED = snapshotProductionProfile(STANDARD_DTG_FALLBACK_PROFILE);
+const BATCH_DEFAULT_PROFILE = getDefaultProfile(loadProfileStore());
+
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -119,10 +126,18 @@ const App: React.FC = () => {
   const canRedo = historyIndex < history.length - 1;
   const dpiInfo = analysis?.printQuality ?? null;
   const printSpecification = currentJob?.printSpecification ?? DEFAULT_PRINT_SPECIFICATION;
+  const appliedProductionProfile = currentJob?.productionProfile ?? STANDARD_DTG_FALLBACK_APPLIED;
   const activePlacement = currentJob?.placements[currentJob.activePlacementKey] ?? DEFAULT_PLACEMENT;
   const preflightFindings = useMemo(
-    () => analysis ? evaluatePreflight(analysis, printSpecification, settings) : [],
-    [analysis, printSpecification, settings],
+    () => analysis
+      ? evaluatePreflight(
+          analysis,
+          printSpecification,
+          settings,
+          appliedProductionProfile.snapshot,
+        )
+      : [],
+    [analysis, appliedProductionProfile.snapshot, printSpecification, settings],
   );
   const preflightAcknowledged = Boolean(
     currentJob && currentJob.acknowledgedPreflightRevision === currentJob.revision,
@@ -531,7 +546,11 @@ const App: React.FC = () => {
         </main>
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
-            <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
+            <BatchProcessor
+              onClose={() => setShowBatch(false)}
+              defaultSettings={settings}
+              productionProfile={currentJob?.productionProfile.snapshot ?? BATCH_DEFAULT_PROFILE}
+            />
           </Suspense>
         )}
         {showJobs && (
@@ -581,52 +600,54 @@ const App: React.FC = () => {
 
       <main className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(315px,44dvh)] lg:grid-cols-[370px_minmax(0,1fr)] lg:grid-rows-1">
         <div className="order-2 min-h-0 lg:order-1">
-          <WorkflowInspector
-            stage={stage}
-            selectedRecipeId={selectedRecipeId}
-            analysis={analysis}
-            recommendation={recommendation}
-            settings={settings}
-            palette={palette}
-            exportHistory={exportHistory}
-            hasProcessedResult={Boolean(processedResult)}
-            lowResolutionAcknowledged={lowResolutionAcknowledged}
-            isEyedropperMode={isEyedropperMode}
-            printSpecification={printSpecification}
-            placement={activePlacement}
-            preflightFindings={preflightFindings}
-            preflightAcknowledged={preflightAcknowledged}
-            jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
-            namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
-            onStageChange={setStage}
-            onApplyRecipe={handleApplyRecipe}
-            onSettingsChange={handleSettingsChange}
-            onToggleEyedropper={() => setIsEyedropperMode((value) => !value)}
-            onGenerateUnderbase={handleGenerateUnderbase}
-            onDownloadPrintFile={handleDownloadPrintFile}
-            onDownloadPdf={handleDownloadPdf}
-            onDownloadMockups={() => setMockupExportToken((token) => token + 1)}
-            onAcknowledgeLowResolution={setLowResolutionAcknowledged}
-            onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
-              ...job,
-              printSpecification: specification,
-            }))}
-            onPlacementChange={(placement) => updateCurrentJob((job) => ({
-              ...job,
-              placements: { ...job.placements, [job.activePlacementKey]: placement },
-            }))}
-            onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
-              ...job,
-              acknowledgedPreflightRevision: acknowledged ? job.revision : null,
-            } : job)}
-            onJobMetadataChange={(metadata) => updateCurrentJob((job) => ({ ...job, metadata }))}
-            onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
-              ...job,
-              packageOptions: { ...job.packageOptions, namingPattern },
-            }))}
-            onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
-            onDownloadProof={(quality) => void handleDownloadProof(quality)}
-          />
+          <AppliedProductionProfileContext.Provider value={appliedProductionProfile}>
+            <WorkflowInspector
+              stage={stage}
+              selectedRecipeId={selectedRecipeId}
+              analysis={analysis}
+              recommendation={recommendation}
+              settings={settings}
+              palette={palette}
+              exportHistory={exportHistory}
+              hasProcessedResult={Boolean(processedResult)}
+              lowResolutionAcknowledged={lowResolutionAcknowledged}
+              isEyedropperMode={isEyedropperMode}
+              printSpecification={printSpecification}
+              placement={activePlacement}
+              preflightFindings={preflightFindings}
+              preflightAcknowledged={preflightAcknowledged}
+              jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
+              namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
+              onStageChange={setStage}
+              onApplyRecipe={handleApplyRecipe}
+              onSettingsChange={handleSettingsChange}
+              onToggleEyedropper={() => setIsEyedropperMode((value) => !value)}
+              onGenerateUnderbase={handleGenerateUnderbase}
+              onDownloadPrintFile={handleDownloadPrintFile}
+              onDownloadPdf={handleDownloadPdf}
+              onDownloadMockups={() => setMockupExportToken((token) => token + 1)}
+              onAcknowledgeLowResolution={setLowResolutionAcknowledged}
+              onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
+                ...job,
+                printSpecification: specification,
+              }))}
+              onPlacementChange={(placement) => updateCurrentJob((job) => ({
+                ...job,
+                placements: { ...job.placements, [job.activePlacementKey]: placement },
+              }))}
+              onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
+                ...job,
+                acknowledgedPreflightRevision: acknowledged ? job.revision : null,
+              } : job)}
+              onJobMetadataChange={(metadata) => updateCurrentJob((job) => ({ ...job, metadata }))}
+              onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
+                ...job,
+                packageOptions: { ...job.packageOptions, namingPattern },
+              }))}
+              onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
+              onDownloadProof={(quality) => void handleDownloadProof(quality)}
+            />
+          </AppliedProductionProfileContext.Provider>
         </div>
 
         <section className="relative order-1 min-h-0 overflow-hidden bg-slate-900/40 p-2 lg:order-2 lg:p-4">
@@ -678,7 +699,11 @@ const App: React.FC = () => {
 
       {showBatch && (
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
-          <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
+          <BatchProcessor
+            onClose={() => setShowBatch(false)}
+            defaultSettings={settings}
+            productionProfile={currentJob?.productionProfile.snapshot ?? BATCH_DEFAULT_PROFILE}
+          />
         </Suspense>
       )}
       {showJobs && (
