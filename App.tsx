@@ -46,7 +46,7 @@ import {
   placementToMockupPercent,
   placementVariantKey,
   storePlacementVariant,
-  synchronizeJobProductionState,
+  transitionJobProductionState,
   validatePlacement,
 } from './services/placement';
 import { evaluatePreflight, getPreflightGate } from './services/preflight';
@@ -229,21 +229,19 @@ const App: React.FC = () => {
   }, [currentJob?.id, preflightFindings]);
 
   useEffect(() => {
-    if (!currentJob) return;
+    const state = history[historyIndex];
+    if (!state) return;
+    setAppState(state);
     setCurrentJob((job) => {
       if (!job) return job;
-      const synchronized = synchronizeJobProductionState(
+      const synchronized = transitionJobProductionState(
         job,
-        settings,
+        state.settings,
         job.productionProfile.snapshot,
+        true,
       );
       return synchronized.changed ? touchStudioJob(synchronized.job) : job;
     });
-  }, [activeProductionProfile, currentJob?.activePlacementKey, currentJob?.id, settings]);
-
-  useEffect(() => {
-    const state = history[historyIndex];
-    if (state) setAppState(state);
   }, [history, historyIndex]);
 
   useEffect(() => {
@@ -302,10 +300,11 @@ const App: React.FC = () => {
       addToHistory(next);
       setCurrentJob((job) => {
         if (!job) return job;
-        const synchronized = synchronizeJobProductionState(
+        const synchronized = transitionJobProductionState(
           job,
           nextSettings,
           job.productionProfile.snapshot,
+          true,
         );
         return synchronized.changed ? touchStudioJob(synchronized.job) : job;
       });
@@ -387,10 +386,11 @@ const App: React.FC = () => {
     });
     setCurrentJob((job) => {
       if (!job) return job;
-      const synchronized = synchronizeJobProductionState(
+      const synchronized = transitionJobProductionState(
         job,
         checkpoint.settings,
         job.productionProfile.snapshot,
+        true,
       );
       return synchronized.changed ? touchStudioJob(synchronized.job) : job;
     });

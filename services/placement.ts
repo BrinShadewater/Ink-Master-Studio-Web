@@ -245,6 +245,17 @@ export const synchronizeJobProductionState = (
   };
 };
 
+export const transitionJobProductionState = (
+  job: StudioJob,
+  settings: ProcessingSettings,
+  profile: ProductionProfile,
+  persist: boolean,
+): { job: StudioJob; changed: boolean } => (
+  persist
+    ? synchronizeJobProductionState(job, settings, profile)
+    : { job, changed: false }
+);
+
 export const applyPlacementPreset = (
   preset: PlacementPreset,
   current: PlacementMeasurement,

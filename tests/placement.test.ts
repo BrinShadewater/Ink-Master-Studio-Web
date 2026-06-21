@@ -14,6 +14,7 @@ import {
   placementVariantKey,
   storePlacementVariant,
   synchronizeJobProductionState,
+  transitionJobProductionState,
   validatePlacement,
 } from '../services/placement';
 import { DEFAULT_SETTINGS } from '../constants';
@@ -400,4 +401,30 @@ test('does not report a production-state change when job settings and placement 
 
   assert.equal(synchronized.changed, false);
   assert.equal(synchronized.job, job);
+});
+
+test('keeps preview-only settings changes out of persisted job production state', () => {
+  const profile = standardProfile();
+  const job = createStudioJob('Preview only', profile);
+  job.acknowledgedPreflightRevision = job.revision;
+  const previewSettings = { ...job.settings, grain: 63 };
+
+  const preview = transitionJobProductionState(job, previewSettings, profile, false);
+  const history = transitionJobProductionState(
+    job,
+    { ...job.settings, itemType: ItemType.HAT },
+    profile,
+    true,
+  );
+
+  assert.equal(preview.changed, false);
+  assert.equal(preview.job, job);
+  assert.equal(preview.job.revision, job.revision);
+  assert.equal(preview.job.acknowledgedPreflightRevision, job.revision);
+  assert.equal(history.changed, true);
+  assert.equal(history.job.settings.itemType, ItemType.HAT);
+  assert.equal(
+    history.job.placements[history.job.activePlacementKey].itemType,
+    ItemType.HAT,
+  );
 });
