@@ -7,6 +7,7 @@ import {
   createStudioJob,
   duplicateStudioJob,
   migrateStudioJob,
+  touchStudioJob,
 } from '../services/jobModel';
 import { archiveJob, getJob, listJobs, saveJob } from '../services/jobRepository';
 import { exportPortableJob, importPortableJob } from '../services/portableJob';
@@ -104,6 +105,34 @@ test('migrates partial legacy job data into the current schema', () => {
   );
 });
 
+test('migrates identical legacy jobs with deterministic isolated production profiles', () => {
+  const legacy = {
+    id: 'deterministic-legacy',
+    createdAt: 100,
+    updatedAt: 200,
+    metadata: { name: 'Deterministic legacy' },
+  };
+
+  const first = migrateStudioJob(legacy);
+  const second = migrateStudioJob(legacy);
+
+  assert.deepEqual(first.productionProfile, second.productionProfile);
+  assert.equal(first.productionProfile.profileId, 'profile_standard_dtg_builtin');
+  assert.equal(first.productionProfile.profileRevision, 1);
+  assert.equal(first.productionProfile.snapshot.createdAt, 0);
+  assert.equal(first.productionProfile.snapshot.updatedAt, 0);
+  assert.notEqual(first.productionProfile, second.productionProfile);
+  assert.notEqual(first.productionProfile.snapshot, second.productionProfile.snapshot);
+  assert.notEqual(
+    first.productionProfile.snapshot.printableAreas,
+    second.productionProfile.snapshot.printableAreas,
+  );
+  assert.notEqual(
+    first.productionProfile.snapshot.defaults.packageOptions,
+    second.productionProfile.snapshot.defaults.packageOptions,
+  );
+});
+
 test('preserves only coherent stored production profile wrappers and deep clones them', () => {
   const profile = customProfile();
   const applied = snapshotProductionProfile(profile);
@@ -157,6 +186,19 @@ test('falls back safely when a stored production profile wrapper is incoherent o
     assert.equal(migrated?.productionProfile.snapshot.name, 'Standard DTG');
     assert.equal(migrated?.productionProfile.snapshot.method, 'DTG');
   }
+});
+
+test('touches jobs with a strictly advancing updated timestamp', () => {
+  const source = createStudioJob('Future timestamp');
+  source.updatedAt = Date.now() + 10_000;
+  source.revision = 12;
+  source.acknowledgedPreflightRevision = 12;
+
+  const touched = touchStudioJob(source);
+
+  assert.equal(touched.revision, 13);
+  assert.equal(touched.acknowledgedPreflightRevision, null);
+  assert.ok(touched.updatedAt > source.updatedAt);
 });
 
 test('applies a production profile as one immutable job revision while preserving unrelated data', () => {

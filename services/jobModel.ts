@@ -22,6 +22,15 @@ const createId = (prefix: string) =>
     ? crypto.randomUUID()
     : `${now()}_${Math.random().toString(36).slice(2, 10)}`}`;
 
+const BUILTIN_STANDARD_DTG_PROFILE: ProductionProfile = {
+  ...createProductionProfile('Standard DTG'),
+  id: 'profile_standard_dtg_builtin',
+  revision: 1,
+  createdAt: 0,
+  updatedAt: 0,
+  archivedAt: null,
+};
+
 const packageOptionsFromProfile = (
   profile: ProductionProfile,
 ): ProductionPackageOptions => ({
@@ -126,7 +135,7 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
   );
   const productionProfile = migrateAppliedProductionProfile(
     source.productionProfile,
-    base.productionProfile,
+    snapshotProductionProfile(BUILTIN_STANDARD_DTG_PROFILE),
   );
   const placements = isRecord(source.placements)
     ? source.placements as StudioJob['placements']
@@ -191,7 +200,7 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
 
 export const touchStudioJob = (job: StudioJob): StudioJob => ({
   ...job,
-  updatedAt: now(),
+  updatedAt: Math.max(now(), job.updatedAt + 1),
   revision: job.revision + 1,
   acknowledgedPreflightRevision: null,
 });
