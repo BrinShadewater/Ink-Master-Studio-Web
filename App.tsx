@@ -1,7 +1,9 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { Dropzone } from './components/Dropzone';
 import { Header } from './components/Header';
+import { JobLibrary } from './components/JobLibrary';
+import { TemplatesPopover } from './components/TemplatesPopover';
 import { Preview } from './components/Preview';
 import { StudioTopBar } from './components/StudioTopBar';
 import { VersionsPopover } from './components/VersionsPopover';
@@ -15,11 +17,14 @@ import {
   RecipeId,
   RecipeRecommendation,
   ShirtColor,
+  ShopTemplate,
+  StudioJob,
   WorkspaceStage,
 } from './types';
-import { DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_SETTINGS } from './constants';
 import {
   fileToBase64,
+  compositeMockup,
   generatePalette,
   generatePrintPDF,
   generateUnderbase,
@@ -27,6 +32,21 @@ import {
 } from './services/imageProcessing';
 import { analyzeArtwork } from './services/artworkAnalysis';
 import { recommendRecipe, resolveRecipeSettings } from './services/recipes';
+import { createStudioJob, duplicateStudioJob, touchStudioJob } from './services/jobModel';
+import { archiveJob, listJobs, saveJob } from './services/jobRepository';
+import { exportPortableJob, importPortableJob } from './services/portableJob';
+import { DEFAULT_PLACEMENT, mockupPercentToPlacement, placementToMockupPercent } from './services/placement';
+import { evaluatePreflight } from './services/preflight';
+import { buildProductionPackage, PackageAsset } from './services/productionPackage';
+import { generateCustomerProof } from './services/proofBuilder';
+import {
+  applyTemplateToJob,
+  createTemplateFromJob,
+  exportTemplates,
+  importTemplates,
+  loadTemplates,
+  saveTemplates,
+} from './services/templateStorage';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
 
@@ -44,6 +64,30 @@ const downloadBlob = (blob: Blob, filename: string) => {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
 };
+
+const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(reader.error ?? new Error('Could not read artwork.'));
+  reader.readAsDataURL(blob);
+});
+
+const jobFilename = (job: StudioJob) =>
+  `${job.metadata.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'inkmaster-job'}.inkmaster-job`;
+
+const MOCKUP_FILES = [
+  ['red', '/mockups/mockup-red.png'],
+  ['charcoal', '/mockups/mockup-charcoal.png'],
+  ['heather', '/mockups/mockup-heather.png'],
+  ['military-green', '/mockups/mockup-miltarygreen.png'],
+  ['forest-green', '/mockups/mockup-forestgreen.png'],
+  ['cardinal', '/mockups/mockup-cardinal.png'],
+  ['black', '/mockups/mockup-black.png'],
+  ['burgundy', '/mockups/mockup-burgundy.png'],
+  ['navy', '/mockups/mockup-navy.png'],
+  ['orange', '/mockups/mockup-orange.png'],
+  ['royal-blue', '/mockups/mockup-royalblue.png'],
+] as const;
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
@@ -63,12 +107,69 @@ const App: React.FC = () => {
   const [isEyedropperMode, setIsEyedropperMode] = useState(false);
   const [lowResolutionAcknowledged, setLowResolutionAcknowledged] = useState(false);
   const [mockupExportToken, setMockupExportToken] = useState(0);
+  const [currentJob, setCurrentJob] = useState<StudioJob | null>(null);
+  const [jobs, setJobs] = useState<StudioJob[]>([]);
+  const [showJobs, setShowJobs] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [shopTemplates, setShopTemplates] = useState<ShopTemplate[]>([]);
 
   const originalImage = appState.image;
   const settings = appState.settings;
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
   const dpiInfo = analysis?.printQuality ?? null;
+  const printSpecification = currentJob?.printSpecification ?? DEFAULT_PRINT_SPECIFICATION;
+  const activePlacement = currentJob?.placements[currentJob.activePlacementKey] ?? DEFAULT_PLACEMENT;
+  const preflightFindings = useMemo(
+    () => analysis ? evaluatePreflight(analysis, printSpecification, settings) : [],
+    [analysis, printSpecification, settings],
+  );
+  const preflightAcknowledged = Boolean(
+    currentJob && currentJob.acknowledgedPreflightRevision === currentJob.revision,
+  );
+
+  const refreshJobs = async () => {
+    try {
+      setJobs(await listJobs());
+    } catch (storageError) {
+      console.warn('Could not load local jobs:', storageError);
+    }
+  };
+
+  const updateCurrentJob = (update: (job: StudioJob) => StudioJob, incrementRevision = true) => {
+    setCurrentJob((job) => {
+      if (!job) return job;
+      const next = update(job);
+      return incrementRevision ? touchStudioJob(next) : next;
+    });
+  };
+
+  useEffect(() => {
+    void refreshJobs();
+    setShopTemplates(loadTemplates());
+  }, []);
+
+  useEffect(() => {
+    if (!currentJob) return;
+    setSaveStatus('saving');
+    const timer = window.setTimeout(() => {
+      void saveJob(currentJob)
+        .then(() => {
+          setSaveStatus('saved');
+          void refreshJobs();
+        })
+        .catch((storageError) => {
+          console.error(storageError);
+          setSaveStatus('error');
+        });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [currentJob]);
+
+  useEffect(() => {
+    if (!currentJob || JSON.stringify(currentJob.preflightFindings) === JSON.stringify(preflightFindings)) return;
+    setCurrentJob((job) => job ? { ...job, preflightFindings } : job);
+  }, [currentJob?.id, preflightFindings]);
 
   useEffect(() => {
     const state = history[historyIndex];
@@ -110,13 +211,27 @@ const App: React.FC = () => {
   };
 
   const addToExportHistory = (entry: Omit<ExportHistoryEntry, 'id'>) => {
-    setExportHistory((current) => [{ ...entry, id: `export_${Date.now()}` }, ...current].slice(0, 20));
+    const storedEntry = { ...entry, id: `export_${Date.now()}` };
+    setExportHistory((current) => [storedEntry, ...current].slice(0, 20));
+    updateCurrentJob((job) => ({
+      ...job,
+      exports: [{
+        id: storedEntry.id,
+        filename: storedEntry.filename,
+        format: storedEntry.format,
+        timestamp: storedEntry.timestamp,
+        blob: storedEntry.blob,
+      }, ...job.exports].slice(0, 20),
+    }));
   };
 
   const handleSettingsChange = (nextSettings: ProcessingSettings, commit: boolean) => {
     const next = { ...appState, settings: nextSettings };
     setAppState(next);
-    if (commit) addToHistory(next);
+    if (commit) {
+      addToHistory(next);
+      updateCurrentJob((job) => ({ ...job, settings: nextSettings }));
+    }
   };
 
   const handleFileAccepted = async (file: File) => {
@@ -127,14 +242,27 @@ const App: React.FC = () => {
       const base64 = await fileToBase64(file);
       const dataUrl = `data:${file.type};base64,${base64}`;
       const next = { image: dataUrl, settings: DEFAULT_SETTINGS, hasUsedAi: false };
+      const job = createStudioJob(file.name.replace(/\.[^.]+$/, '') || 'Untitled job');
+      job.sourceArtwork = {
+        name: file.name,
+        type: file.type,
+        lastModified: file.lastModified,
+        blob: file,
+      };
       addToHistory(next);
+      setCurrentJob(job);
       setProcessedResult(null);
       setSelectedRecipeId(null);
       setStage('goal');
       try {
         const nextAnalysis = await analyzeArtwork(dataUrl);
         setAnalysis(nextAnalysis);
-        setRecommendation(recommendRecipe(nextAnalysis));
+        const nextRecommendation = recommendRecipe(nextAnalysis);
+        setRecommendation(nextRecommendation);
+        setCurrentJob((current) => current ? {
+          ...touchStudioJob(current),
+          analysis: nextAnalysis,
+        } : current);
       } catch (analysisError) {
         console.warn('Artwork analysis failed:', analysisError);
         setAnalysis(null);
@@ -157,6 +285,7 @@ const App: React.FC = () => {
     const nextSettings = savedSettings ?? resolveRecipeSettings(recipeId, analysis, settings);
     setSelectedRecipeId(recipeId);
     handleSettingsChange(nextSettings, true);
+    updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId, settings: nextSettings }));
     setStage('prepare');
   };
 
@@ -167,6 +296,7 @@ const App: React.FC = () => {
     setAnalysis(null);
     setRecommendation(null);
     setSelectedRecipeId(null);
+    setCurrentJob(null);
     setStage('goal');
     setLowResolutionAcknowledged(false);
   };
@@ -177,6 +307,156 @@ const App: React.FC = () => {
       settings: { ...checkpoint.settings },
       hasUsedAi: appState.hasUsedAi,
     });
+    updateCurrentJob((job) => ({ ...job, settings: { ...checkpoint.settings } }));
+  };
+
+  const handleOpenJob = async (job: StudioJob) => {
+    if (!job.sourceArtwork) {
+      setError('This job does not contain source artwork.');
+      return;
+    }
+    setError(null);
+    setIsAnalyzing(true);
+    try {
+      const dataUrl = await blobToDataUrl(job.sourceArtwork.blob);
+      const nextState = { image: dataUrl, settings: job.settings, hasUsedAi: false };
+      setHistory([nextState]);
+      setHistoryIndex(0);
+      setAppState(nextState);
+      setCurrentJob(job);
+      setAnalysis(job.analysis);
+      setRecommendation(job.analysis ? recommendRecipe(job.analysis) : null);
+      setSelectedRecipeId(job.selectedRecipeId);
+      setExportHistory(job.exports.map((entry) => ({
+        ...entry,
+        url: URL.createObjectURL(entry.blob),
+      })));
+      setLowResolutionAcknowledged(job.acknowledgedPreflightRevision === job.revision);
+      setProcessedResult(null);
+      setStage(job.selectedRecipeId ? 'prepare' : 'goal');
+      setShowJobs(false);
+    } catch {
+      setError('Ink Master could not reopen this job artwork.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleDuplicateJob = async (job: StudioJob) => {
+    const duplicate = duplicateStudioJob(job);
+    await saveJob(duplicate);
+    await refreshJobs();
+    await handleOpenJob(duplicate);
+  };
+
+  const handleArchiveJob = async (job: StudioJob) => {
+    await archiveJob(job.id);
+    if (currentJob?.id === job.id) handleReset();
+    await refreshJobs();
+  };
+
+  const handleExportJob = async (job: StudioJob) => {
+    downloadBlob(await exportPortableJob(job), jobFilename(job));
+  };
+
+  const handleImportJob = async (file: File) => {
+    try {
+      const imported = await importPortableJob(file);
+      const duplicate = {
+        ...duplicateStudioJob(imported),
+        metadata: { ...imported.metadata },
+      };
+      await saveJob(duplicate);
+      await refreshJobs();
+      await handleOpenJob(duplicate);
+    } catch {
+      setError('That portable job could not be imported.');
+    }
+  };
+
+  const buildSelectedMockups = async (): Promise<PackageAsset[]> => {
+    if (!currentJob || !processedResult) return [];
+    const placement = placementToMockupPercent(activePlacement);
+    const assets: PackageAsset[] = [];
+    for (const index of currentJob.packageOptions.selectedMockupIndices) {
+      const mockup = MOCKUP_FILES[index];
+      if (!mockup) continue;
+      const result = await compositeMockup(mockup[1], processedResult.url, placement, 'PNG');
+      assets.push({ filename: `${mockup[0]}-mockup.png`, blob: result.blob });
+    }
+    return assets;
+  };
+
+  const handleDownloadProductionPackage = async () => {
+    if (!currentJob || !processedResult) return;
+    try {
+      const productionPdf = await generatePrintPDF(processedResult.url, settings.itemType);
+      const underbase = currentJob.packageOptions.includeUnderbase
+        ? await generateUnderbase(processedResult.url, 'PNG')
+        : null;
+      const result = await buildProductionPackage({
+        job: { ...currentJob, preflightFindings },
+        printMaster: { filename: `print-master.${settings.format.toLowerCase()}`, blob: processedResult.blob },
+        productionPdf: { filename: 'production-spec.pdf', blob: productionPdf.blob },
+        mockups: await buildSelectedMockups(),
+        underbase: underbase ? { filename: 'white-underbase.png', blob: underbase.blob } : null,
+        palette,
+      });
+      downloadBlob(result.blob, result.filename);
+      addToExportHistory({ filename: result.filename, format: 'ZIP', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+    } catch (packageError) {
+      console.error(packageError);
+      setError('The production package could not be generated.');
+    }
+  };
+
+  const handleDownloadProof = async (quality: 'print' | 'email') => {
+    if (!currentJob || !processedResult) return;
+    try {
+      const result = await generateCustomerProof(currentJob, await buildSelectedMockups(), quality);
+      downloadBlob(result.blob, result.filename);
+      addToExportHistory({ filename: result.filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+    } catch (proofError) {
+      console.error(proofError);
+      setError('The customer proof could not be generated.');
+    }
+  };
+
+  const handleSaveTemplate = (name: string, description: string) => {
+    if (!currentJob) return;
+    const next = [createTemplateFromJob(currentJob, name, description), ...shopTemplates];
+    setShopTemplates(next);
+    saveTemplates(next);
+  };
+
+  const handleApplyTemplate = (template: ShopTemplate) => {
+    if (!currentJob) return;
+    const nextJob = applyTemplateToJob(currentJob, template);
+    setCurrentJob(nextJob);
+    setSelectedRecipeId(nextJob.selectedRecipeId);
+    const nextState = { ...appState, settings: nextJob.settings };
+    addToHistory(nextState);
+  };
+
+  const handleDeleteTemplate = (template: ShopTemplate) => {
+    const next = shopTemplates.filter((candidate) => candidate.id !== template.id);
+    setShopTemplates(next);
+    saveTemplates(next);
+  };
+
+  const handleExportTemplates = () => {
+    downloadBlob(new Blob([exportTemplates(shopTemplates)], { type: 'application/json' }), 'inkmaster-shop-templates.json');
+  };
+
+  const handleImportTemplates = async (file: File) => {
+    const imported = importTemplates(await file.text());
+    if (!imported.length) {
+      setError('That template file is invalid or empty.');
+      return;
+    }
+    const next = [...imported, ...shopTemplates.filter((existing) => !imported.some((entry) => entry.id === existing.id))];
+    setShopTemplates(next);
+    saveTemplates(next);
   };
 
   const handleGenerateUnderbase = async (format: 'PNG' | 'SVG' | 'JPG') => {
@@ -245,11 +525,26 @@ const App: React.FC = () => {
             <span>Local artwork analysis</span><span className="text-slate-700">•</span><span>Guided print recipes</span><span className="text-slate-700">•</span><span>Production files + mockups</span>
           </div>
           <button type="button" onClick={() => setShowBatch(true)} className="mt-7 rounded-lg border border-slate-700 bg-slate-900/60 px-5 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-white">Open batch processing</button>
+          <button type="button" onClick={() => setShowJobs(true)} className="mt-3 rounded-lg px-5 py-2 text-xs font-bold text-indigo-300 hover:text-indigo-200">
+            Open saved production job{jobs.length ? ` (${jobs.length})` : ''}
+          </button>
         </main>
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
             <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
           </Suspense>
+        )}
+        {showJobs && (
+          <JobLibrary
+            jobs={jobs}
+            currentJobId={currentJob?.id ?? null}
+            onClose={() => setShowJobs(false)}
+            onOpen={(job) => void handleOpenJob(job)}
+            onDuplicate={(job) => void handleDuplicateJob(job)}
+            onArchive={(job) => void handleArchiveJob(job)}
+            onExport={(job) => void handleExportJob(job)}
+            onImport={(file) => void handleImportJob(file)}
+          />
         )}
       </div>
     );
@@ -258,12 +553,29 @@ const App: React.FC = () => {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-slate-950 text-slate-200">
       <StudioTopBar
+        jobName={currentJob?.metadata.name ?? 'Untitled job'}
+        saveStatus={saveStatus}
         canUndo={canUndo}
         canRedo={canRedo}
         onNewFile={handleReset}
+        onJobNameChange={(name) => updateCurrentJob((job) => ({
+          ...job,
+          metadata: { ...job.metadata, name },
+        }))}
+        onOpenJobs={() => setShowJobs(true)}
         onBatch={() => setShowBatch(true)}
         onUndo={() => canUndo && setHistoryIndex((index) => index - 1)}
         onRedo={() => canRedo && setHistoryIndex((index) => index + 1)}
+        templates={(
+          <TemplatesPopover
+            templates={shopTemplates}
+            onApply={handleApplyTemplate}
+            onSave={handleSaveTemplate}
+            onDelete={handleDeleteTemplate}
+            onExport={handleExportTemplates}
+            onImport={(file) => void handleImportTemplates(file)}
+          />
+        )}
         versions={<VersionsPopover currentSettings={settings} currentThumbnail={processedResult?.previewUrl || processedResult?.url || null} onRestore={handleRestoreVersion} />}
       />
 
@@ -280,6 +592,12 @@ const App: React.FC = () => {
             hasProcessedResult={Boolean(processedResult)}
             lowResolutionAcknowledged={lowResolutionAcknowledged}
             isEyedropperMode={isEyedropperMode}
+            printSpecification={printSpecification}
+            placement={activePlacement}
+            preflightFindings={preflightFindings}
+            preflightAcknowledged={preflightAcknowledged}
+            jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
+            namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
             onStageChange={setStage}
             onApplyRecipe={handleApplyRecipe}
             onSettingsChange={handleSettingsChange}
@@ -289,6 +607,25 @@ const App: React.FC = () => {
             onDownloadPdf={handleDownloadPdf}
             onDownloadMockups={() => setMockupExportToken((token) => token + 1)}
             onAcknowledgeLowResolution={setLowResolutionAcknowledged}
+            onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
+              ...job,
+              printSpecification: specification,
+            }))}
+            onPlacementChange={(placement) => updateCurrentJob((job) => ({
+              ...job,
+              placements: { ...job.placements, [job.activePlacementKey]: placement },
+            }))}
+            onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
+              ...job,
+              acknowledgedPreflightRevision: acknowledged ? job.revision : null,
+            } : job)}
+            onJobMetadataChange={(metadata) => updateCurrentJob((job) => ({ ...job, metadata }))}
+            onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
+              ...job,
+              packageOptions: { ...job.packageOptions, namingPattern },
+            }))}
+            onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
+            onDownloadProof={(quality) => void handleDownloadProof(quality)}
           />
         </div>
 
@@ -321,6 +658,14 @@ const App: React.FC = () => {
                 embedded
                 workspaceStage={stage}
                 exportRequestToken={mockupExportToken}
+                productionPlacement={placementToMockupPercent(activePlacement)}
+                onProductionPlacementChange={(percent) => updateCurrentJob((job) => ({
+                  ...job,
+                  placements: {
+                    ...job.placements,
+                    [job.activePlacementKey]: mockupPercentToPlacement(percent, job.placements[job.activePlacementKey] ?? DEFAULT_PLACEMENT),
+                  },
+                }))}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-center text-slate-600">
@@ -335,6 +680,18 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
           <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
         </Suspense>
+      )}
+      {showJobs && (
+        <JobLibrary
+          jobs={jobs}
+          currentJobId={currentJob?.id ?? null}
+          onClose={() => setShowJobs(false)}
+          onOpen={(job) => void handleOpenJob(job)}
+          onDuplicate={(job) => void handleDuplicateJob(job)}
+          onArchive={(job) => void handleArchiveJob(job)}
+          onExport={(job) => void handleExportJob(job)}
+          onImport={(file) => void handleImportJob(file)}
+        />
       )}
     </div>
   );

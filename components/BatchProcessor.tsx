@@ -1,247 +1,179 @@
-import React, { useState, useCallback } from 'react';
-import { ProcessingSettings, BatchJob, OutputFormat } from '../types';
-import { fileToBase64, processImage, getPrintDPI } from '../services/imageProcessing';
-import { Dropzone } from './Dropzone';
+import React, { useRef, useState } from 'react';
+import JSZip from 'jszip';
+import { DEFAULT_PRINT_SPECIFICATION } from '../constants';
+import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, RecipeId } from '../types';
+import { analyzeArtwork } from '../services/artworkAnalysis';
+import { fileToBase64, processImage } from '../services/imageProcessing';
+import { evaluatePreflight } from '../services/preflight';
+import { recommendRecipe, resolveRecipeSettings } from '../services/recipes';
+import {
+  batchExportEligibility,
+  BatchProductionStatus,
+  createCombinedOrderManifest,
+} from '../services/batch';
 
 interface BatchProcessorProps {
   onClose: () => void;
   defaultSettings: ProcessingSettings;
 }
 
+interface GuidedBatchItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+  status: BatchProductionStatus;
+  analysis: ArtworkAnalysis | null;
+  recipeId: RecipeId | null;
+  settings: ProcessingSettings;
+  findings: PreflightFinding[];
+  acknowledged: boolean;
+  resultBlob: Blob | null;
+  error: string | null;
+}
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+};
+
 export const BatchProcessor: React.FC<BatchProcessorProps> = ({ onClose, defaultSettings }) => {
-  const [jobs, setJobs] = useState<BatchJob[]>([]);
-  const [isProcessingAll, setIsProcessingAll] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [items, setItems] = useState<GuidedBatchItem[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const addFiles = async (files: File[]) => {
-    const newJobs: BatchJob[] = [];
-    for (const file of files) {
-      try {
-        const base64 = await fileToBase64(file);
-        const dataUrl = `data:${file.type};base64,${base64}`;
-        
-        // Calculate DPI
-        const img = new Image();
-        await new Promise((resolve) => { img.onload = resolve; img.src = dataUrl; });
-        const dpiInfo = getPrintDPI(img.naturalWidth, img.naturalHeight);
+  const updateItem = (id: string, update: Partial<GuidedBatchItem>) =>
+    setItems((current) => current.map((item) => item.id === id ? { ...item, ...update } : item));
 
-        newJobs.push({
-          id: Math.random().toString(36).substr(2, 9),
-          file,
-          previewUrl: dataUrl,
-          settings: { ...defaultSettings },
-          status: 'pending',
-          resultUrl: null,
-          resultBlob: null,
-          dpiInfo
-        });
-      } catch (e) {
-        console.error('Failed to load file', file.name, e);
-      }
-    }
-    setJobs(prev => [...prev, ...newJobs]);
-  };
-
-  const handleJobSettingChange = (id: string, updates: Partial<ProcessingSettings>) => {
-    setJobs(prev => prev.map(job => 
-      job.id === id ? { ...job, settings: { ...job.settings, ...updates } } : job
-    ));
-  };
-
-  const processJob = async (job: BatchJob) => {
-    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+  const processItem = async (item: GuidedBatchItem) => {
+    updateItem(item.id, { status: 'analyzing', error: null });
     try {
-      const result = await processImage(job.previewUrl, job.settings);
-      setJobs(prev => prev.map(j => j.id === job.id ? {
-        ...j,
-        status: 'done',
-        resultUrl: result.url,
-        resultBlob: result.blob
-      } : j));
-    } catch (e) {
-      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error' } : j));
+      const base64 = await fileToBase64(item.file);
+      const dataUrl = `data:${item.file.type};base64,${base64}`;
+      const analysis = await analyzeArtwork(dataUrl);
+      const recommendation = recommendRecipe(analysis);
+      const settings = resolveRecipeSettings(recommendation.recipeId, analysis, defaultSettings);
+      const findings = evaluatePreflight(analysis, DEFAULT_PRINT_SPECIFICATION, settings);
+      updateItem(item.id, {
+        status: 'processing',
+        analysis,
+        recipeId: recommendation.recipeId,
+        settings,
+        findings,
+      });
+      const result = await processImage(dataUrl, settings);
+      updateItem(item.id, { status: 'ready', resultBlob: result.blob });
+    } catch (error) {
+      console.error(error);
+      updateItem(item.id, { status: 'failed', error: 'Could not analyze or process this artwork.' });
     }
   };
 
-  const processAll = async () => {
-    setIsProcessingAll(true);
-    for (const job of jobs) {
-      if (job.status === 'pending' || job.status === 'error') {
-        await processJob(job);
-      }
-    }
-    setIsProcessingAll(false);
+  const addFiles = (files: FileList | File[]) => {
+    const next = Array.from(files)
+      .filter((file) => ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'].includes(file.type))
+      .map<GuidedBatchItem>((file) => ({
+        id: `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        status: 'pending',
+        analysis: null,
+        recipeId: null,
+        settings: { ...defaultSettings, colorReplacements: [...defaultSettings.colorReplacements] },
+        findings: [],
+        acknowledged: false,
+        resultBlob: null,
+        error: null,
+      }));
+    setItems((current) => [...current, ...next]);
+    next.forEach((item) => void processItem(item));
   };
 
-  const downloadAll = async () => {
-    const completedJobs = jobs.filter(j => j.status === 'done' && j.resultBlob);
-    if (completedJobs.length === 0) return;
-
-    setDownloadProgress(10);
-    try {
-        // @ts-ignore
-        const JSZip = (await import('jszip')).default;
-        const zip = new JSZip();
-
-        completedJobs.forEach((job) => {
-            const ext = job.settings.format === OutputFormat.JPG ? 'jpg' : job.settings.format === OutputFormat.SVG ? 'svg' : 'png';
-            const name = job.file.name.substring(0, job.file.name.lastIndexOf('.')) || job.file.name;
-            if (job.resultBlob) {
-                zip.file(`${name}_processed.${ext}`, job.resultBlob);
-            }
-        });
-
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'inkmaster_batch_export.zip';
-        a.click();
-        URL.revokeObjectURL(url);
-    } catch (e) {
-        // Fallback
-        for (let i = 0; i < completedJobs.length; i++) {
-            const job = completedJobs[i];
-            const a = document.createElement('a');
-            if (job.resultUrl) {
-                a.href = job.resultUrl;
-                const ext = job.settings.format === OutputFormat.JPG ? 'jpg' : job.settings.format === OutputFormat.SVG ? 'svg' : 'png';
-                const name = job.file.name.substring(0, job.file.name.lastIndexOf('.')) || job.file.name;
-                a.download = `${name}_processed.${ext}`;
-                a.click();
-                await new Promise(r => setTimeout(r, 300));
-            }
-        }
+  const exportCombined = async () => {
+    const eligible = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport && item.resultBlob);
+    if (!eligible.length) return;
+    const zip = new JSZip();
+    for (const item of eligible) {
+      zip.file(`${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`, await item.resultBlob!.arrayBuffer());
     }
-    setDownloadProgress(0);
+    zip.file('order-manifest.json', JSON.stringify(createCombinedOrderManifest(items.map((item) => ({
+      id: item.id,
+      filename: item.file.name,
+      status: item.status,
+      findings: item.findings,
+      acknowledged: item.acknowledged,
+    }))), null, 2));
+    downloadBlob(await zip.generateAsync({ type: 'blob' }), 'inkmaster-combined-order.zip');
   };
+
+  const eligibleCount = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport).length;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex flex-col p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-200">
+      <header className="flex h-16 flex-none items-center justify-between border-b border-slate-800 px-4 lg:px-6">
         <div>
-            <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-3">
-                <svg className="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                Batch Processor
-            </h2>
-            <p className="text-slate-500 text-sm mt-1">Queued Jobs: {jobs.length}</p>
+          <h2 className="text-lg font-black text-white">Guided batch production</h2>
+          <p className="text-xs text-slate-500">One recipe and preflight result per artwork file. Nothing blocked is silently exported.</p>
         </div>
-        <div className="flex gap-4">
-          <button onClick={processAll} disabled={isProcessingAll || jobs.length === 0} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-bold transition-all">
-            {isProcessingAll ? 'Processing...' : 'Process All'}
+        <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white">Close</button>
+      </header>
+
+      <div className="flex flex-none flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-3 lg:px-6">
+        <button type="button" onClick={() => inputRef.current?.click()} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-500">Add artwork</button>
+        <input ref={inputRef} type="file" multiple accept=".jpg,.jpeg,.png,.svg,.webp" className="hidden" onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ''; }} />
+        <button type="button" disabled={!eligibleCount} onClick={() => void exportCombined()} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Export combined order ({eligibleCount})</button>
+        <span className="text-xs text-slate-500">{items.length} total · {items.length - eligibleCount} waiting, warning, failed, cancelled, or blocked</span>
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+        {items.length === 0 ? (
+          <button type="button" onClick={() => inputRef.current?.click()} className="flex min-h-80 w-full items-center justify-center rounded-2xl border-2 border-dashed border-slate-700 text-center hover:border-indigo-500">
+            <span><span className="block text-lg font-black text-white">Drop in an order’s artwork</span><span className="mt-2 block text-sm text-slate-500">Each design receives a recipe recommendation and production preflight.</span></span>
           </button>
-          <button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2 rounded-lg font-bold transition-all">Close</button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto min-h-0 bg-slate-900/50 rounded-2xl border border-slate-800 p-6 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-             {/* Mini Dropzone */}
-            <div className="border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center p-8 hover:bg-slate-800/50 transition-colors cursor-pointer text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 min-h-[300px]"
-                 onClick={() => document.getElementById('batchFileInput')?.click()}
-            >
-                <input 
-                    type="file" 
-                    id="batchFileInput" 
-                    multiple 
-                    className="hidden" 
-                    accept=".jpg,.jpeg,.png,.svg,.webp"
-                    onChange={(e) => {
-                        if (e.target.files) addFiles(Array.from(e.target.files));
-                    }}
-                />
-                <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                <span className="font-bold">Add Files</span>
-            </div>
-
-            {jobs.map(job => (
-                <div key={job.id} className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-3 shadow-lg relative overflow-hidden group">
-                     {job.status === 'processing' && (
-                         <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-500 animate-pulse"></div>
-                     )}
-                     {job.status === 'done' && (
-                         <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-bl font-bold">DONE</div>
-                     )}
-                     
-                     <div className="flex gap-3">
-                         <div className="w-16 h-16 bg-slate-800 rounded-lg overflow-hidden border border-slate-700 flex-shrink-0">
-                             <img src={job.previewUrl} className="w-full h-full object-cover" />
-                         </div>
-                         <div className="flex-1 min-w-0">
-                             <p className="text-sm font-bold text-slate-200 truncate" title={job.file.name}>{job.file.name}</p>
-                             <div className="flex gap-1 mt-1">
-                                {job.dpiInfo && (
-                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                                        job.dpiInfo.status === 'good' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/30' :
-                                        job.dpiInfo.status === 'low' ? 'bg-amber-900/30 text-amber-400 border-amber-500/30' :
-                                        'bg-red-900/30 text-red-400 border-red-500/30'
-                                    }`}>
-                                        {job.dpiInfo.dpi} DPI
-                                    </span>
-                                )}
-                             </div>
-                         </div>
-                     </div>
-
-                     <div className="space-y-2 pt-2 border-t border-slate-800">
-                        {/* Compact Settings */}
-                         <div className="flex gap-1">
-                             {['NONE', 'BLACK', 'WHITE'].map(c => (
-                                 <button 
-                                    key={c}
-                                    onClick={() => handleJobSettingChange(job.id, { shirtColor: c as any })}
-                                    className={`flex-1 text-[9px] py-1 rounded border ${
-                                        job.settings.shirtColor === c 
-                                        ? 'bg-indigo-600 border-indigo-500 text-white' 
-                                        : 'bg-slate-800 border-slate-700 text-slate-500'
-                                    }`}
-                                 >
-                                     {c.charAt(0)}
-                                 </button>
-                             ))}
-                         </div>
-                         <div className="flex items-center gap-2">
-                             <span className="text-[10px] text-slate-500 w-8">Thr</span>
-                             <input type="range" min="0" max="100" value={job.settings.threshold} 
-                                onChange={(e) => handleJobSettingChange(job.id, { threshold: parseInt(e.target.value) })}
-                                className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                             />
-                         </div>
-                     </div>
-
-                     <div className="mt-auto flex gap-2">
-                        <button 
-                            onClick={() => processJob(job)}
-                            disabled={job.status === 'processing'}
-                            className="flex-1 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:bg-indigo-600 hover:text-white hover:border-indigo-500 transition-colors"
-                        >
-                            {job.status === 'done' ? 'Reprocess' : 'Process'}
-                        </button>
-                        {job.status === 'done' && (
-                            <a 
-                                href={job.resultUrl!} 
-                                download={`${job.file.name}_processed`}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/50 text-emerald-400 text-xs hover:bg-emerald-600 hover:text-white transition-colors"
-                            >
-                                ↓
-                            </a>
-                        )}
-                     </div>
-                </div>
-            ))}
-        </div>
-      </div>
-
-      <div className="flex justify-end">
-          <button 
-            onClick={downloadAll} 
-            disabled={!jobs.some(j => j.status === 'done')}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white px-8 py-4 rounded-xl font-bold shadow-xl flex items-center gap-3"
-          >
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-             {downloadProgress > 0 ? `Zipping...` : 'Download All as ZIP'}
-          </button>
-      </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {items.map((item) => {
+              const eligibility = batchExportEligibility(item.status, item.findings, item.acknowledged);
+              const warnings = item.findings.filter((finding) => finding.severity === 'warning');
+              const critical = item.findings.filter((finding) => finding.severity === 'critical');
+              return (
+                <article key={item.id} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                  <img src={item.previewUrl} alt="" className="h-24 w-20 rounded-lg bg-slate-950 object-contain" />
+                  <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-black text-white">{item.file.name}</h3>
+                        <p className="mt-1 text-[11px] text-slate-500">{item.recipeId ? `Recipe: ${item.recipeId}` : item.status}</p>
+                      </div>
+                      <span className={`rounded px-2 py-1 text-[9px] font-black uppercase ${eligibility.canExport ? 'bg-emerald-500/15 text-emerald-300' : critical.length ? 'bg-rose-500/15 text-rose-300' : warnings.length ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800 text-slate-400'}`}>{eligibility.canExport ? 'ready' : item.status}</span>
+                    </div>
+                    {item.error && <p className="mt-2 text-xs text-rose-300">{item.error}</p>}
+                    {item.findings.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {item.findings.filter((finding) => finding.severity !== 'pass').map((finding) => <span key={finding.id} title={finding.action} className={`rounded px-2 py-1 text-[9px] font-bold ${finding.severity === 'critical' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>{finding.title}</span>)}
+                        {!warnings.length && !critical.length && <span className="text-[10px] font-bold text-emerald-400">Preflight passed</span>}
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {warnings.length > 0 && critical.length === 0 && (
+                        <label className="flex items-center gap-2 text-[10px] text-slate-300">
+                          <input type="checkbox" checked={item.acknowledged} onChange={(event) => updateItem(item.id, { acknowledged: event.target.checked })} className="accent-indigo-500" />
+                          Approve warnings
+                        </label>
+                      )}
+                      {item.status === 'ready' && <button type="button" onClick={() => updateItem(item.id, { status: 'cancelled' })} className="text-[10px] font-bold text-slate-500 hover:text-rose-300">Cancel item</button>}
+                      {item.status === 'failed' && <button type="button" onClick={() => void processItem(item)} className="text-[10px] font-bold text-indigo-300">Retry</button>}
+                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => downloadBlob(item.resultBlob!, `${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`)} className="text-[10px] font-bold text-emerald-300">Export design</button>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </main>
     </div>
   );
 };
