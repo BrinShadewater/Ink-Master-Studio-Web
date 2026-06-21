@@ -496,7 +496,7 @@ test('rejects invalid envelopes and invalid profiles atomically with all errors'
 
   assert.deepEqual(
     invalidEnvelope.errors.map((error) => error.field),
-    ['format', 'schemaVersion', 'profiles'],
+    ['format', 'schemaVersion', 'exportedAt', 'profiles'],
   );
   assert.deepEqual(invalidEnvelope.profiles, localSnapshot);
 
@@ -516,6 +516,41 @@ test('rejects invalid envelopes and invalid profiles atomically with all errors'
   assert.deepEqual(invalidIncoming.profiles, localSnapshot);
   assert.deepEqual(invalidIncoming.skippedIds, []);
   assert.deepEqual(locals, localSnapshot);
+});
+
+test('rejects missing, non-string, and invalid exported timestamps atomically', () => {
+  const local = profileFixture('local-timestamp', 'Local timestamp', 100);
+  const incoming = profileFixture('incoming-timestamp', 'Incoming timestamp', 101);
+  const localSnapshot = structuredClone([local]);
+  const cases: Array<[string, unknown, boolean]> = [
+    ['missing', undefined, true],
+    ['non-string', 123, false],
+    ['invalid ISO', 'not-an-iso-timestamp', false],
+  ];
+
+  for (const [label, exportedAt, omitExportedAt] of cases) {
+    const envelope: Record<string, unknown> = {
+      format: 'inkmaster-production-profiles',
+      schemaVersion: 1,
+      exportedAt,
+      profiles: [incoming],
+    };
+    if (omitExportedAt) {
+      delete envelope.exportedAt;
+    }
+
+    const result = importProductionProfiles(JSON.stringify(envelope), [local]);
+
+    assert.ok(
+      result.errors.some((error) => error.field === 'exportedAt'),
+      `${label} timestamp should report exportedAt`,
+    );
+    assert.deepEqual(result.profiles, localSnapshot);
+    assert.equal(result.profiles.length, 1);
+    assert.deepEqual(result.skippedIds, []);
+    assert.notEqual(result.profiles[0], local);
+    assert.notEqual(result.profiles[0].thresholds, local.thresholds);
+  }
 });
 
 test('skips byte-equivalent profiles at the same revision', () => {

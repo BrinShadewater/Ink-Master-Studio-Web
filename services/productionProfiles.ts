@@ -443,6 +443,20 @@ export const importProductionProfiles = (
       message: 'Portable profile schema version must be 1.',
     });
   }
+  const exportedAt = isRecord(parsed) ? parsed.exportedAt : undefined;
+  const exportedDate = typeof exportedAt === 'string'
+    ? new Date(exportedAt)
+    : null;
+  if (
+    exportedDate === null
+    || Number.isNaN(exportedDate.getTime())
+    || exportedDate.toISOString() !== exportedAt
+  ) {
+    errors.push({
+      field: 'exportedAt',
+      message: 'Portable profile export timestamp must be a canonical ISO date.',
+    });
+  }
   if (!isRecord(parsed) || !Array.isArray(parsed.profiles)) {
     errors.push({
       field: 'profiles',
