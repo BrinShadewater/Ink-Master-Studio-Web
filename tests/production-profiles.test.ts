@@ -4,12 +4,37 @@ import test from 'node:test';
 import {
   createProductionProfile,
   duplicateProductionProfile,
+  exportProductionProfiles,
+  importProductionProfiles,
   printableAreaKey,
   reviseProductionProfile,
   snapshotProductionProfile,
   validateProductionProfile,
 } from '../services/productionProfiles';
+import {
+  archiveProfile,
+  getDefaultProfile,
+  loadProfileStore,
+  migrateProfileStore,
+  saveProfileStore,
+} from '../services/profileStorage';
 import { ItemType, OutputFormat } from '../types';
+
+const profileFixture = (
+  id: string,
+  name: string,
+  updatedAt: number,
+  revision = 1,
+) => {
+  const profile = createProductionProfile(name);
+  return {
+    ...profile,
+    id,
+    revision,
+    createdAt: Math.min(profile.createdAt, updatedAt),
+    updatedAt,
+  };
+};
 
 test('creates the standard DTG production profile', () => {
   const profile = createProductionProfile('Standard DTG');
@@ -275,4 +300,309 @@ test('duplicates and revises profiles without mutating the source', () => {
   revision.defaults.packageOptions.selectedMockupIndices.push(97);
 
   assert.deepEqual(source, sourceSnapshot);
+});
+
+test('migrates empty storage to exactly one valid default Standard DTG profile', () => {
+  const store = migrateProfileStore(null);
+
+  assert.equal(store.schemaVersion, 1);
+  assert.equal(store.profiles.length, 1);
+  assert.equal(store.profiles[0].name, 'Standard DTG');
+  assert.equal(store.profiles[0].method, 'DTG');
+  assert.equal(store.defaultProfileId, store.profiles[0].id);
+  assert.equal(validateProductionProfile(store.profiles[0]).valid, true);
+});
+
+test('repairs malformed JSON and structurally invalid stores deterministically', () => {
+  const malformed = migrateProfileStore('{not-json');
+  const invalid = migrateProfileStore(JSON.stringify({
+    schemaVersion: 2,
+    defaultProfileId: 42,
+    profiles: {},
+  }));
+
+  for (const store of [malformed, invalid]) {
+    assert.equal(store.schemaVersion, 1);
+    assert.equal(store.profiles.length, 1);
+    assert.equal(store.profiles[0].name, 'Standard DTG');
+    assert.equal(store.defaultProfileId, store.profiles[0].id);
+  }
+});
+
+test('repairs invalid defaults using the latest active valid profile with an id tie-break', () => {
+  const older = profileFixture('older', 'Older', 100);
+  const tiedZ = profileFixture('z-profile', 'Z profile', 200);
+  const tiedA = profileFixture('a-profile', 'A profile', 200);
+  const archived = {
+    ...profileFixture('archived', 'Archived', 300),
+    archivedAt: 301,
+  };
+
+  for (const defaultProfileId of ['missing', archived.id]) {
+    const migrated = migrateProfileStore(JSON.stringify({
+      schemaVersion: 1,
+      defaultProfileId,
+      profiles: [older, tiedZ, archived, tiedA],
+    }));
+
+    assert.equal(migrated.defaultProfileId, tiedA.id);
+    assert.deepEqual(
+      migrated.profiles.map((profile) => profile.id),
+      [older.id, tiedZ.id, archived.id, tiedA.id],
+    );
+  }
+});
+
+test('preserves archived profiles and appends Standard DTG when no active profile remains', () => {
+  const archived = {
+    ...profileFixture('archived', 'Archived', 300),
+    archivedAt: 301,
+  };
+  const migrated = migrateProfileStore(JSON.stringify({
+    schemaVersion: 1,
+    defaultProfileId: archived.id,
+    profiles: [archived],
+  }));
+
+  assert.equal(migrated.profiles.length, 2);
+  assert.deepEqual(migrated.profiles[0], archived);
+  assert.equal(migrated.profiles[1].name, 'Standard DTG');
+  assert.equal(migrated.defaultProfileId, migrated.profiles[1].id);
+});
+
+test('loads and saves migrated profile stores only through available localStorage', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  const values = new Map<string, string>();
+  const fakeStorage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+  } as Storage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: fakeStorage,
+  });
+
+  try {
+    const initial = loadProfileStore();
+    saveProfileStore(initial);
+    const saved = values.get('inkmaster_production_profiles_v1');
+    assert.ok(saved);
+    assert.deepEqual(loadProfileStore(), initial);
+    assert.deepEqual(getDefaultProfile(initial), initial.profiles[0]);
+  } finally {
+    if (originalLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalLocalStorage,
+      });
+    }
+  }
+});
+
+test('archives non-default profiles immutably while keeping the default', () => {
+  const defaultProfile = profileFixture('default', 'Default', 100);
+  const other = profileFixture('other', 'Other', 101);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: defaultProfile.id,
+    profiles: [defaultProfile, other],
+  };
+  const snapshot = structuredClone(store);
+  const archived = archiveProfile(store, other.id);
+
+  assert.equal(archived.defaultProfileId, defaultProfile.id);
+  assert.equal(archived.profiles[1].archivedAt, archived.profiles[1].updatedAt);
+  assert.ok((archived.profiles[1].archivedAt ?? 0) >= other.updatedAt);
+  assert.deepEqual(store, snapshot);
+  assert.notEqual(archived.profiles[0], store.profiles[0]);
+});
+
+test('requires and applies an active replacement when archiving the default', () => {
+  const defaultProfile = profileFixture('default', 'Default', 100);
+  const replacement = profileFixture('replacement', 'Replacement', 101);
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: defaultProfile.id,
+    profiles: [defaultProfile, replacement],
+  };
+
+  assert.throws(() => archiveProfile(store, defaultProfile.id), /replacement/i);
+
+  const archived = archiveProfile(store, defaultProfile.id, replacement.id);
+  assert.equal(archived.defaultProfileId, replacement.id);
+  assert.equal(archived.profiles[0].archivedAt, archived.profiles[0].updatedAt);
+});
+
+test('rejects invalid archive requests', () => {
+  const active = profileFixture('active', 'Active', 100);
+  const other = profileFixture('other', 'Other', 101);
+  const archived = {
+    ...profileFixture('archived', 'Archived', 102),
+    archivedAt: 103,
+  };
+  const store = {
+    schemaVersion: 1 as const,
+    defaultProfileId: active.id,
+    profiles: [active, other, archived],
+  };
+
+  assert.throws(() => archiveProfile(store, 'missing'));
+  assert.throws(() => archiveProfile(store, archived.id));
+  assert.throws(() => archiveProfile(store, active.id, 'missing'));
+  assert.throws(() => archiveProfile(store, active.id, archived.id));
+  assert.throws(() => archiveProfile(store, active.id, active.id));
+  assert.throws(() => archiveProfile(store, other.id, 'missing'));
+  assert.throws(() => archiveProfile(store, other.id, archived.id));
+  assert.throws(() => archiveProfile(store, other.id, other.id));
+});
+
+test('exports a complete portable envelope and round-trips unknown profile IDs', () => {
+  const profiles = [
+    profileFixture('portable-a', 'Portable A', 100),
+    profileFixture('portable-b', 'Portable B', 101),
+  ];
+  const exported = exportProductionProfiles(profiles);
+  const envelope = JSON.parse(exported);
+
+  assert.equal(envelope.format, 'inkmaster-production-profiles');
+  assert.equal(envelope.schemaVersion, 1);
+  assert.equal(Number.isNaN(Date.parse(envelope.exportedAt)), false);
+  assert.deepEqual(envelope.profiles, profiles);
+  assert.match(exported, /\n  "format"/);
+
+  envelope.profiles[0].thresholds.targetDpi = 72;
+  assert.equal(profiles[0].thresholds.targetDpi, 300);
+
+  const imported = importProductionProfiles(exported, []);
+  assert.deepEqual(imported.errors, []);
+  assert.deepEqual(imported.skippedIds, []);
+  assert.deepEqual(imported.profiles, profiles);
+  assert.notEqual(imported.profiles[0], profiles[0]);
+  assert.notEqual(imported.profiles[0].thresholds, profiles[0].thresholds);
+});
+
+test('rejects invalid envelopes and invalid profiles atomically with all errors', () => {
+  const locals = [profileFixture('local', 'Local', 100)];
+  const localSnapshot = structuredClone(locals);
+  const invalidEnvelope = importProductionProfiles(JSON.stringify({
+    format: 'wrong',
+    schemaVersion: 2,
+    profiles: {},
+  }), locals);
+
+  assert.deepEqual(
+    invalidEnvelope.errors.map((error) => error.field),
+    ['format', 'schemaVersion', 'profiles'],
+  );
+  assert.deepEqual(invalidEnvelope.profiles, localSnapshot);
+
+  const invalidProfiles = [
+    { ...profileFixture('bad-one', 'Bad one', 101), name: '' },
+    { ...profileFixture('bad-two', 'Bad two', 102), revision: 0 },
+  ];
+  const invalidIncoming = importProductionProfiles(JSON.stringify({
+    format: 'inkmaster-production-profiles',
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    profiles: invalidProfiles,
+  }), locals);
+
+  assert.ok(invalidIncoming.errors.some((error) => error.field === 'profiles.0.name'));
+  assert.ok(invalidIncoming.errors.some((error) => error.field === 'profiles.1.revision'));
+  assert.deepEqual(invalidIncoming.profiles, localSnapshot);
+  assert.deepEqual(invalidIncoming.skippedIds, []);
+  assert.deepEqual(locals, localSnapshot);
+});
+
+test('skips byte-equivalent profiles at the same revision', () => {
+  const local = profileFixture('same', 'Same', 100, 3);
+  const result = importProductionProfiles(exportProductionProfiles([local]), [local]);
+
+  assert.deepEqual(result.profiles, [local]);
+  assert.deepEqual(result.skippedIds, [local.id]);
+  assert.notEqual(result.profiles[0], local);
+});
+
+test('imports divergent same-ID same-revision profiles as independent conflict copies', () => {
+  const local = profileFixture('conflict', 'Local name', 100, 3);
+  const incoming = {
+    ...structuredClone(local),
+    name: 'Incoming name',
+  };
+  const result = importProductionProfiles(exportProductionProfiles([incoming]), [local]);
+  const copy = result.profiles[1];
+
+  assert.equal(result.profiles.length, 2);
+  assert.notEqual(copy.id, incoming.id);
+  assert.equal(copy.revision, 1);
+  assert.equal(copy.name, 'Incoming name (conflict)');
+  assert.deepEqual(result.skippedIds, []);
+});
+
+test('replaces newer revisions only when confirmed and skips declined or older revisions', () => {
+  const local = profileFixture('versioned', 'Local', 100, 3);
+  const newer = {
+    ...structuredClone(local),
+    revision: 4,
+    name: 'Newer',
+    updatedAt: 101,
+  };
+  const older = {
+    ...structuredClone(local),
+    revision: 2,
+    name: 'Older',
+    updatedAt: 99,
+  };
+  let confirmedIncomingId = '';
+  let confirmedLocalId = '';
+
+  const accepted = importProductionProfiles(
+    exportProductionProfiles([newer]),
+    [local],
+    (incoming, existing) => {
+      confirmedIncomingId = incoming.id;
+      confirmedLocalId = existing.id;
+      return true;
+    },
+  );
+  const declined = importProductionProfiles(
+    exportProductionProfiles([newer]),
+    [local],
+  );
+  const stale = importProductionProfiles(
+    exportProductionProfiles([older]),
+    [local],
+    () => true,
+  );
+
+  assert.equal(confirmedIncomingId, newer.id);
+  assert.equal(confirmedLocalId, local.id);
+  assert.deepEqual(accepted.profiles, [newer]);
+  assert.deepEqual(accepted.skippedIds, []);
+  assert.deepEqual(declined.profiles, [local]);
+  assert.deepEqual(declined.skippedIds, [local.id]);
+  assert.deepEqual(stale.profiles, [local]);
+  assert.deepEqual(stale.skippedIds, [local.id]);
+});
+
+test('never mutates or shares caller profile arrays and nested data', () => {
+  const local = profileFixture('local', 'Local', 100);
+  const incoming = profileFixture('incoming', 'Incoming', 101);
+  const locals = [local];
+  const incomingProfiles = [incoming];
+  const localSnapshot = structuredClone(locals);
+  const incomingSnapshot = structuredClone(incomingProfiles);
+  const portableJson = exportProductionProfiles(incomingProfiles);
+  const result = importProductionProfiles(portableJson, locals);
+
+  result.profiles[0].thresholds.targetDpi = 72;
+  result.profiles[0].printableAreas[printableAreaKey(ItemType.TSHIRT, 'front')].widthInches = 1;
+  result.profiles[1].defaults.packageOptions.selectedMockupIndices.push(99);
+
+  assert.deepEqual(locals, localSnapshot);
+  assert.deepEqual(incomingProfiles, incomingSnapshot);
 });

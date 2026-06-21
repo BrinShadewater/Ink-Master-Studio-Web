@@ -15,6 +15,22 @@ import {
 const createId = (prefix: string) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
+const cloneProfile = (profile: ProductionProfile): ProductionProfile =>
+  structuredClone(profile);
+
+const stableSerialize = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
 const LOCATIONS: PlacementLocation[] = ['front', 'back', 'left-chest', 'sleeve'];
 
 const BASE_PRINTABLE_AREAS: Record<ItemType, PrintableArea> = {
@@ -375,4 +391,122 @@ export const validateProductionProfile = (
   }
 
   return { valid: errors.length === 0, errors };
+};
+
+export const exportProductionProfiles = (
+  profiles: ProductionProfile[],
+): string => JSON.stringify({
+  format: 'inkmaster-production-profiles',
+  schemaVersion: 1,
+  exportedAt: new Date().toISOString(),
+  profiles: profiles.map(cloneProfile),
+}, null, 2);
+
+export const importProductionProfiles = (
+  portableJson: string,
+  localProfiles: ProductionProfile[],
+  confirmUpdate: (
+    incoming: ProductionProfile,
+    local: ProductionProfile,
+  ) => boolean = () => false,
+): {
+  profiles: ProductionProfile[];
+  errors: ProfileValidationError[];
+  skippedIds: string[];
+} => {
+  const unchangedLocals = localProfiles.map(cloneProfile);
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(portableJson);
+  } catch {
+    return {
+      profiles: unchangedLocals,
+      errors: [{ field: 'format', message: 'Portable profile JSON is malformed.' }],
+      skippedIds: [],
+    };
+  }
+
+  const errors: ProfileValidationError[] = [];
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+
+  if (!isRecord(parsed) || parsed.format !== 'inkmaster-production-profiles') {
+    errors.push({
+      field: 'format',
+      message: 'Portable profile format must be inkmaster-production-profiles.',
+    });
+  }
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1) {
+    errors.push({
+      field: 'schemaVersion',
+      message: 'Portable profile schema version must be 1.',
+    });
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.profiles)) {
+    errors.push({
+      field: 'profiles',
+      message: 'Portable profile envelope must contain a profiles array.',
+    });
+  }
+
+  if (errors.length > 0) {
+    return { profiles: unchangedLocals, errors, skippedIds: [] };
+  }
+
+  const incomingProfiles = (parsed as { profiles: unknown[] }).profiles;
+  for (const [index, profile] of incomingProfiles.entries()) {
+    const validation = validateProductionProfile(profile);
+    errors.push(...validation.errors.map((error) => ({
+      field: `profiles.${index}.${error.field}`,
+      message: error.message,
+    })));
+  }
+
+  if (errors.length > 0) {
+    return { profiles: unchangedLocals, errors, skippedIds: [] };
+  }
+
+  const merged = unchangedLocals.map(cloneProfile);
+  const skippedIds: string[] = [];
+  for (const source of incomingProfiles) {
+    const incoming = cloneProfile(source as ProductionProfile);
+    const localIndex = merged.findIndex((profile) => profile.id === incoming.id);
+    if (localIndex === -1) {
+      merged.push(cloneProfile(incoming));
+      continue;
+    }
+
+    const local = merged[localIndex];
+    if (incoming.revision === local.revision) {
+      if (stableSerialize(incoming) === stableSerialize(local)) {
+        skippedIds.push(incoming.id);
+      } else {
+        merged.push({
+          ...cloneProfile(incoming),
+          id: createId('profile'),
+          revision: 1,
+          name: `${incoming.name} (conflict)`,
+        });
+      }
+      continue;
+    }
+
+    if (incoming.revision < local.revision) {
+      skippedIds.push(incoming.id);
+      continue;
+    }
+
+    if (confirmUpdate(cloneProfile(incoming), cloneProfile(local))) {
+      merged[localIndex] = cloneProfile(incoming);
+    } else {
+      skippedIds.push(incoming.id);
+    }
+  }
+
+  return {
+    profiles: merged.map(cloneProfile),
+    errors: [],
+    skippedIds,
+  };
 };

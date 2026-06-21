@@ -205,6 +205,12 @@ export interface ProductionProfile {
   archivedAt: number | null;
 }
 
+export interface ProductionProfileStore {
+  schemaVersion: 1;
+  defaultProfileId: string;
+  profiles: ProductionProfile[];
+}
+
 export interface AppliedProductionProfile {
   profileId: string;
   profileRevision: number;
