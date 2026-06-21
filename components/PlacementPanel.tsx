@@ -1,14 +1,16 @@
 import React from 'react';
-import { PlacementMeasurement } from '../types';
-import { PLACEMENT_PRESETS, validatePlacement } from '../services/placement';
+import { PlacementMeasurement, ProductionProfile } from '../types';
+import { getPrintableArea, PLACEMENT_PRESETS, validatePlacement } from '../services/placement';
 
 interface PlacementPanelProps {
   placement: PlacementMeasurement;
+  profile: ProductionProfile;
   onChange: (placement: PlacementMeasurement) => void;
 }
 
-export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, onChange }) => {
-  const validation = validatePlacement(placement);
+export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, profile, onChange }) => {
+  const printableArea = getPrintableArea(placement.itemType, placement.location, profile);
+  const validation = validatePlacement(placement, profile);
   const update = (key: keyof PlacementMeasurement, value: string | number) =>
     onChange({ ...placement, presetId: 'custom', [key]: value });
   const numberField = (label: string, key: 'widthInches' | 'heightInches' | 'offsetXInches' | 'offsetYInches') => (
@@ -22,6 +24,15 @@ export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, onCha
     <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
       <h3 className="text-sm font-bold text-slate-100">Measured placement</h3>
       <p className="mt-1 text-xs text-slate-500">Dimensions and offsets are stored in inches for this garment variant.</p>
+      {printableArea ? (
+        <p className="mt-2 text-[10px] font-bold text-slate-400">
+          Printable maximum: {printableArea.widthInches} × {printableArea.heightInches} in · {placement.itemType} {placement.location}
+        </p>
+      ) : (
+        <p className="mt-2 text-[10px] font-bold text-rose-300">
+          This profile does not support {placement.itemType} {placement.location}.
+        </p>
+      )}
       <select
         aria-label="Placement preset"
         value={placement.presetId}

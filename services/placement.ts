@@ -4,24 +4,11 @@ import {
   PlacementLocation,
   PlacementMeasurement,
   PlacementPreset,
+  PreflightFinding,
+  PrintableArea,
+  ProductionProfile,
 } from '../types';
-
-interface PrintableArea {
-  widthInches: number;
-  heightInches: number;
-  xPercent: number;
-  yPercent: number;
-  widthPercent: number;
-  heightPercent: number;
-}
-
-const PRINTABLE_AREAS: Record<ItemType, PrintableArea> = {
-  [ItemType.TSHIRT]: { widthInches: 15, heightInches: 18, xPercent: 25, yPercent: 14, widthPercent: 50, heightPercent: 62 },
-  [ItemType.HOODIE]: { widthInches: 14, heightInches: 15, xPercent: 27, yPercent: 18, widthPercent: 46, heightPercent: 52 },
-  [ItemType.HAT]: { widthInches: 5, heightInches: 2.25, xPercent: 31, yPercent: 34, widthPercent: 38, heightPercent: 22 },
-  [ItemType.MUG]: { widthInches: 8.5, heightInches: 3.5, xPercent: 18, yPercent: 30, widthPercent: 64, heightPercent: 40 },
-  [ItemType.TOTE]: { widthInches: 12, heightInches: 14, xPercent: 24, yPercent: 20, widthPercent: 52, heightPercent: 58 },
-};
+import { printableAreaKey } from './productionProfiles';
 
 export const DEFAULT_PLACEMENT: PlacementMeasurement = {
   presetId: 'full-front',
@@ -74,26 +61,69 @@ export const placementVariantKey = (
   garmentSize: GarmentSize,
 ) => `${itemType}:${location}:${garmentSize}`;
 
-export const validatePlacement = (placement: PlacementMeasurement) => {
-  const area = PRINTABLE_AREAS[placement.itemType];
+export const getPrintableArea = (
+  itemType: ItemType,
+  location: PlacementLocation,
+  profile: ProductionProfile,
+): PrintableArea | undefined => {
+  const area = profile.printableAreas[printableAreaKey(itemType, location)];
+  return area ? { ...area } : undefined;
+};
+
+export const validatePlacement = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+): { valid: boolean; errors: string[] } => {
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  if (!area) {
+    return {
+      valid: false,
+      errors: ['The selected profile does not support this product and placement.'],
+    };
+  }
+
   const errors: string[] = [];
-  if (placement.widthInches <= 0 || placement.widthInches > area.widthInches) {
+  if (!Number.isFinite(placement.widthInches) || placement.widthInches <= 0 || placement.widthInches > area.widthInches) {
     errors.push(`Print width must be between 0 and ${area.widthInches} inches.`);
   }
-  if (placement.heightInches <= 0 || placement.heightInches > area.heightInches) {
+  if (!Number.isFinite(placement.heightInches) || placement.heightInches <= 0 || placement.heightInches > area.heightInches) {
     errors.push(`Print height must be between 0 and ${area.heightInches} inches.`);
   }
-  if (Math.abs(placement.offsetXInches) + placement.widthInches / 2 > area.widthInches / 2) {
+  if (
+    !Number.isFinite(placement.offsetXInches)
+    || !Number.isFinite(placement.widthInches)
+    || Math.abs(placement.offsetXInches) + placement.widthInches / 2 > area.widthInches / 2
+  ) {
     errors.push('Horizontal offset places artwork outside the printable width.');
   }
-  if (placement.offsetYInches < 0 || placement.offsetYInches + placement.heightInches > area.heightInches) {
+  if (
+    !Number.isFinite(placement.offsetYInches)
+    || !Number.isFinite(placement.heightInches)
+    || placement.offsetYInches < 0
+    || placement.offsetYInches + placement.heightInches > area.heightInches
+  ) {
     errors.push('Vertical offset places artwork outside the printable height.');
   }
   return { valid: errors.length === 0, errors };
 };
 
-export const placementToMockupPercent = (placement: PlacementMeasurement) => {
-  const area = PRINTABLE_AREAS[placement.itemType];
+const requirePrintableArea = (
+  itemType: ItemType,
+  location: PlacementLocation,
+  profile: ProductionProfile,
+) => {
+  const area = getPrintableArea(itemType, location, profile);
+  if (!area) {
+    throw new Error('Unsupported product and placement for the applied profile.');
+  }
+  return area;
+};
+
+export const placementToMockupPercent = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+) => {
+  const area = requirePrintableArea(placement.itemType, placement.location, profile);
   const width = (placement.widthInches / area.widthInches) * area.widthPercent;
   const height = (placement.heightInches / area.heightInches) * area.heightPercent;
   const centerX = area.xPercent + area.widthPercent / 2
@@ -110,8 +140,9 @@ export const placementToMockupPercent = (placement: PlacementMeasurement) => {
 export const mockupPercentToPlacement = (
   percent: { x: number; y: number; width: number; height: number },
   base: PlacementMeasurement,
+  profile: ProductionProfile,
 ): PlacementMeasurement => {
-  const area = PRINTABLE_AREAS[base.itemType];
+  const area = requirePrintableArea(base.itemType, base.location, profile);
   const widthInches = (percent.width / area.widthPercent) * area.widthInches;
   const heightInches = (percent.height / area.heightPercent) * area.heightInches;
   const centerPercent = percent.x + percent.width / 2;
@@ -126,4 +157,32 @@ export const mockupPercentToPlacement = (
   };
 };
 
-export const getPrintableArea = (itemType: ItemType) => ({ ...PRINTABLE_AREAS[itemType] });
+export const createPlacementPreflightFinding = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+): PreflightFinding | null => {
+  const validation = validatePlacement(placement, profile);
+  if (validation.valid) return null;
+
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  const context = area
+    ? `${profile.name} maximum for ${placement.itemType} ${placement.location} is ${area.widthInches} × ${area.heightInches} in.`
+    : `${profile.name} does not define a printable area for ${placement.itemType} ${placement.location}.`;
+
+  return {
+    id: 'placement-area',
+    severity: 'critical',
+    title: 'Placement exceeds printable area',
+    message: `${validation.errors.join(' ')} ${context}`,
+    action: 'Reduce dimensions/offset or choose a compatible production profile.',
+  };
+};
+
+export const combinePreflightFindings = (
+  findings: PreflightFinding[],
+  placementFinding: PreflightFinding | null,
+): PreflightFinding[] => {
+  const placementId = placementFinding?.id;
+  const combined = findings.filter((finding) => finding.id !== placementId);
+  return placementFinding ? [...combined, placementFinding] : [...combined];
+};
