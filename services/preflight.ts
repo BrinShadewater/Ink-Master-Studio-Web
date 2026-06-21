@@ -15,14 +15,20 @@ const finding = (
   action: string,
 ): PreflightFinding => ({ id, severity, title, message, action });
 
+const calculateRawEffectiveDpi = (
+  widthPixels: number,
+  heightPixels: number,
+  specification: PrintSpecification,
+) => Math.min(
+  widthPixels / Math.max(0.1, specification.widthInches),
+  heightPixels / Math.max(0.1, specification.heightInches),
+);
+
 export const calculateEffectiveDpi = (
   widthPixels: number,
   heightPixels: number,
   specification: PrintSpecification,
-) => Math.round(Math.min(
-  widthPixels / Math.max(0.1, specification.widthInches),
-  heightPixels / Math.max(0.1, specification.heightInches),
-));
+) => Math.round(calculateRawEffectiveDpi(widthPixels, heightPixels, specification));
 
 export const evaluatePreflight = (
   analysis: ArtworkAnalysis,
@@ -30,7 +36,12 @@ export const evaluatePreflight = (
   settings: ProcessingSettings,
   profile: ProductionProfile,
 ): PreflightFinding[] => {
-  const effectiveDpi = calculateEffectiveDpi(analysis.width, analysis.height, specification);
+  const rawEffectiveDpi = calculateRawEffectiveDpi(
+    analysis.width,
+    analysis.height,
+    specification,
+  );
+  const displayedEffectiveDpi = Math.round(rawEffectiveDpi);
   const {
     targetDpi,
     warningDpi,
@@ -38,35 +49,35 @@ export const evaluatePreflight = (
     significantUpscaleRatio,
     extremeUpscaleRatio,
   } = profile.thresholds;
-  const resolution = effectiveDpi < criticalDpi
+  const resolution = rawEffectiveDpi < criticalDpi
     ? finding(
         'resolution',
         'critical',
         'Resolution is below production minimum',
-        `${effectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; profile minimum is ${criticalDpi} DPI and ideal target is ${targetDpi} DPI.`,
+        `${displayedEffectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; profile minimum is ${criticalDpi} DPI and ideal target is ${targetDpi} DPI.`,
         'Reduce print dimensions or replace the source artwork with a larger file.',
       )
-    : effectiveDpi < warningDpi
+    : rawEffectiveDpi < warningDpi
       ? finding(
           'resolution',
           'warning',
           'Resolution is below the profile tolerance',
-          `${effectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; profile tolerance is ${warningDpi} DPI and ideal target is ${targetDpi} DPI.`,
+          `${displayedEffectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; profile tolerance is ${warningDpi} DPI and ideal target is ${targetDpi} DPI.`,
           'Reduce print dimensions, accept the softer result, or use higher-resolution artwork.',
         )
-      : effectiveDpi < targetDpi
+      : rawEffectiveDpi < targetDpi
         ? finding(
             'resolution',
             'pass',
             'Resolution meets profile tolerance',
-            `${effectiveDpi} DPI meets the ${warningDpi} DPI minimum tolerance but is below the ideal target of ${targetDpi} DPI.`,
+            `${displayedEffectiveDpi} DPI meets the ${warningDpi} DPI minimum tolerance but is below the ideal target of ${targetDpi} DPI.`,
             'No action needed.',
           )
         : finding(
             'resolution',
             'pass',
             'Resolution meets the ideal target',
-            `${effectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; ideal target is ${targetDpi} DPI.`,
+            `${displayedEffectiveDpi} DPI at ${specification.widthInches}×${specification.heightInches} in; ideal target is ${targetDpi} DPI.`,
             'No action needed.',
           );
 
@@ -129,7 +140,7 @@ export const evaluatePreflight = (
           'No action needed.',
         );
 
-  const detail = analysis.vectorSuitability === 'weak' && effectiveDpi < 220
+  const detail = analysis.vectorSuitability === 'weak' && rawEffectiveDpi < 220
     ? finding(
         'fine-detail',
         'warning',

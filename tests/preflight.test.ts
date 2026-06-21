@@ -132,6 +132,58 @@ test('keeps exact warning DPI in pass severity', () => {
   assert.equal(findings.find((entry) => entry.id === 'resolution')?.severity, 'pass');
 });
 
+test('classifies fractional DPI immediately below and at the critical boundary', () => {
+  const profile = createProfile();
+  const squareSpecification = {
+    ...specification,
+    widthInches: 10,
+    heightInches: 10,
+  };
+  const belowCritical = evaluatePreflight(
+    { ...analysis, width: 1496, height: 1496 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
+  const atCritical = evaluatePreflight(
+    { ...analysis, width: 1500, height: 1500 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
+
+  assert.equal(belowCritical?.severity, 'critical');
+  assert.match(belowCritical?.message ?? '', /150 DPI/);
+  assert.equal(atCritical?.severity, 'warning');
+  assert.match(atCritical?.message ?? '', /150 DPI/);
+});
+
+test('classifies fractional DPI immediately below and at the warning boundary', () => {
+  const profile = createProfile();
+  const squareSpecification = {
+    ...specification,
+    widthInches: 10,
+    heightInches: 10,
+  };
+  const belowWarning = evaluatePreflight(
+    { ...analysis, width: 1996, height: 1996 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
+  const atWarning = evaluatePreflight(
+    { ...analysis, width: 2000, height: 2000 },
+    squareSpecification,
+    DEFAULT_SETTINGS,
+    profile,
+  ).find((entry) => entry.id === 'resolution');
+
+  assert.equal(belowWarning?.severity, 'warning');
+  assert.match(belowWarning?.message ?? '', /200 DPI/);
+  assert.equal(atWarning?.severity, 'pass');
+  assert.match(atWarning?.message ?? '', /200 DPI/);
+});
+
 test('describes a tolerated DPI below the ideal target honestly', () => {
   const profile = createProfile();
   const findings = evaluatePreflight(
