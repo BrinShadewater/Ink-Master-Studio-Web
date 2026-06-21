@@ -1,13 +1,18 @@
 import React from 'react';
 
 interface StudioTopBarProps {
+  jobName: string;
+  saveStatus: 'saved' | 'saving' | 'error';
   canUndo: boolean;
   canRedo: boolean;
   onNewFile: () => void;
+  onJobNameChange: (name: string) => void;
+  onOpenJobs: () => void;
   onBatch: () => void;
   onUndo: () => void;
   onRedo: () => void;
   versions: React.ReactNode;
+  templates: React.ReactNode;
 }
 
 const IconButton: React.FC<{
@@ -29,27 +34,40 @@ const IconButton: React.FC<{
 );
 
 export const StudioTopBar: React.FC<StudioTopBarProps> = ({
+  jobName,
+  saveStatus,
   canUndo,
   canRedo,
   onNewFile,
+  onJobNameChange,
+  onOpenJobs,
   onBatch,
   onUndo,
   onRedo,
   versions,
+  templates,
 }) => (
-  <header className="flex h-14 flex-none items-center justify-between border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur lg:px-5">
-    <button
-      type="button"
-      onClick={onNewFile}
-      className="flex min-w-0 items-center gap-2 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-    >
+  <header className="relative z-40 flex h-14 flex-none items-center justify-between border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur lg:px-5">
+    <div className="flex min-w-0 items-center gap-2">
       <img src="/logo/logo.png" alt="" className="h-8 w-8 object-contain" />
-      <span className="hidden text-sm font-black tracking-tight text-slate-100 sm:inline">
-        InkMaster <span className="text-indigo-400">Studio</span>
-      </span>
-    </button>
+      <div className="hidden min-w-0 sm:block">
+        <input
+          aria-label="Job name"
+          value={jobName}
+          onChange={(event) => onJobNameChange(event.target.value)}
+          className="w-40 truncate border-0 bg-transparent p-0 text-sm font-black tracking-tight text-slate-100 outline-none focus:text-white lg:w-56"
+        />
+        <p className={`text-[10px] font-semibold ${saveStatus === 'error' ? 'text-rose-400' : 'text-slate-500'}`}>
+          {saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'error' ? 'Local save failed' : 'Saved locally'}
+        </p>
+      </div>
+    </div>
 
     <div className="flex items-center gap-1.5">
+      <IconButton label="Open production jobs" onClick={onOpenJobs}>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h6l2 2h8v9H4z" /><path d="M4 7V5h6l2 2" /></svg>
+        <span className="hidden md:inline">Jobs</span>
+      </IconButton>
       <IconButton label="New file" onClick={onNewFile}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
         <span className="hidden md:inline">New file</span>
@@ -65,6 +83,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
       <IconButton label="Redo" disabled={!canRedo} onClick={onRedo}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 7 5 5-5 5M19 12h-9a6 6 0 0 0-6 6" /></svg>
       </IconButton>
+      {templates}
       {versions}
     </div>
   </header>

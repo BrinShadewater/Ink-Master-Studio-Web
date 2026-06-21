@@ -2,6 +2,13 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
 import { compositeMockup, generatePrintPDF } from '../services/imageProcessing';
 
+interface PercentPlacement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface PreviewProps {
   originalImage: string | null;
   processedResult: ProcessedResult | null;
@@ -15,6 +22,8 @@ interface PreviewProps {
   embedded?: boolean;
   workspaceStage?: WorkspaceStage;
   exportRequestToken?: number;
+  productionPlacement?: PercentPlacement;
+  onProductionPlacementChange?: (placement: PercentPlacement) => void;
 }
 
 const MOCKUPS = [
@@ -63,6 +72,8 @@ export const Preview: React.FC<PreviewProps> = ({
   embedded = false,
   workspaceStage = 'prepare',
   exportRequestToken = 0,
+  productionPlacement,
+  onProductionPlacementChange,
 }) => {
   const [viewMode, setViewMode] = useState<'ARTBOARD' | 'MOCKUP'>('ARTBOARD');
   const [bgMode, setBgMode] = useState<'CHECKER' | 'BLACK' | 'WHITE'>('CHECKER');
@@ -109,6 +120,15 @@ export const Preview: React.FC<PreviewProps> = ({
   }, [designSource, originalImage, processedResult]);
 
   const toPercent = (px: number, dimension: number) => (px / dimension) * 100;
+
+  useEffect(() => {
+    if (productionPlacement) setPlacement(productionPlacement);
+  }, [
+    productionPlacement?.x,
+    productionPlacement?.y,
+    productionPlacement?.width,
+    productionPlacement?.height,
+  ]);
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, mode: 'move' | 'resize') => {
     e.preventDefault();
@@ -187,12 +207,15 @@ export const Preview: React.FC<PreviewProps> = ({
   }, []);
 
   const handleMouseUp = useCallback(() => {
+    if (dragState.current.dragging || dragState.current.resizing) {
+      onProductionPlacementChange?.(placement);
+    }
     dragState.current.dragging = false;
     dragState.current.resizing = false;
     isPanning.current = false;
     setSnapX(false);
     setSnapY(false);
-  }, []);
+  }, [onProductionPlacementChange, placement]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);

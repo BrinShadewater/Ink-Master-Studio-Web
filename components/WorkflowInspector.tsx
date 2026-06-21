@@ -3,7 +3,11 @@ import {
   ArtworkAnalysis,
   EdgeBehavior,
   ExportHistoryEntry,
+  JobMetadata,
   OutputFormat,
+  PlacementMeasurement,
+  PreflightFinding,
+  PrintSpecification,
   ProcessingSettings,
   RecipeId,
   RecipeRecommendation,
@@ -11,6 +15,9 @@ import {
   UserRecipe,
   WorkspaceStage,
 } from '../types';
+import { PlacementPanel } from './PlacementPanel';
+import { PreflightPanel } from './PreflightPanel';
+import { getPreflightGate } from '../services/preflight';
 import { getRecipe, RECIPES } from '../services/recipes';
 import { migrateStoredRecipes } from '../services/recipeStorage';
 
@@ -34,6 +41,12 @@ interface WorkflowInspectorProps {
   hasProcessedResult: boolean;
   lowResolutionAcknowledged: boolean;
   isEyedropperMode: boolean;
+  printSpecification: PrintSpecification;
+  placement: PlacementMeasurement;
+  preflightFindings: PreflightFinding[];
+  preflightAcknowledged: boolean;
+  jobMetadata: JobMetadata;
+  namingPattern: string;
   onStageChange: (stage: WorkspaceStage) => void;
   onApplyRecipe: (recipeId: RecipeId, settings?: ProcessingSettings) => void;
   onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
@@ -43,6 +56,13 @@ interface WorkflowInspectorProps {
   onDownloadPdf: () => void;
   onDownloadMockups: () => void;
   onAcknowledgeLowResolution: (value: boolean) => void;
+  onPrintSpecificationChange: (specification: PrintSpecification) => void;
+  onPlacementChange: (placement: PlacementMeasurement) => void;
+  onAcknowledgePreflight: (value: boolean) => void;
+  onJobMetadataChange: (metadata: JobMetadata) => void;
+  onNamingPatternChange: (pattern: string) => void;
+  onDownloadProductionPackage: () => void;
+  onDownloadProof: (quality: 'print' | 'email') => void;
 }
 
 const Toggle: React.FC<{ checked: boolean; onChange: () => void; label: string }> = ({ checked, onChange, label }) => (
@@ -99,6 +119,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     hasProcessedResult,
     lowResolutionAcknowledged,
     isEyedropperMode,
+    printSpecification,
+    placement,
+    preflightFindings,
+    preflightAcknowledged,
+    jobMetadata,
+    namingPattern,
     onStageChange,
     onApplyRecipe,
     onSettingsChange,
@@ -108,6 +134,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onDownloadPdf,
     onDownloadMockups,
     onAcknowledgeLowResolution,
+    onPrintSpecificationChange,
+    onPlacementChange,
+    onAcknowledgePreflight,
+    onJobMetadataChange,
+    onNamingPatternChange,
+    onDownloadProductionPackage,
+    onDownloadProof,
   } = props;
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [userRecipes, setUserRecipes] = useState<UserRecipe[]>([]);
@@ -131,6 +164,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
+  const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
 
   const saveRecipe = () => {
     if (!recipeName.trim()) return;
@@ -300,6 +334,26 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               </div>
             </Section>
 
+            <PreflightPanel
+              specification={printSpecification}
+              findings={preflightFindings}
+              acknowledged={preflightAcknowledged}
+              onSpecificationChange={onPrintSpecificationChange}
+              onAcknowledge={onAcknowledgePreflight}
+            />
+
+            <Section title="Job handoff details" description="These fields appear in filenames, manifests, packages, and customer proofs.">
+              <div className="space-y-2">
+                <input value={jobMetadata.customerName} onChange={(event) => onJobMetadataChange({ ...jobMetadata, customerName: event.target.value })} placeholder="Customer name" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
+                <input value={jobMetadata.orderNumber} onChange={(event) => onJobMetadataChange({ ...jobMetadata, orderNumber: event.target.value })} placeholder="Order number" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
+                <textarea value={jobMetadata.notes} onChange={(event) => onJobMetadataChange({ ...jobMetadata, notes: event.target.value })} placeholder="Production and customer notes" rows={3} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
+              </div>
+            </Section>
+
+            <Section title="File naming" description="Tokens: {job}, {customer}, {order}, {garment}, {placement}, {version}.">
+              <input value={namingPattern} onChange={(event) => onNamingPatternChange(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[10px] text-white outline-none focus:border-indigo-500" />
+            </Section>
+
             <button type="button" onClick={() => setAdvancedOpen((value) => !value)} className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs font-bold text-slate-300 hover:border-slate-700">
               Advanced controls <span aria-hidden>{advancedOpen ? '−' : '+'}</span>
             </button>
@@ -341,6 +395,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 <span className={`h-3 w-3 rounded-full ${analysis?.printQuality.status === 'good' ? 'bg-emerald-400' : analysis?.printQuality.status === 'low' ? 'bg-amber-400' : 'bg-rose-400'}`} />
               </div>
             </Section>
+            <PlacementPanel placement={placement} onChange={onPlacementChange} />
             <Section title="Review checklist">
               <ul className="space-y-2 text-xs text-slate-400">
                 <li>✓ Check the design on both light and dark garments.</li>
@@ -376,25 +431,32 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               )}
             </Section>
 
-            {analysis?.printQuality.status !== 'good' && (
-              <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                <p className="text-xs font-bold text-amber-300">Resolution warning</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-amber-100/70">{analysis?.warnings[0] ?? 'This file may appear soft at a large print size.'}</p>
-                <label className="mt-3 flex cursor-pointer items-start gap-2 text-[11px] text-slate-300">
-                  <input type="checkbox" checked={lowResolutionAcknowledged} onChange={(event) => onAcknowledgeLowResolution(event.target.checked)} className="mt-0.5 accent-indigo-500" />
-                  I understand and want to export the production file.
-                </label>
-              </section>
-            )}
+            <PreflightPanel
+              specification={printSpecification}
+              findings={preflightFindings}
+              acknowledged={preflightAcknowledged}
+              onSpecificationChange={onPrintSpecificationChange}
+              onAcknowledge={onAcknowledgePreflight}
+            />
 
             <Section title="Downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
               <div className="space-y-2">
-                <button type="button" disabled={!hasProcessedResult || (analysis?.printQuality.status !== 'good' && !lowResolutionAcknowledged)} onClick={onDownloadPrintFile} className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
+                <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadPrintFile} className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
                   Download print file
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" disabled={!hasProcessedResult} onClick={onDownloadPdf} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Production PDF</button>
                   <button type="button" disabled={!hasProcessedResult} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Production handoff" description="Create the complete shop package or a customer approval proof.">
+              <div className="space-y-2">
+                <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Download production package</button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('print')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Print proof</button>
+                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('email')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Email proof</button>
                 </div>
               </div>
             </Section>

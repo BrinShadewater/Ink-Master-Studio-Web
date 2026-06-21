@@ -37,6 +37,10 @@ export enum ResizeMode {
 }
 
 export type WorkspaceStage = 'goal' | 'prepare' | 'preview' | 'export';
+export type ProductionMethod = 'DTG' | 'DTF';
+export type PreflightSeverity = 'pass' | 'warning' | 'critical';
+export type PlacementLocation = 'front' | 'back' | 'left-chest' | 'sleeve';
+export type GarmentSize = 'YOUTH' | 'S' | 'M' | 'L' | 'XL' | '2XL' | '3XL';
 export type RecipeId =
   | 'dark-garment'
   | 'light-garment'
@@ -94,6 +98,123 @@ export interface UserRecipe {
   createdAt: number;
   source: 'user';
   settings: ProcessingSettings;
+}
+
+export interface JobMetadata {
+  name: string;
+  customerName: string;
+  orderNumber: string;
+  notes: string;
+  tags: string[];
+}
+
+export interface SourceArtwork {
+  name: string;
+  type: string;
+  lastModified: number;
+  blob: Blob;
+}
+
+export interface PrintSpecification {
+  method: ProductionMethod;
+  widthInches: number;
+  heightInches: number;
+  targetDpi: number;
+}
+
+export interface PlacementMeasurement {
+  presetId: string;
+  itemType: ItemType;
+  location: PlacementLocation;
+  garmentSize: GarmentSize;
+  widthInches: number;
+  heightInches: number;
+  offsetXInches: number;
+  offsetYInches: number;
+}
+
+export interface PlacementPreset extends PlacementMeasurement {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface PreflightFinding {
+  id: string;
+  severity: PreflightSeverity;
+  title: string;
+  message: string;
+  action: string;
+}
+
+export interface ProofBranding {
+  shopName: string;
+  contactLine: string;
+  accentColor: string;
+  footerNote: string;
+}
+
+export interface ProductionPackageOptions {
+  namingPattern: string;
+  includePrintMaster: boolean;
+  includeProductionPdf: boolean;
+  includeMockups: boolean;
+  selectedMockupIndices: number[];
+  includeUnderbase: boolean;
+  includeSummary: boolean;
+  includeManifest: boolean;
+}
+
+export interface StoredJobExport {
+  id: string;
+  filename: string;
+  format: string;
+  timestamp: number;
+  blob: Blob;
+}
+
+export interface StudioJob {
+  schemaVersion: 1;
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+  revision: number;
+  metadata: JobMetadata;
+  sourceArtwork: SourceArtwork | null;
+  settings: ProcessingSettings;
+  selectedRecipeId: RecipeId | null;
+  analysis: ArtworkAnalysis | null;
+  printSpecification: PrintSpecification;
+  placements: Record<string, PlacementMeasurement>;
+  activePlacementKey: string;
+  preflightFindings: PreflightFinding[];
+  acknowledgedPreflightRevision: number | null;
+  proofBranding: ProofBranding;
+  packageOptions: ProductionPackageOptions;
+  versions: Array<{
+    id: string;
+    name: string;
+    timestamp: number;
+    settings: ProcessingSettings;
+  }>;
+  exports: StoredJobExport[];
+}
+
+export interface ShopTemplate {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+  recipeId: RecipeId | null;
+  itemType: ItemType;
+  settings: ProcessingSettings;
+  printSpecification: PrintSpecification;
+  placement: PlacementMeasurement;
+  packageOptions: ProductionPackageOptions;
+  proofBranding: ProofBranding;
 }
 
 export interface ProcessingSettings {

@@ -1,15 +1,17 @@
 # Ink Master Studio Web 🖨️
 
-AI-assisted production tool for screen-print and apparel mockup workflows.
+Local-first DTG/DTF production workbench for print-shop operators.
 
 Ink Master Studio helps turn source artwork into usable previews and production assets: upload artwork, adjust mockup controls, generate exports, track history, and prepare client-facing visuals without leaving the browser. The goal is a practical workbench, not a shiny demo: fewer handoffs, fewer mystery steps, faster proofs.
 
 ## 👕 What This App Does
 
-- Accepts uploaded artwork for production/mockup workflows.
-- Provides preset controls and preview surfaces for apparel mockups.
-- Supports batch processing and export history.
-- Generates PDF/ZIP output for sharing or production handoff.
+- Saves named production jobs, artwork, settings, placement, notes, versions, and exports in IndexedDB.
+- Runs deterministic preflight against actual print dimensions, effective DPI, transparency, backgrounds, upscaling, detail, and output format.
+- Stores garment placement in inches with full-front, chest, back, sleeve, youth, and oversized presets.
+- Generates portable `.inkmaster-job` backups, production ZIP packages, print/email proofs, PDFs, mockups, and manifests.
+- Supports guided batch processing with per-file recipes, preflight findings, warning acknowledgement, cancellation, and combined-order export.
+- Saves portable shop templates separately from artwork-treatment recipes.
 - Uses AI assistance where it helps move artwork toward usable proof material.
 
 ## 🧰 Stack
@@ -23,7 +25,7 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 
 ## 🚦 Repository Status
 
-Prototype-to-production tool. The UI is practical, but API-key handling must be reviewed before public deployment.
+Production-oriented local-first tool. Gemini requests remain behind the server-side `/api/edit-image` route; `GEMINI_API_KEY` must never be exposed through a browser-public environment variable.
 
 ## ⚙️ Local Development
 
@@ -62,9 +64,12 @@ npm run preview
 ## 🗺️ Project Map
 
 ```text
-App.tsx                 Main application shell
-components/             Upload, controls, preview, batch, export UI
-services/               Gemini and image-processing services
+App.tsx                 Main application and current-job orchestration
+components/             Guided workflow, job library, preflight, placement, batch, and export UI
+services/job*           Versioned job model, IndexedDB repository, and portable archives
+services/preflight.ts   Deterministic production checks and export gating
+services/placement.ts   Inch-based presets and calibrated preview conversion
+services/*Package.ts    Production package, proof, naming, and template services
 public/mockups/         Apparel mockup assets
 public/logo/            Brand assets
 PERFORMANCE_SEO_REPORT.md
@@ -76,9 +81,11 @@ nginx.conf
 ## 🔦 Key Surfaces
 
 - `components/Dropzone.tsx` handles artwork intake.
-- `components/Controls.tsx` and `components/PresetsPanel.tsx` shape the production workflow.
+- `components/WorkflowInspector.tsx` owns the Goal → Prepare → Preview → Export workflow.
+- `components/JobLibrary.tsx` handles reopen, duplicate, archive, transfer, and import.
+- `components/PreflightPanel.tsx` and `components/PlacementPanel.tsx` expose production specifications.
 - `components/Preview.tsx` controls mockup review.
-- `components/BatchProcessor.tsx` and `components/ExportHistory.tsx` affect output workflows.
+- `components/BatchProcessor.tsx` applies shared recipe and preflight rules to many files.
 - `api/edit-image.ts`, `services/geminiService.ts`, and `services/imageProcessing.ts` are security- and cost-sensitive.
 - `nginx.conf` and `Dockerfile` support production hosting.
 
@@ -102,8 +109,9 @@ Keep the tool practical and production-minded. Every control should help someone
 
 ## ✅ Review Checklist
 
-- Run `npm run build`.
+- Run `npm test` and `npx tsc --noEmit`.
 - Test uploads with safe sample files.
-- Review mockup alignment and export output.
+- Create, reload, duplicate, archive, export, and import a local job.
+- Review measured placement, preflight gating, production packages, proofs, templates, and batch exclusions.
 - Check that no real client assets or secrets are committed.
 - Re-read `SECURITY.md` for any API, upload, or deployment change.
