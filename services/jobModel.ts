@@ -1,11 +1,20 @@
 import {
-  DEFAULT_PACKAGE_OPTIONS,
   DEFAULT_PRINT_SPECIFICATION,
   DEFAULT_PROOF_BRANDING,
   DEFAULT_SETTINGS,
 } from '../constants';
 import { DEFAULT_PLACEMENT, placementVariantKey } from './placement';
-import { StudioJob } from '../types';
+import {
+  createProductionProfile,
+  snapshotProductionProfile,
+  validateProductionProfile,
+} from './productionProfiles';
+import {
+  AppliedProductionProfile,
+  ProductionPackageOptions,
+  ProductionProfile,
+  StudioJob,
+} from '../types';
 
 const now = () => Date.now();
 const createId = (prefix: string) =>
@@ -13,8 +22,50 @@ const createId = (prefix: string) =>
     ? crypto.randomUUID()
     : `${now()}_${Math.random().toString(36).slice(2, 10)}`}`;
 
-export const createStudioJob = (name = 'Untitled job'): StudioJob => {
+const packageOptionsFromProfile = (
+  profile: ProductionProfile,
+): ProductionPackageOptions => ({
+  ...structuredClone(profile.defaults.packageOptions),
+  includeUnderbase: profile.defaults.includeUnderbase,
+});
+
+const migrateAppliedProductionProfile = (
+  value: unknown,
+  fallback: AppliedProductionProfile,
+): AppliedProductionProfile => {
+  if (!isRecord(value)) return fallback;
+  const snapshot = value.snapshot;
+  if (
+    typeof value.profileId !== 'string'
+    || value.profileId.trim().length === 0
+    || typeof value.profileRevision !== 'number'
+    || !Number.isInteger(value.profileRevision)
+    || value.profileRevision < 1
+  ) {
+    return fallback;
+  }
+
+  try {
+    if (
+      !validateProductionProfile(snapshot).valid
+      || !isRecord(snapshot)
+      || value.profileId !== snapshot.id
+      || value.profileRevision !== snapshot.revision
+    ) {
+      return fallback;
+    }
+    return snapshotProductionProfile(snapshot as unknown as ProductionProfile);
+  } catch {
+    return fallback;
+  }
+};
+
+export const createStudioJob = (
+  name = 'Untitled job',
+  profile = createProductionProfile('Standard DTG'),
+): StudioJob => {
   const timestamp = now();
+  const productionProfile = snapshotProductionProfile(profile);
   const activePlacementKey = placementVariantKey(
     DEFAULT_PLACEMENT.itemType,
     DEFAULT_PLACEMENT.location,
@@ -27,6 +78,7 @@ export const createStudioJob = (name = 'Untitled job'): StudioJob => {
     updatedAt: timestamp,
     archivedAt: null,
     revision: 1,
+    productionProfile,
     metadata: {
       name,
       customerName: '',
@@ -35,19 +87,25 @@ export const createStudioJob = (name = 'Untitled job'): StudioJob => {
       tags: [],
     },
     sourceArtwork: null,
-    settings: { ...DEFAULT_SETTINGS, colorReplacements: [] },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      format: profile.defaults.format,
+      preserveTransparency: profile.defaults.preserveTransparency,
+      colorReplacements: [],
+    },
     selectedRecipeId: null,
     analysis: null,
-    printSpecification: { ...DEFAULT_PRINT_SPECIFICATION },
+    printSpecification: {
+      ...DEFAULT_PRINT_SPECIFICATION,
+      method: profile.method,
+      targetDpi: profile.thresholds.targetDpi,
+    },
     placements: { [activePlacementKey]: { ...DEFAULT_PLACEMENT } },
     activePlacementKey,
     preflightFindings: [],
     acknowledgedPreflightRevision: null,
     proofBranding: { ...DEFAULT_PROOF_BRANDING },
-    packageOptions: {
-      ...DEFAULT_PACKAGE_OPTIONS,
-      selectedMockupIndices: [...DEFAULT_PACKAGE_OPTIONS.selectedMockupIndices],
-    },
+    packageOptions: packageOptionsFromProfile(profile),
     versions: [],
     exports: [],
   };
@@ -66,6 +124,10 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
   const base = createStudioJob(
     typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name : 'Untitled job',
   );
+  const productionProfile = migrateAppliedProductionProfile(
+    source.productionProfile,
+    base.productionProfile,
+  );
   const placements = isRecord(source.placements)
     ? source.placements as StudioJob['placements']
     : base.placements;
@@ -83,6 +145,7 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
     updatedAt: typeof source.updatedAt === 'number' ? source.updatedAt : base.updatedAt,
     archivedAt: typeof source.archivedAt === 'number' ? source.archivedAt : null,
     revision: typeof source.revision === 'number' ? source.revision : 1,
+    productionProfile,
     metadata: {
       ...base.metadata,
       ...metadata,
@@ -131,6 +194,25 @@ export const touchStudioJob = (job: StudioJob): StudioJob => ({
   updatedAt: now(),
   revision: job.revision + 1,
   acknowledgedPreflightRevision: null,
+});
+
+export const applyProductionProfileToJob = (
+  job: StudioJob,
+  profile: ProductionProfile,
+): StudioJob => touchStudioJob({
+  ...job,
+  productionProfile: snapshotProductionProfile(profile),
+  printSpecification: {
+    ...job.printSpecification,
+    method: profile.method,
+    targetDpi: profile.thresholds.targetDpi,
+  },
+  settings: {
+    ...job.settings,
+    format: profile.defaults.format,
+    preserveTransparency: profile.defaults.preserveTransparency,
+  },
+  packageOptions: packageOptionsFromProfile(profile),
 });
 
 export const duplicateStudioJob = (job: StudioJob): StudioJob => {

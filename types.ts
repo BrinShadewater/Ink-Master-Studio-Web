@@ -237,6 +237,7 @@ export interface StudioJob {
   updatedAt: number;
   archivedAt: number | null;
   revision: number;
+  productionProfile: AppliedProductionProfile;
   metadata: JobMetadata;
   sourceArtwork: SourceArtwork | null;
   settings: ProcessingSettings;

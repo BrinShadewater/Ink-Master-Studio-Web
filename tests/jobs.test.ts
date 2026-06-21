@@ -1,9 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import JSZip from 'jszip';
 
-import { createStudioJob, duplicateStudioJob, migrateStudioJob } from '../services/jobModel';
+import {
+  applyProductionProfileToJob,
+  createStudioJob,
+  duplicateStudioJob,
+  migrateStudioJob,
+} from '../services/jobModel';
 import { archiveJob, getJob, listJobs, saveJob } from '../services/jobRepository';
 import { exportPortableJob, importPortableJob } from '../services/portableJob';
+import { createProductionProfile, snapshotProductionProfile } from '../services/productionProfiles';
+import { OutputFormat, StudioJob } from '../types';
+
+const customProfile = () => {
+  const profile = createProductionProfile('Custom DTF');
+  profile.id = 'profile-custom-dtf';
+  profile.revision = 4;
+  profile.method = 'DTF';
+  profile.thresholds.targetDpi = 360;
+  profile.defaults.format = OutputFormat.PDF;
+  profile.defaults.preserveTransparency = false;
+  profile.defaults.includeUnderbase = true;
+  profile.defaults.packageOptions.namingPattern = '{order}_{placement}_custom';
+  profile.defaults.packageOptions.selectedMockupIndices = [0, 4];
+  profile.defaults.packageOptions.includeMockups = true;
+  profile.defaults.packageOptions.includeUnderbase = false;
+  return profile;
+};
 
 test('creates a versioned job with production defaults', () => {
   const job = createStudioJob('River Street Tees');
@@ -16,22 +40,173 @@ test('creates a versioned job with production defaults', () => {
   assert.ok(job.placements[job.activePlacementKey]);
 });
 
+test('creates a job from an immutable applied production profile snapshot', () => {
+  const profile = customProfile();
+  const job = createStudioJob('Custom order', profile);
+
+  assert.equal(job.productionProfile.profileId, profile.id);
+  assert.equal(job.productionProfile.profileRevision, profile.revision);
+  assert.deepEqual(job.productionProfile.snapshot, profile);
+  assert.notEqual(job.productionProfile.snapshot, profile);
+  assert.notEqual(job.productionProfile.snapshot.thresholds, profile.thresholds);
+  assert.notEqual(
+    job.productionProfile.snapshot.defaults.packageOptions,
+    profile.defaults.packageOptions,
+  );
+  assert.equal(job.printSpecification.method, 'DTF');
+  assert.equal(job.printSpecification.targetDpi, 360);
+  assert.equal(job.settings.format, OutputFormat.PDF);
+  assert.equal(job.settings.preserveTransparency, false);
+  assert.equal(job.packageOptions.namingPattern, '{order}_{placement}_custom');
+  assert.deepEqual(job.packageOptions.selectedMockupIndices, [0, 4]);
+  assert.equal(job.packageOptions.includeUnderbase, true);
+  assert.notEqual(job.packageOptions, profile.defaults.packageOptions);
+  assert.notEqual(
+    job.packageOptions.selectedMockupIndices,
+    profile.defaults.packageOptions.selectedMockupIndices,
+  );
+  assert.equal(job.acknowledgedPreflightRevision, null);
+
+  job.productionProfile.snapshot.thresholds.targetDpi = 72;
+  job.packageOptions.selectedMockupIndices.push(99);
+
+  assert.equal(profile.thresholds.targetDpi, 360);
+  assert.deepEqual(profile.defaults.packageOptions.selectedMockupIndices, [0, 4]);
+});
+
 test('migrates partial legacy job data into the current schema', () => {
   const migrated = migrateStudioJob({
     id: 'legacy',
     metadata: { name: 'Legacy order' },
-    settings: { threshold: 42 },
+    settings: { threshold: 42, format: OutputFormat.JPG },
+    printSpecification: { method: 'DTF', targetDpi: 240 },
+    packageOptions: { namingPattern: 'legacy-{job}', includeUnderbase: true },
   });
 
   assert.equal(migrated.id, 'legacy');
   assert.equal(migrated.metadata.name, 'Legacy order');
   assert.equal(migrated.settings.threshold, 42);
+  assert.equal(migrated.settings.format, OutputFormat.JPG);
+  assert.equal(migrated.printSpecification.method, 'DTF');
+  assert.equal(migrated.printSpecification.targetDpi, 240);
+  assert.equal(migrated.packageOptions.namingPattern, 'legacy-{job}');
+  assert.equal(migrated.packageOptions.includeUnderbase, true);
   assert.equal(migrated.schemaVersion, 1);
-  assert.ok(migrated.packageOptions.namingPattern.includes('{job}'));
+  assert.equal(migrated.productionProfile.snapshot.name, 'Standard DTG');
+  assert.equal(migrated.productionProfile.snapshot.method, 'DTG');
+  assert.equal(
+    migrated.productionProfile.profileId,
+    migrated.productionProfile.snapshot.id,
+  );
+  assert.equal(
+    migrated.productionProfile.profileRevision,
+    migrated.productionProfile.snapshot.revision,
+  );
+});
+
+test('preserves only coherent stored production profile wrappers and deep clones them', () => {
+  const profile = customProfile();
+  const applied = snapshotProductionProfile(profile);
+  const migrated = migrateStudioJob({
+    ...createStudioJob('Stored profile'),
+    productionProfile: applied,
+  });
+
+  assert.deepEqual(migrated.productionProfile, applied);
+  assert.notEqual(migrated.productionProfile, applied);
+  assert.notEqual(migrated.productionProfile.snapshot, applied.snapshot);
+  assert.notEqual(
+    migrated.productionProfile.snapshot.printableAreas,
+    applied.snapshot.printableAreas,
+  );
+  assert.notEqual(
+    migrated.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+    applied.snapshot.defaults.packageOptions.selectedMockupIndices,
+  );
+});
+
+test('falls back safely when a stored production profile wrapper is incoherent or malformed', () => {
+  const profile = customProfile();
+  const incoherent = snapshotProductionProfile(profile);
+  incoherent.profileRevision += 1;
+
+  for (const productionProfile of [
+    incoherent,
+    {
+      profileId: profile.id,
+      profileRevision: profile.revision,
+      snapshot: {
+        ...profile,
+        defaults: null,
+        thresholds: null,
+      },
+    },
+    {
+      profileId: '',
+      profileRevision: 0,
+      snapshot: null,
+    },
+  ]) {
+    let migrated: StudioJob | undefined;
+    assert.doesNotThrow(() => {
+      migrated = migrateStudioJob({
+        ...createStudioJob('Malformed profile'),
+        productionProfile,
+      });
+    });
+    assert.equal(migrated?.productionProfile.snapshot.name, 'Standard DTG');
+    assert.equal(migrated?.productionProfile.snapshot.method, 'DTG');
+  }
+});
+
+test('applies a production profile as one immutable job revision while preserving unrelated data', () => {
+  const sourceProfile = createProductionProfile('Source profile');
+  const nextProfile = customProfile();
+  const source = createStudioJob('Profile switch', sourceProfile);
+  source.updatedAt = 1;
+  source.revision = 8;
+  source.acknowledgedPreflightRevision = 8;
+  source.metadata.customerName = 'North Shore Prints';
+  source.sourceArtwork = {
+    name: 'logo.png',
+    type: 'image/png',
+    lastModified: 12,
+    blob: new Blob(['png']),
+  };
+  source.printSpecification.widthInches = 11;
+  source.settings.threshold = 47;
+  source.packageOptions.includeSummary = false;
+  const sourceBefore = structuredClone(source);
+  const profileBefore = structuredClone(nextProfile);
+
+  const applied = applyProductionProfileToJob(source, nextProfile);
+
+  assert.equal(applied.revision, 9);
+  assert.ok(applied.updatedAt > source.updatedAt);
+  assert.equal(applied.acknowledgedPreflightRevision, null);
+  assert.equal(applied.metadata.customerName, 'North Shore Prints');
+  assert.equal(applied.sourceArtwork?.name, 'logo.png');
+  assert.equal(applied.printSpecification.widthInches, 11);
+  assert.equal(applied.settings.threshold, 47);
+  assert.equal(applied.printSpecification.method, 'DTF');
+  assert.equal(applied.printSpecification.targetDpi, 360);
+  assert.equal(applied.settings.format, OutputFormat.PDF);
+  assert.equal(applied.settings.preserveTransparency, false);
+  assert.equal(applied.packageOptions.namingPattern, '{order}_{placement}_custom');
+  assert.deepEqual(applied.packageOptions.selectedMockupIndices, [0, 4]);
+  assert.equal(applied.packageOptions.includeUnderbase, true);
+  assert.deepEqual(source, sourceBefore);
+  assert.deepEqual(nextProfile, profileBefore);
+  assert.notEqual(applied.productionProfile.snapshot, nextProfile);
+  assert.notEqual(applied.packageOptions, nextProfile.defaults.packageOptions);
+  assert.notEqual(
+    applied.packageOptions.selectedMockupIndices,
+    nextProfile.defaults.packageOptions.selectedMockupIndices,
+  );
 });
 
 test('duplicates jobs without sharing identity or export history', () => {
-  const source = createStudioJob('Original');
+  const source = createStudioJob('Original', customProfile());
   source.exports = [{
     id: 'export-1',
     filename: 'original.png',
@@ -46,6 +221,19 @@ test('duplicates jobs without sharing identity or export history', () => {
   assert.equal(duplicate.metadata.name, 'Original copy');
   assert.deepEqual(duplicate.exports, []);
   assert.equal(duplicate.sourceArtwork, source.sourceArtwork);
+  assert.deepEqual(duplicate.productionProfile, source.productionProfile);
+  assert.notEqual(duplicate.productionProfile, source.productionProfile);
+  assert.notEqual(duplicate.productionProfile.snapshot, source.productionProfile.snapshot);
+  assert.notEqual(
+    duplicate.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+    source.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+  );
+
+  duplicate.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices.push(99);
+  assert.deepEqual(
+    source.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+    [0, 4],
+  );
 });
 
 test('round-trips source artwork through a portable job archive', async () => {
@@ -63,6 +251,57 @@ test('round-trips source artwork through a portable job archive', async () => {
   assert.equal(imported.metadata.name, 'Portable');
   assert.equal(imported.sourceArtwork?.name, 'artwork.svg');
   assert.equal(await imported.sourceArtwork?.blob.text(), '<svg/>');
+});
+
+test('round-trips a custom production profile snapshot through a portable job archive', async () => {
+  const source = createStudioJob('Portable custom', customProfile());
+
+  const archive = await exportPortableJob(source);
+  const imported = await importPortableJob(archive);
+
+  assert.deepEqual(imported.productionProfile, source.productionProfile);
+  assert.notEqual(imported.productionProfile, source.productionProfile);
+  assert.notEqual(imported.productionProfile.snapshot, source.productionProfile.snapshot);
+  assert.notEqual(
+    imported.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+    source.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+  );
+
+  imported.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices.push(99);
+  assert.deepEqual(
+    source.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
+    [0, 4],
+  );
+});
+
+test('migrates a malformed portable production profile to Standard DTG', async () => {
+  const source = createStudioJob('Portable malformed', customProfile());
+  const archive = await exportPortableJob(source);
+  const zip = await JSZip.loadAsync(await archive.arrayBuffer());
+  const manifestFile = zip.file('manifest.json');
+  assert.ok(manifestFile);
+  const manifest = JSON.parse(await manifestFile.async('string')) as {
+    job: Record<string, unknown>;
+  };
+  manifest.job.productionProfile = {
+    profileId: source.productionProfile.profileId,
+    profileRevision: source.productionProfile.profileRevision,
+    snapshot: {
+      ...source.productionProfile.snapshot,
+      thresholds: null,
+    },
+  };
+  zip.file('manifest.json', JSON.stringify(manifest));
+  const malformedArchive = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/x-inkmaster-job',
+  });
+
+  const imported = await importPortableJob(malformedArchive);
+
+  assert.equal(imported.metadata.name, 'Portable malformed');
+  assert.equal(imported.productionProfile.snapshot.name, 'Standard DTG');
+  assert.equal(imported.productionProfile.snapshot.method, 'DTG');
 });
 
 test('rejects malformed portable job archives', async () => {
