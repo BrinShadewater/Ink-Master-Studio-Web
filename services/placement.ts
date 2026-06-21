@@ -61,6 +61,24 @@ export const placementVariantKey = (
   garmentSize: GarmentSize,
 ) => `${itemType}:${location}:${garmentSize}`;
 
+const placementNumbers = (
+  placement: Pick<
+    PlacementMeasurement,
+    'widthInches' | 'heightInches' | 'offsetXInches' | 'offsetYInches'
+  >,
+) => [
+  placement.widthInches,
+  placement.heightInches,
+  placement.offsetXInches,
+  placement.offsetYInches,
+];
+
+const assertFiniteNumbers = (values: number[]) => {
+  if (!values.every(Number.isFinite)) {
+    throw new Error('Placement conversion requires finite numeric values.');
+  }
+};
+
 export const getPrintableArea = (
   itemType: ItemType,
   location: PlacementLocation,
@@ -107,6 +125,116 @@ export const validatePlacement = (
   return { valid: errors.length === 0, errors };
 };
 
+const fitPlacementToArea = (
+  placement: PlacementMeasurement,
+  area: PrintableArea,
+): PlacementMeasurement => {
+  const defaultWidth = Math.min(DEFAULT_PLACEMENT.widthInches, area.widthInches);
+  const defaultHeight = Math.min(DEFAULT_PLACEMENT.heightInches, area.heightInches);
+  const widthInches = Number.isFinite(placement.widthInches) && placement.widthInches > 0
+    ? Math.min(placement.widthInches, area.widthInches)
+    : defaultWidth;
+  const heightInches = Number.isFinite(placement.heightInches) && placement.heightInches > 0
+    ? Math.min(placement.heightInches, area.heightInches)
+    : defaultHeight;
+  const maximumOffsetX = Math.max(0, (area.widthInches - widthInches) / 2);
+  const offsetXInches = Number.isFinite(placement.offsetXInches)
+    ? Math.max(-maximumOffsetX, Math.min(placement.offsetXInches, maximumOffsetX))
+    : 0;
+  const maximumOffsetY = Math.max(0, area.heightInches - heightInches);
+  const offsetYInches = Number.isFinite(placement.offsetYInches)
+    ? Math.max(0, Math.min(placement.offsetYInches, maximumOffsetY))
+    : 0;
+
+  return {
+    ...placement,
+    widthInches,
+    heightInches,
+    offsetXInches,
+    offsetYInches,
+  };
+};
+
+export const storePlacementVariant = (
+  placements: Record<string, PlacementMeasurement>,
+  placement: PlacementMeasurement,
+) => {
+  const activePlacementKey = placementVariantKey(
+    placement.itemType,
+    placement.location,
+    placement.garmentSize,
+  );
+  return {
+    activePlacementKey,
+    placements: {
+      ...placements,
+      [activePlacementKey]: { ...placement },
+    },
+  };
+};
+
+export const ensurePlacementForProduct = (
+  placements: Record<string, PlacementMeasurement>,
+  activePlacementKey: string,
+  itemType: ItemType,
+  profile: ProductionProfile,
+) => {
+  const current = placements[activePlacementKey] ?? DEFAULT_PLACEMENT;
+  const location = getPrintableArea(itemType, current.location, profile)
+    ? current.location
+    : 'front';
+  const nextKey = placementVariantKey(itemType, location, current.garmentSize);
+  const existing = placements[nextKey];
+  if (existing?.itemType === itemType) {
+    return {
+      activePlacementKey: nextKey,
+      placement: { ...existing },
+      placements: { ...placements },
+    };
+  }
+
+  const area = getPrintableArea(itemType, location, profile);
+  const placement = area
+    ? fitPlacementToArea({
+        ...current,
+        presetId: 'custom',
+        itemType,
+        location,
+      }, area)
+    : {
+        ...current,
+        presetId: 'custom',
+        itemType,
+        location,
+      };
+  const stored = storePlacementVariant(placements, placement);
+  return { ...stored, placement };
+};
+
+export const applyPlacementPreset = (
+  preset: PlacementPreset,
+  current: PlacementMeasurement,
+  profile: ProductionProfile,
+): PlacementMeasurement => {
+  const {
+    id: _id,
+    name: _name,
+    description: _description,
+    itemType: _itemType,
+    ...measurement
+  } = preset;
+  const location = getPrintableArea(current.itemType, measurement.location, profile)
+    ? measurement.location
+    : 'front';
+  const placement = {
+    ...measurement,
+    itemType: current.itemType,
+    location,
+  };
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  return area ? fitPlacementToArea(placement, area) : placement;
+};
+
 const requirePrintableArea = (
   itemType: ItemType,
   location: PlacementLocation,
@@ -123,6 +251,7 @@ export const placementToMockupPercent = (
   placement: PlacementMeasurement,
   profile: ProductionProfile,
 ) => {
+  assertFiniteNumbers(placementNumbers(placement));
   const area = requirePrintableArea(placement.itemType, placement.location, profile);
   const width = (placement.widthInches / area.widthInches) * area.widthPercent;
   const height = (placement.heightInches / area.heightInches) * area.heightPercent;
@@ -142,6 +271,13 @@ export const mockupPercentToPlacement = (
   base: PlacementMeasurement,
   profile: ProductionProfile,
 ): PlacementMeasurement => {
+  assertFiniteNumbers([
+    percent.x,
+    percent.y,
+    percent.width,
+    percent.height,
+    ...placementNumbers(base),
+  ]);
   const area = requirePrintableArea(base.itemType, base.location, profile);
   const widthInches = (percent.width / area.widthPercent) * area.widthInches;
   const heightInches = (percent.height / area.heightPercent) * area.heightInches;

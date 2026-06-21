@@ -1,6 +1,11 @@
 import React from 'react';
 import { PlacementMeasurement, ProductionProfile } from '../types';
-import { getPrintableArea, PLACEMENT_PRESETS, validatePlacement } from '../services/placement';
+import {
+  applyPlacementPreset,
+  getPrintableArea,
+  PLACEMENT_PRESETS,
+  validatePlacement,
+} from '../services/placement';
 
 interface PlacementPanelProps {
   placement: PlacementMeasurement;
@@ -39,8 +44,7 @@ export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, profi
         onChange={(event) => {
           const preset = PLACEMENT_PRESETS.find((candidate) => candidate.id === event.target.value);
           if (preset) {
-            const { id: _id, name: _name, description: _description, ...measurement } = preset;
-            onChange(measurement);
+            onChange(applyPlacementPreset(preset, placement, profile));
           }
         }}
         className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"

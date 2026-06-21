@@ -449,7 +449,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" disabled={!hasProcessedResult} onClick={onDownloadPdf} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Production PDF</button>
-                  <button type="button" disabled={!hasProcessedResult} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
+                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
                 </div>
               </div>
             </Section>

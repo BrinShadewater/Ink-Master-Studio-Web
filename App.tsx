@@ -40,9 +40,13 @@ import {
   combinePreflightFindings,
   createPlacementPreflightFinding,
   DEFAULT_PLACEMENT,
+  ensurePlacementForProduct,
   getPrintableArea,
   mockupPercentToPlacement,
   placementToMockupPercent,
+  placementVariantKey,
+  storePlacementVariant,
+  validatePlacement,
 } from './services/placement';
 import { evaluatePreflight, getPreflightGate } from './services/preflight';
 import { getDefaultProfile, loadProfileStore } from './services/profileStorage';
@@ -135,7 +139,18 @@ const App: React.FC = () => {
   const printSpecification = currentJob?.printSpecification ?? DEFAULT_PRINT_SPECIFICATION;
   const appliedProductionProfile = currentJob?.productionProfile ?? STANDARD_DTG_FALLBACK_APPLIED;
   const activeProductionProfile = appliedProductionProfile.snapshot;
-  const activePlacement = currentJob?.placements[currentJob.activePlacementKey] ?? DEFAULT_PLACEMENT;
+  const fallbackPlacementKey = placementVariantKey(
+    DEFAULT_PLACEMENT.itemType,
+    DEFAULT_PLACEMENT.location,
+    DEFAULT_PLACEMENT.garmentSize,
+  );
+  const placementState = ensurePlacementForProduct(
+    currentJob?.placements ?? { [fallbackPlacementKey]: DEFAULT_PLACEMENT },
+    currentJob?.activePlacementKey ?? fallbackPlacementKey,
+    settings.itemType,
+    activeProductionProfile,
+  );
+  const activePlacement = placementState.placement;
   const activePrintableArea = getPrintableArea(
     activePlacement.itemType,
     activePlacement.location,
@@ -157,6 +172,17 @@ const App: React.FC = () => {
   const preflightAcknowledged = Boolean(
     currentJob && currentJob.acknowledgedPreflightRevision === currentJob.revision,
   );
+  const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const productionPlacement = validatePlacement(activePlacement, activeProductionProfile).valid
+    ? placementToMockupPercent(activePlacement, activeProductionProfile)
+    : undefined;
+  const currentProductionJob = currentJob ? {
+    ...currentJob,
+    settings,
+    activePlacementKey: placementState.activePlacementKey,
+    placements: placementState.placements,
+    preflightFindings,
+  } : null;
 
   const refreshJobs = async () => {
     try {
@@ -200,6 +226,26 @@ const App: React.FC = () => {
     if (!currentJob || JSON.stringify(currentJob.preflightFindings) === JSON.stringify(preflightFindings)) return;
     setCurrentJob((job) => job ? { ...job, preflightFindings } : job);
   }, [currentJob?.id, preflightFindings]);
+
+  useEffect(() => {
+    if (!currentJob) return;
+    const synchronized = ensurePlacementForProduct(
+      currentJob.placements,
+      currentJob.activePlacementKey,
+      settings.itemType,
+      activeProductionProfile,
+    );
+    const storedPlacement = currentJob.placements[synchronized.activePlacementKey];
+    if (
+      currentJob.activePlacementKey === synchronized.activePlacementKey
+      && storedPlacement?.itemType === settings.itemType
+    ) return;
+    setCurrentJob((job) => job ? touchStudioJob({
+      ...job,
+      activePlacementKey: synchronized.activePlacementKey,
+      placements: synchronized.placements,
+    }) : job);
+  }, [activeProductionProfile, currentJob?.activePlacementKey, currentJob?.id, settings.itemType]);
 
   useEffect(() => {
     const state = history[historyIndex];
@@ -260,7 +306,20 @@ const App: React.FC = () => {
     setAppState(next);
     if (commit) {
       addToHistory(next);
-      updateCurrentJob((job) => ({ ...job, settings: nextSettings }));
+      updateCurrentJob((job) => {
+        const synchronized = ensurePlacementForProduct(
+          job.placements,
+          job.activePlacementKey,
+          nextSettings.itemType,
+          job.productionProfile.snapshot,
+        );
+        return {
+          ...job,
+          settings: nextSettings,
+          activePlacementKey: synchronized.activePlacementKey,
+          placements: synchronized.placements,
+        };
+      });
     }
   };
 
@@ -419,9 +478,8 @@ const App: React.FC = () => {
 
   const handleDownloadProductionPackage = async () => {
     if (!currentJob || !processedResult) return;
-    const gate = getPreflightGate(preflightFindings, preflightAcknowledged);
-    if (!gate.canExport) {
-      setError(gate.criticalCount > 0
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
         ? 'Production export is blocked until all critical preflight findings are resolved.'
         : 'Acknowledge the preflight warnings before exporting the production package.');
       return;
@@ -432,7 +490,7 @@ const App: React.FC = () => {
         ? await generateUnderbase(processedResult.url, 'PNG')
         : null;
       const result = await buildProductionPackage({
-        job: { ...currentJob, preflightFindings },
+        job: currentProductionJob ?? currentJob,
         printMaster: { filename: `print-master.${settings.format.toLowerCase()}`, blob: processedResult.blob },
         productionPdf: { filename: 'production-spec.pdf', blob: productionPdf.blob },
         mockups: await buildSelectedMockups(),
@@ -449,16 +507,15 @@ const App: React.FC = () => {
 
   const handleDownloadProof = async (quality: 'print' | 'email') => {
     if (!currentJob || !processedResult) return;
-    const gate = getPreflightGate(preflightFindings, preflightAcknowledged);
-    if (!gate.canExport) {
-      setError(gate.criticalCount > 0
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
         ? 'Proof export is blocked until all critical preflight findings are resolved.'
         : 'Acknowledge the preflight warnings before exporting a proof.');
       return;
     }
     try {
       const result = await generateCustomerProof(
-        { ...currentJob, preflightFindings },
+        currentProductionJob ?? currentJob,
         await buildSelectedMockups(),
         quality,
       );
@@ -475,6 +532,16 @@ const App: React.FC = () => {
     const next = [createTemplateFromJob(currentJob, name, description), ...shopTemplates];
     setShopTemplates(next);
     saveTemplates(next);
+  };
+
+  const handleDownloadMockups = () => {
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
+        ? 'Mockup export is blocked until all critical preflight findings are resolved.'
+        : 'Acknowledge the preflight warnings before exporting mockups.');
+      return;
+    }
+    setMockupExportToken((token) => token + 1);
   };
 
   const handleApplyTemplate = (template: ShopTemplate) => {
@@ -659,7 +726,7 @@ const App: React.FC = () => {
               onGenerateUnderbase={handleGenerateUnderbase}
               onDownloadPrintFile={handleDownloadPrintFile}
               onDownloadPdf={handleDownloadPdf}
-              onDownloadMockups={() => setMockupExportToken((token) => token + 1)}
+              onDownloadMockups={handleDownloadMockups}
               onAcknowledgeLowResolution={setLowResolutionAcknowledged}
               onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
                 ...job,
@@ -667,7 +734,7 @@ const App: React.FC = () => {
               }))}
               onPlacementChange={(placement) => updateCurrentJob((job) => ({
                 ...job,
-                placements: { ...job.placements, [job.activePlacementKey]: placement },
+                ...storePlacementVariant(job.placements, placement),
               }))}
               onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
                 ...job,
@@ -713,20 +780,19 @@ const App: React.FC = () => {
                 embedded
                 workspaceStage={stage}
                 exportRequestToken={mockupExportToken}
-                productionPlacement={activePrintableArea
-                  ? placementToMockupPercent(activePlacement, activeProductionProfile)
-                  : undefined}
-                onProductionPlacementChange={activePrintableArea
+                mockupExportAllowed={preflightGate.canExport}
+                productionPlacement={productionPlacement}
+                onProductionPlacementChange={activePrintableArea && productionPlacement
                   ? (percent) => updateCurrentJob((job) => ({
                       ...job,
-                      placements: {
-                        ...job.placements,
-                        [job.activePlacementKey]: mockupPercentToPlacement(
+                      ...storePlacementVariant(
+                        job.placements,
+                        mockupPercentToPlacement(
                           percent,
-                          job.placements[job.activePlacementKey] ?? DEFAULT_PLACEMENT,
+                          activePlacement,
                           activeProductionProfile,
                         ),
-                      },
+                      ),
                     }))
                   : undefined}
               />

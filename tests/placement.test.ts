@@ -4,12 +4,15 @@ import test from 'node:test';
 import {
   DEFAULT_PLACEMENT,
   PLACEMENT_PRESETS,
+  applyPlacementPreset,
   combinePreflightFindings,
   createPlacementPreflightFinding,
+  ensurePlacementForProduct,
   getPrintableArea,
   mockupPercentToPlacement,
   placementToMockupPercent,
   placementVariantKey,
+  storePlacementVariant,
   validatePlacement,
 } from '../services/placement';
 import {
@@ -250,4 +253,116 @@ test('combines placement and artwork findings without duplicate ids', () => {
 
   assert.deepEqual(combined.map((finding) => finding.id), ['resolution', 'placement-area']);
   assert.match(combined[1].message, /Small platen/);
+});
+
+test('synchronizes a T-shirt placement to a safe HAT variant', () => {
+  const profile = standardProfile();
+  const placements = {
+    [placementVariantKey(ItemType.TSHIRT, 'front', 'L')]: DEFAULT_PLACEMENT,
+  };
+
+  const synchronized = ensurePlacementForProduct(
+    placements,
+    placementVariantKey(ItemType.TSHIRT, 'front', 'L'),
+    ItemType.HAT,
+    profile,
+  );
+
+  assert.equal(synchronized.activePlacementKey, placementVariantKey(ItemType.HAT, 'front', 'L'));
+  assert.equal(synchronized.placement.itemType, ItemType.HAT);
+  assert.equal(synchronized.placement.location, 'front');
+  assert.equal(validatePlacement(synchronized.placement, profile).valid, true);
+  assert.deepEqual(placements, {
+    [placementVariantKey(ItemType.TSHIRT, 'front', 'L')]: DEFAULT_PLACEMENT,
+  });
+});
+
+test('reuses an existing matching product placement variant', () => {
+  const profile = standardProfile();
+  const hatPlacement: PlacementMeasurement = {
+    ...DEFAULT_PLACEMENT,
+    itemType: ItemType.HAT,
+    widthInches: 4,
+    heightInches: 2,
+    offsetYInches: 0.25,
+  };
+  const hatKey = placementVariantKey(ItemType.HAT, 'front', 'L');
+  const placements = {
+    [placementVariantKey(ItemType.TSHIRT, 'front', 'L')]: DEFAULT_PLACEMENT,
+    [hatKey]: hatPlacement,
+  };
+
+  const synchronized = ensurePlacementForProduct(
+    placements,
+    placementVariantKey(ItemType.TSHIRT, 'front', 'L'),
+    ItemType.HAT,
+    profile,
+  );
+
+  assert.equal(synchronized.activePlacementKey, hatKey);
+  assert.deepEqual(synchronized.placement, hatPlacement);
+  assert.notEqual(synchronized.placements, placements);
+});
+
+test('falls back to front when the current location is unsupported by the product profile', () => {
+  const profile = standardProfile();
+  delete profile.printableAreas[printableAreaKey(ItemType.HAT, 'left-chest')];
+  const leftChest: PlacementMeasurement = {
+    ...DEFAULT_PLACEMENT,
+    location: 'left-chest',
+    widthInches: 4,
+    heightInches: 4,
+  };
+  const sourceKey = placementVariantKey(ItemType.TSHIRT, 'left-chest', 'L');
+
+  const synchronized = ensurePlacementForProduct(
+    { [sourceKey]: leftChest },
+    sourceKey,
+    ItemType.HAT,
+    profile,
+  );
+
+  assert.equal(synchronized.placement.location, 'front');
+  assert.equal(validatePlacement(synchronized.placement, profile).valid, true);
+});
+
+test('applies a preset without replacing the current product', () => {
+  const profile = standardProfile();
+  const current: PlacementMeasurement = {
+    ...DEFAULT_PLACEMENT,
+    itemType: ItemType.HAT,
+    widthInches: 4,
+    heightInches: 2,
+    offsetYInches: 0,
+  };
+  const preset = PLACEMENT_PRESETS.find((candidate) => candidate.id === 'left-chest');
+  assert.ok(preset);
+
+  const applied = applyPlacementPreset(preset, current, profile);
+  const stored = storePlacementVariant({}, applied);
+
+  assert.equal(applied.itemType, ItemType.HAT);
+  assert.equal(stored.activePlacementKey, placementVariantKey(ItemType.HAT, 'left-chest', 'L'));
+  assert.deepEqual(stored.placements[stored.activePlacementKey], applied);
+  assert.equal(validatePlacement(applied, profile).valid, true);
+});
+
+test('conversion functions reject non-finite geometry before calculating percentages', () => {
+  const profile = standardProfile();
+
+  assert.throws(
+    () => placementToMockupPercent(
+      { ...DEFAULT_PLACEMENT, widthInches: Number.NaN },
+      profile,
+    ),
+    /finite numeric values/i,
+  );
+  assert.throws(
+    () => mockupPercentToPlacement(
+      { x: 10, y: 10, width: Number.POSITIVE_INFINITY, height: 20 },
+      DEFAULT_PLACEMENT,
+      profile,
+    ),
+    /finite numeric values/i,
+  );
 });
