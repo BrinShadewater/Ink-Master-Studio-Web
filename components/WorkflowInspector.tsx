@@ -458,8 +458,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               <div className="space-y-2">
                 <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Download production package</button>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={() => onDownloadProof('print')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Print proof</button>
-                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={() => onDownloadProof('email')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Email proof</button>
+                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('print')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Print proof</button>
+                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('email')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Email proof</button>
                 </div>
               </div>
             </Section>
