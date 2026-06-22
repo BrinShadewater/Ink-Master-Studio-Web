@@ -551,6 +551,26 @@ test('preserves archived profiles and appends Standard DTG when no active profil
   assert.equal(migrated.defaultProfileId, migrated.profiles[1].id);
 });
 
+test('migrates legacy stored underbase disagreement without losing profile identity', () => {
+  const legacy = profileFixture('legacy-underbase-store', 'Legacy store', 300, 7);
+  legacy.defaults.includeUnderbase = true;
+  legacy.defaults.packageOptions.includeUnderbase = false;
+  const snapshot = structuredClone(legacy);
+
+  const migrated = migrateProfileStore(JSON.stringify({
+    schemaVersion: 1,
+    defaultProfileId: legacy.id,
+    profiles: [legacy],
+  }));
+
+  assert.equal(migrated.profiles.length, 1);
+  assert.equal(migrated.profiles[0].id, legacy.id);
+  assert.equal(migrated.profiles[0].revision, 7);
+  assert.equal(migrated.profiles[0].defaults.includeUnderbase, true);
+  assert.equal(migrated.profiles[0].defaults.packageOptions.includeUnderbase, true);
+  assert.deepEqual(legacy, snapshot);
+});
+
 test('loads and saves migrated profile stores only through available localStorage', () => {
   const originalLocalStorage = globalThis.localStorage;
   const values = new Map<string, string>();
@@ -865,6 +885,26 @@ test('exports a complete portable envelope and round-trips unknown profile IDs',
   assert.deepEqual(imported.profiles, profiles);
   assert.notEqual(imported.profiles[0], profiles[0]);
   assert.notEqual(imported.profiles[0].thresholds, profiles[0].thresholds);
+});
+
+test('imports and normalizes legacy underbase disagreement before validation', () => {
+  const legacy = profileFixture('legacy-underbase-import', 'Legacy import', 400, 8);
+  legacy.defaults.includeUnderbase = false;
+  legacy.defaults.packageOptions.includeUnderbase = true;
+  const snapshot = structuredClone(legacy);
+
+  const imported = importProductionProfiles(
+    exportProductionProfiles([legacy]),
+    [],
+  );
+
+  assert.deepEqual(imported.errors, []);
+  assert.equal(imported.profiles.length, 1);
+  assert.equal(imported.profiles[0].id, legacy.id);
+  assert.equal(imported.profiles[0].revision, 8);
+  assert.equal(imported.profiles[0].defaults.includeUnderbase, false);
+  assert.equal(imported.profiles[0].defaults.packageOptions.includeUnderbase, false);
+  assert.deepEqual(legacy, snapshot);
 });
 
 test('rejects invalid envelopes and invalid profiles atomically with all errors', () => {

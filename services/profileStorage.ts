@@ -4,6 +4,7 @@ import {
 } from '../types';
 import {
   createProductionProfile,
+  normalizeProductionProfileRecord,
   validateProductionProfile,
 } from './productionProfiles';
 
@@ -97,6 +98,7 @@ export const migrateProfileStore = (
       profiles: unknown[];
     };
     const validProfiles = source.profiles
+      .map(normalizeProductionProfileRecord)
       .filter((profile): profile is ProductionProfile =>
         validateProductionProfile(profile).valid)
       .map(cloneProfile);

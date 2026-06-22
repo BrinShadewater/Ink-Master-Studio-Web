@@ -10,6 +10,7 @@ import {
 } from './placement';
 import {
   createProductionProfile,
+  normalizeProductionProfileRecord,
   snapshotProductionProfile,
   validateProductionProfile,
 } from './productionProfiles';
@@ -47,7 +48,7 @@ const migrateAppliedProductionProfile = (
   fallback: AppliedProductionProfile,
 ): AppliedProductionProfile => {
   if (!isRecord(value)) return fallback;
-  const snapshot = value.snapshot;
+  const snapshot = normalizeProductionProfileRecord(value.snapshot);
   if (
     typeof value.profileId !== 'string'
     || value.profileId.trim().length === 0

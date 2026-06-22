@@ -19,6 +19,40 @@ const createId = (prefix: string) =>
 const cloneProfile = (profile: ProductionProfile): ProductionProfile =>
   structuredClone(profile);
 
+export const normalizeProductionProfileRecord = (value: unknown): unknown => {
+  if (
+    typeof value !== 'object'
+    || value === null
+    || Array.isArray(value)
+  ) {
+    return value;
+  }
+  const profile = value as Record<string, unknown>;
+  const defaults = profile.defaults;
+  if (
+    typeof defaults !== 'object'
+    || defaults === null
+    || Array.isArray(defaults)
+  ) {
+    return structuredClone(value);
+  }
+  const defaultsRecord = defaults as Record<string, unknown>;
+  const packageOptions = defaultsRecord.packageOptions;
+  if (
+    typeof packageOptions !== 'object'
+    || packageOptions === null
+    || Array.isArray(packageOptions)
+    || typeof defaultsRecord.includeUnderbase !== 'boolean'
+  ) {
+    return structuredClone(value);
+  }
+  const normalized = structuredClone(value) as Record<string, unknown>;
+  const normalizedDefaults = normalized.defaults as Record<string, unknown>;
+  const normalizedPackage = normalizedDefaults.packageOptions as Record<string, unknown>;
+  normalizedPackage.includeUnderbase = defaultsRecord.includeUnderbase;
+  return normalized;
+};
+
 const stableSerialize = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map(stableSerialize).join(',')}]`;
@@ -754,7 +788,8 @@ export const importProductionProfiles = (
     return { profiles: unchangedLocals, errors, skippedIds: [] };
   }
 
-  const incomingProfiles = (parsed as { profiles: unknown[] }).profiles;
+  const incomingProfiles = (parsed as { profiles: unknown[] }).profiles
+    .map(normalizeProductionProfileRecord);
   for (const [index, profile] of incomingProfiles.entries()) {
     const validation = validateProductionProfile(profile);
     errors.push(...validation.errors.map((error) => ({

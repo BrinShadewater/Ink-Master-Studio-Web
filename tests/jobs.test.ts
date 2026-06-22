@@ -155,6 +155,30 @@ test('preserves only coherent stored production profile wrappers and deep clones
   );
 });
 
+test('migrates legacy applied profile underbase disagreement without fallback', () => {
+  const profile = customProfile();
+  profile.id = 'legacy-applied-underbase';
+  profile.revision = 6;
+  profile.defaults.includeUnderbase = true;
+  profile.defaults.packageOptions.includeUnderbase = false;
+  const applied = snapshotProductionProfile(profile);
+  const snapshot = structuredClone(applied);
+
+  const migrated = migrateStudioJob({
+    ...createStudioJob('Legacy applied underbase'),
+    productionProfile: applied,
+  });
+
+  assert.equal(migrated.productionProfile.profileId, profile.id);
+  assert.equal(migrated.productionProfile.profileRevision, 6);
+  assert.equal(migrated.productionProfile.snapshot.defaults.includeUnderbase, true);
+  assert.equal(
+    migrated.productionProfile.snapshot.defaults.packageOptions.includeUnderbase,
+    true,
+  );
+  assert.deepEqual(applied, snapshot);
+});
+
 test('falls back safely when a stored production profile wrapper is incoherent or malformed', () => {
   const profile = customProfile();
   const incoherent = snapshotProductionProfile(profile);
