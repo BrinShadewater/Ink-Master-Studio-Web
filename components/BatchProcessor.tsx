@@ -148,6 +148,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
     zip.file('order-manifest.json', JSON.stringify(createCombinedOrderManifest(items.map((item) => ({
       id: item.id,
       filename: item.file.name,
+      outputFilename: `${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`,
       status: item.status,
       recipeId: item.recipeId,
       findings: item.findings,

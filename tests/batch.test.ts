@@ -60,12 +60,33 @@ test('requires acknowledgement before exporting warning-state batch items', () =
 
 test('combined manifests include only eligible completed items', () => {
   const manifest = createCombinedOrderManifest([
-    { id: 'pass', filename: 'pass.png', status: 'ready', recipeId: 'clean-logo', findings: [finding('pass')], acknowledged: false },
-    { id: 'warn', filename: 'warn.png', status: 'ready', recipeId: 'dark-garment', findings: [finding('warning')], acknowledged: true },
-    { id: 'blocked', filename: 'blocked.png', status: 'ready', recipeId: 'custom', findings: [finding('critical')], acknowledged: true },
+    { id: 'pass', filename: 'pass.png', outputFilename: 'pass.png', status: 'ready', recipeId: 'clean-logo', findings: [finding('pass')], acknowledged: false },
+    { id: 'warn', filename: 'warn.png', outputFilename: 'warn.png', status: 'ready', recipeId: 'dark-garment', findings: [finding('warning')], acknowledged: true },
+    { id: 'blocked', filename: 'blocked.png', outputFilename: 'blocked.png', status: 'ready', recipeId: 'custom', findings: [finding('critical')], acknowledged: true },
   ]);
 
   assert.deepEqual(manifest.items.map((item) => item.id), ['pass', 'warn']);
   assert.deepEqual(manifest.items.map((item) => item.recipeId), ['clean-logo', 'dark-garment']);
   assert.equal(manifest.excludedCount, 1);
+  assert.equal(manifest.totalCount, 3);
+  assert.equal(manifest.exportedCount, 2);
+  assert.equal(manifest.blockedCount, 1);
+  assert.equal(manifest.items[1].warningCount, 1);
+  assert.deepEqual(manifest.items[1].findings, [
+    { id: 'warning', severity: 'warning', title: 'warning', action: 'warning' },
+  ]);
+  assert.deepEqual(manifest.excludedItems.map((item) => item.id), ['blocked']);
+  assert.match(manifest.excludedItems[0].reasons.join(' '), /critical preflight/);
+});
+
+test('combined manifests explain warning acknowledgement and unfinished exclusions', () => {
+  const manifest = createCombinedOrderManifest([
+    { id: 'warn', filename: 'warn.png', status: 'ready', recipeId: 'dark-garment', findings: [finding('warning')], acknowledged: false },
+    { id: 'pending', filename: 'pending.png', status: 'pending', recipeId: null, findings: [], acknowledged: false },
+  ]);
+
+  assert.equal(manifest.exportedCount, 0);
+  assert.deepEqual(manifest.excludedItems.map((item) => item.id), ['warn', 'pending']);
+  assert.match(manifest.excludedItems[0].reasons.join(' '), /require acknowledgement/);
+  assert.match(manifest.excludedItems[1].reasons.join(' '), /pending/);
 });
