@@ -46,6 +46,13 @@ export const normalizeProductionProfileRecord = (value: unknown): unknown => {
   ) {
     return structuredClone(value);
   }
+  const packageRecord = packageOptions as Record<string, unknown>;
+  if (
+    typeof packageRecord.includeUnderbase !== 'boolean'
+    || defaultsRecord.includeUnderbase === packageRecord.includeUnderbase
+  ) {
+    return structuredClone(value);
+  }
   const normalized = structuredClone(value) as Record<string, unknown>;
   const normalizedDefaults = normalized.defaults as Record<string, unknown>;
   const normalizedPackage = normalizedDefaults.packageOptions as Record<string, unknown>;

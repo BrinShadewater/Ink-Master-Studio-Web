@@ -907,6 +907,30 @@ test('imports and normalizes legacy underbase disagreement before validation', (
   assert.deepEqual(legacy, snapshot);
 });
 
+test('rejects malformed imported package underbase without normalizing it', () => {
+  const local = profileFixture('malformed-underbase-local', 'Local profile', 399);
+  const incoming = profileFixture('malformed-underbase-import', 'Malformed import', 400, 8);
+  incoming.defaults.includeUnderbase = true;
+  const portableIncoming = structuredClone(incoming) as unknown as {
+    defaults: { packageOptions: { includeUnderbase: unknown } };
+  };
+  portableIncoming.defaults.packageOptions.includeUnderbase = 'yes';
+  const localSnapshot = structuredClone([local]);
+
+  const imported = importProductionProfiles(JSON.stringify({
+    format: 'inkmaster-production-profiles',
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    profiles: [portableIncoming],
+  }), [local]);
+
+  assert.ok(imported.errors.some(
+    (error) => error.field === 'profiles.0.defaults.packageOptions.includeUnderbase',
+  ));
+  assert.deepEqual(imported.profiles, localSnapshot);
+  assert.deepEqual(imported.skippedIds, []);
+});
+
 test('rejects invalid envelopes and invalid profiles atomically with all errors', () => {
   const locals = [profileFixture('local', 'Local', 100)];
   const localSnapshot = structuredClone(locals);
