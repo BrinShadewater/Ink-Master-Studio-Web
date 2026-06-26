@@ -102,3 +102,24 @@ export const createCombinedOrderManifest = (candidates: BatchManifestCandidate[]
     excludedCount: excludedItems.length,
   };
 };
+
+export const createCombinedOrderSummary = (
+  manifest: ReturnType<typeof createCombinedOrderManifest>,
+): string => [
+  'InkMaster Combined Batch Order',
+  `Generated: ${manifest.generatedAt}`,
+  '',
+  `Total files: ${manifest.totalCount}`,
+  `Exported files: ${manifest.exportedCount}`,
+  `Blocked or skipped files: ${manifest.blockedCount}`,
+  '',
+  'Exported files:',
+  ...(manifest.items.length > 0
+    ? manifest.items.map((item) => `- ${item.filename} from ${item.sourceFilename} · recipe ${item.recipeId ?? 'custom'} · warnings ${item.warningCount}`)
+    : ['- None']),
+  '',
+  'Blocked or skipped files:',
+  ...(manifest.excludedItems.length > 0
+    ? manifest.excludedItems.map((item) => `- ${item.sourceFilename} · ${item.reasons.join(' ')}`)
+    : ['- None']),
+].join('\n');

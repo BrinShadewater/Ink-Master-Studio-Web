@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { batchExportEligibility, createCombinedOrderManifest, resolveBatchRecipe } from '../services/batch';
+import { batchExportEligibility, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
 import { ArtworkAnalysis, PreflightFinding } from '../types';
 
 const finding = (severity: PreflightFinding['severity']): PreflightFinding => ({
@@ -89,4 +89,19 @@ test('combined manifests explain warning acknowledgement and unfinished exclusio
   assert.deepEqual(manifest.excludedItems.map((item) => item.id), ['warn', 'pending']);
   assert.match(manifest.excludedItems[0].reasons.join(' '), /require acknowledgement/);
   assert.match(manifest.excludedItems[1].reasons.join(' '), /pending/);
+});
+
+test('combined order summaries are readable by production operators', () => {
+  const manifest = createCombinedOrderManifest([
+    { id: 'pass', filename: 'source-pass.png', outputFilename: 'source-pass.png', status: 'ready', recipeId: 'clean-logo', findings: [], acknowledged: false },
+    { id: 'blocked', filename: 'blocked.png', status: 'ready', recipeId: 'custom', findings: [finding('critical')], acknowledged: true },
+  ]);
+
+  const summary = createCombinedOrderSummary(manifest);
+
+  assert.match(summary, /InkMaster Combined Batch Order/);
+  assert.match(summary, /Total files: 2/);
+  assert.match(summary, /Exported files: 1/);
+  assert.match(summary, /source-pass\.png from source-pass\.png · recipe clean-logo/);
+  assert.match(summary, /blocked\.png · 1 critical preflight issue must be resolved\./);
 });

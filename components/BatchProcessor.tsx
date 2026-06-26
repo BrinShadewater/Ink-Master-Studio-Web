@@ -11,6 +11,7 @@ import {
   BatchRecipeSelection,
   BatchProductionStatus,
   createCombinedOrderManifest,
+  createCombinedOrderSummary,
   resolveBatchRecipe,
 } from '../services/batch';
 
@@ -145,7 +146,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
     for (const item of eligible) {
       zip.file(`${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`, await item.resultBlob!.arrayBuffer());
     }
-    zip.file('order-manifest.json', JSON.stringify(createCombinedOrderManifest(items.map((item) => ({
+    const manifest = createCombinedOrderManifest(items.map((item) => ({
       id: item.id,
       filename: item.file.name,
       outputFilename: `${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`,
@@ -153,7 +154,9 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
       recipeId: item.recipeId,
       findings: item.findings,
       acknowledged: item.acknowledged,
-    }))), null, 2));
+    })));
+    zip.file('order-manifest.json', JSON.stringify(manifest, null, 2));
+    zip.file('order-summary.txt', createCombinedOrderSummary(manifest));
     downloadBlob(await zip.generateAsync({ type: 'blob' }), 'inkmaster-combined-order.zip');
   };
 
