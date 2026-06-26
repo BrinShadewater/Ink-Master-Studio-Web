@@ -60,6 +60,46 @@ export const applyTemplateToJob = (job: StudioJob, template: ShopTemplate): Stud
   });
 };
 
+export const describeTemplate = (template: ShopTemplate) => ({
+  recipe: template.recipeId ?? 'custom',
+  product: template.itemType,
+  printSize: `${template.printSpecification.widthInches}×${template.printSpecification.heightInches} in ${template.printSpecification.method}`,
+  placement: `${template.placement.presetId} · ${template.placement.widthInches}×${template.placement.heightInches} in · ${template.placement.location}`,
+  output: `${template.settings.format}${template.settings.preserveTransparency ? ' · transparent' : ''}`,
+  namingPattern: template.packageOptions.namingPattern,
+  proofBranding: template.proofBranding.shopName || 'InkMaster Studio',
+});
+
+export const describeTemplateChanges = (
+  job: StudioJob,
+  template: ShopTemplate,
+) => {
+  const activePlacement = job.placements[job.activePlacementKey];
+  return [
+    job.selectedRecipeId !== template.recipeId ? 'recipe' : null,
+    job.settings.itemType !== template.itemType ? 'product' : null,
+    job.settings.format !== template.settings.format || job.settings.preserveTransparency !== template.settings.preserveTransparency ? 'output' : null,
+    job.printSpecification.widthInches !== template.printSpecification.widthInches
+      || job.printSpecification.heightInches !== template.printSpecification.heightInches
+      || job.printSpecification.method !== template.printSpecification.method
+      ? 'print size'
+      : null,
+    !activePlacement
+      || activePlacement.presetId !== template.placement.presetId
+      || activePlacement.location !== template.placement.location
+      || activePlacement.widthInches !== template.placement.widthInches
+      || activePlacement.heightInches !== template.placement.heightInches
+      ? 'placement'
+      : null,
+    job.packageOptions.namingPattern !== template.packageOptions.namingPattern ? 'naming' : null,
+    job.proofBranding.shopName !== template.proofBranding.shopName
+      || job.proofBranding.contactLine !== template.proofBranding.contactLine
+      || job.proofBranding.footerNote !== template.proofBranding.footerNote
+      ? 'proof branding'
+      : null,
+  ].filter((entry): entry is string => Boolean(entry));
+};
+
 const normalizeTemplate = (value: unknown): ShopTemplate | null => {
   if (!isRecord(value) || typeof value.name !== 'string' || !isRecord(value.settings)) return null;
   const base = createTemplateFromJob(createStudioJob('Template base'), value.name, typeof value.description === 'string' ? value.description : '');

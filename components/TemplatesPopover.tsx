@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { ShopTemplate } from '../types';
+import { ShopTemplate, StudioJob } from '../types';
+import { describeTemplate, describeTemplateChanges } from '../services/templateStorage';
 
 interface TemplatesPopoverProps {
   templates: ShopTemplate[];
+  currentJob: StudioJob | null;
   onApply: (template: ShopTemplate) => void;
   onSave: (name: string, description: string) => void;
   onDelete: (template: ShopTemplate) => void;
@@ -12,6 +14,7 @@ interface TemplatesPopoverProps {
 
 export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
   templates,
+  currentJob,
   onApply,
   onSave,
   onDelete,
@@ -35,12 +38,17 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
           </div>
           <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
             {templates.map((template) => (
-              <div key={template.id} className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 p-2">
-                <button type="button" onClick={() => { onApply(template); setOpen(false); }} className="min-w-0 flex-1 text-left">
-                  <span className="block truncate text-xs font-bold text-white">{template.name}</span>
-                  <span className="block truncate text-[10px] text-slate-500">{template.itemType} · {template.placement.presetId}</span>
-                </button>
-                <button type="button" aria-label={`Delete ${template.name}`} onClick={() => onDelete(template)} className="px-2 text-xs text-rose-400">×</button>
+              <div key={template.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+                <div className="flex items-start gap-2">
+                  <button type="button" onClick={() => { onApply(template); setOpen(false); }} className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-xs font-bold text-white">{template.name}</span>
+                    <TemplateSummary template={template} />
+                  </button>
+                  <button type="button" aria-label={`Delete ${template.name}`} onClick={() => onDelete(template)} className="px-2 text-xs text-rose-400">×</button>
+                </div>
+                {currentJob && (
+                  <TemplateChangeSummary template={template} currentJob={currentJob} />
+                )}
               </div>
             ))}
             {templates.length === 0 && <p className="py-5 text-center text-xs text-slate-500">No shop templates saved.</p>}
@@ -55,5 +63,25 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
         </div>
       )}
     </div>
+  );
+};
+
+const TemplateSummary: React.FC<{ template: ShopTemplate }> = ({ template }) => {
+  const summary = describeTemplate(template);
+  return (
+    <span className="mt-1 block space-y-0.5 text-[10px] text-slate-500">
+      <span className="block truncate">{summary.product} · {summary.placement}</span>
+      <span className="block truncate">{summary.recipe} · {summary.printSize} · {summary.output}</span>
+      <span className="block truncate">Naming: {summary.namingPattern}</span>
+    </span>
+  );
+};
+
+const TemplateChangeSummary: React.FC<{ template: ShopTemplate; currentJob: StudioJob }> = ({ template, currentJob }) => {
+  const changes = describeTemplateChanges(currentJob, template);
+  return (
+    <p className={`mt-2 rounded border px-2 py-1 text-[10px] font-semibold ${changes.length ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
+      {changes.length ? `Will update: ${changes.join(', ')}` : 'Matches current job settings'}
+    </p>
   );
 };

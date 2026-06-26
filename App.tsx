@@ -815,6 +815,7 @@ const App: React.FC = () => {
         templates={(
           <TemplatesPopover
             templates={shopTemplates}
+            currentJob={currentJob}
             onApply={handleApplyTemplate}
             onSave={handleSaveTemplate}
             onDelete={handleDeleteTemplate}
