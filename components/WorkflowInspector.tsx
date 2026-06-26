@@ -18,9 +18,11 @@ import {
 } from '../types';
 import { PlacementPanel } from './PlacementPanel';
 import { PreflightPanel } from './PreflightPanel';
+import { ProductionPackageReview } from './ProductionPackageReview';
 import { getPreflightGate } from '../services/preflight';
 import { getRecipe, RECIPES } from '../services/recipes';
 import { migrateStoredRecipes } from '../services/recipeStorage';
+import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -47,6 +49,7 @@ interface WorkflowInspectorProps {
   productionProfile: ProductionProfile;
   preflightFindings: PreflightFinding[];
   preflightAcknowledged: boolean;
+  packageReview: ProductionPackageReviewModel | null;
   jobMetadata: JobMetadata;
   namingPattern: string;
   onStageChange: (stage: WorkspaceStage) => void;
@@ -126,6 +129,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     productionProfile,
     preflightFindings,
     preflightAcknowledged,
+    packageReview,
     jobMetadata,
     namingPattern,
     onStageChange,
@@ -441,6 +445,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               onSpecificationChange={onPrintSpecificationChange}
               onAcknowledge={onAcknowledgePreflight}
             />
+
+            {packageReview && <ProductionPackageReview review={packageReview} />}
 
             <Section title="Downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
               <div className="space-y-2">

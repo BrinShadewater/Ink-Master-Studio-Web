@@ -69,6 +69,7 @@ import {
   snapshotProductionProfile,
 } from './services/productionProfiles';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
+import { buildProductionPackageReview } from './services/packageReview';
 import { generateCustomerProof } from './services/proofBuilder';
 import {
   applyTemplateToJob,
@@ -216,13 +217,28 @@ const App: React.FC = () => {
   const productionPlacement = validatePlacement(activePlacement, activeProductionProfile).valid
     ? placementToMockupPercent(activePlacement, activeProductionProfile)
     : undefined;
-  const currentProductionJob = currentJob ? {
-    ...currentJob,
-    settings,
-    activePlacementKey: placementState.activePlacementKey,
-    placements: placementState.placements,
-    preflightFindings,
-  } : null;
+  const currentProductionJob = useMemo(
+    () => currentJob ? {
+      ...currentJob,
+      settings,
+      activePlacementKey: placementState.activePlacementKey,
+      placements: placementState.placements,
+      preflightFindings,
+    } : null,
+    [currentJob, placementState.activePlacementKey, placementState.placements, preflightFindings, settings],
+  );
+  const packageReview = useMemo(
+    () => currentProductionJob
+      ? buildProductionPackageReview(
+          currentProductionJob,
+          preflightFindings,
+          preflightAcknowledged,
+          Boolean(processedResult),
+          profileUpdateState.status,
+        )
+      : null,
+    [currentProductionJob, preflightAcknowledged, preflightFindings, processedResult, profileUpdateState.status],
+  );
 
   const refreshJobs = async () => {
     try {
@@ -816,6 +832,7 @@ const App: React.FC = () => {
               productionProfile={activeProductionProfile}
               preflightFindings={preflightFindings}
               preflightAcknowledged={preflightAcknowledged}
+              packageReview={packageReview}
               jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               onStageChange={setStage}
