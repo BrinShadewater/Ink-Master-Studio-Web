@@ -1,5 +1,4 @@
 import React, { useRef, useState } from 'react';
-import JSZip from 'jszip';
 import { DEFAULT_PRINT_SPECIFICATION } from '../constants';
 import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, ProductionProfile, RecipeId } from '../types';
 import { analyzeArtwork } from '../services/artworkAnalysis';
@@ -8,11 +7,10 @@ import { evaluatePreflight } from '../services/preflight';
 import { RECIPES, resolveRecipeSettings } from '../services/recipes';
 import {
   batchExportEligibility,
+  buildCombinedBatchOrderPackage,
   BatchRecipeSelection,
   BatchProductionStatus,
   createBatchOutputFilename,
-  createCombinedOrderManifest,
-  createCombinedOrderSummary,
   resolveBatchRecipe,
 } from '../services/batch';
 
@@ -143,26 +141,17 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
   const exportCombined = async () => {
     const eligible = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport && item.resultBlob);
     if (!eligible.length) return;
-    const zip = new JSZip();
-    const usedFilenames = new Set<string>();
-    const outputFilenames = new Map<string, string>();
-    for (const item of eligible) {
-      const outputFilename = createBatchOutputFilename(item.file.name, item.settings.format, usedFilenames);
-      outputFilenames.set(item.id, outputFilename);
-      zip.file(outputFilename, await item.resultBlob!.arrayBuffer());
-    }
-    const manifest = createCombinedOrderManifest(items.map((item) => ({
+    const result = await buildCombinedBatchOrderPackage(items.map((item) => ({
       id: item.id,
       filename: item.file.name,
-      outputFilename: outputFilenames.get(item.id),
       status: item.status,
       recipeId: item.recipeId,
       findings: item.findings,
       acknowledged: item.acknowledged,
+      format: item.settings.format,
+      resultBlob: item.resultBlob,
     })));
-    zip.file('order-manifest.json', JSON.stringify(manifest, null, 2));
-    zip.file('order-summary.txt', createCombinedOrderSummary(manifest));
-    downloadBlob(await zip.generateAsync({ type: 'blob' }), 'inkmaster-combined-order.zip');
+    downloadBlob(result.blob, result.filename);
   };
 
   const eligibleCount = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport).length;

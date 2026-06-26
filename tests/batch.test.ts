@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import JSZip from 'jszip';
 
-import { batchExportEligibility, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
+import { batchExportEligibility, buildCombinedBatchOrderPackage, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
 import { ArtworkAnalysis, PreflightFinding } from '../types';
 
 const finding = (severity: PreflightFinding['severity']): PreflightFinding => ({
@@ -113,4 +114,23 @@ test('combined order summaries are readable by production operators', () => {
   assert.match(summary, /Exported files: 1/);
   assert.match(summary, /source-pass\.png from source-pass\.png · recipe clean-logo/);
   assert.match(summary, /blocked\.png · 1 critical preflight issue must be resolved\./);
+});
+
+test('combined batch order packages contain unique files, manifest, and summary', async () => {
+  const result = await buildCombinedBatchOrderPackage([
+    { id: 'first', filename: 'logo.png', status: 'ready', recipeId: 'clean-logo', findings: [], acknowledged: false, format: 'PNG', resultBlob: new Blob(['first']) },
+    { id: 'second', filename: 'logo.jpg', status: 'ready', recipeId: 'dark-garment', findings: [], acknowledged: false, format: 'PNG', resultBlob: new Blob(['second']) },
+    { id: 'blocked', filename: 'blocked.png', status: 'ready', recipeId: 'custom', findings: [finding('critical')], acknowledged: true, format: 'PNG', resultBlob: new Blob(['blocked']) },
+  ]);
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('order-manifest.json')!.async('string'));
+  const summary = await zip.file('order-summary.txt')!.async('string');
+
+  assert.equal(result.filename, 'inkmaster-combined-order.zip');
+  assert.ok(zip.file('logo.png'));
+  assert.ok(zip.file('logo-2.png'));
+  assert.equal(zip.file('blocked.png'), null);
+  assert.deepEqual(manifest.items.map((item: { filename: string }) => item.filename), ['logo.png', 'logo-2.png']);
+  assert.deepEqual(manifest.excludedItems.map((item: { sourceFilename: string }) => item.sourceFilename), ['blocked.png']);
+  assert.match(summary, /logo-2\.png from logo\.jpg/);
 });

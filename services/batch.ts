@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { getPreflightGate } from './preflight';
 import { ArtworkAnalysis, PreflightFinding, RecipeId } from '../types';
 import { recommendRecipe } from './recipes';
@@ -13,6 +14,11 @@ export interface BatchManifestCandidate {
   recipeId: RecipeId | null;
   findings: PreflightFinding[];
   acknowledged: boolean;
+}
+
+export interface CombinedBatchPackageItem extends BatchManifestCandidate {
+  format: string;
+  resultBlob: Blob | null;
 }
 
 export const createBatchOutputFilename = (
@@ -143,3 +149,39 @@ export const createCombinedOrderSummary = (
     ? manifest.excludedItems.map((item) => `- ${item.sourceFilename} · ${item.reasons.join(' ')}`)
     : ['- None']),
 ].join('\n');
+
+export const buildCombinedBatchOrderPackage = async (
+  candidates: CombinedBatchPackageItem[],
+): Promise<{ blob: Blob; filename: string; manifest: ReturnType<typeof createCombinedOrderManifest> }> => {
+  const zip = new JSZip();
+  const usedFilenames = new Set<string>();
+  const outputFilenames = new Map<string, string>();
+
+  for (const candidate of candidates) {
+    const eligibility = batchExportEligibility(candidate.status, candidate.findings, candidate.acknowledged);
+    if (!eligibility.canExport || !candidate.resultBlob) continue;
+
+    const outputFilename = createBatchOutputFilename(candidate.filename, candidate.format, usedFilenames);
+    outputFilenames.set(candidate.id, outputFilename);
+    zip.file(outputFilename, await candidate.resultBlob.arrayBuffer());
+  }
+
+  const manifest = createCombinedOrderManifest(candidates.map((candidate) => ({
+    id: candidate.id,
+    filename: candidate.filename,
+    outputFilename: outputFilenames.get(candidate.id),
+    status: candidate.status,
+    recipeId: candidate.recipeId,
+    findings: candidate.findings,
+    acknowledged: candidate.acknowledged,
+  })));
+
+  zip.file('order-manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file('order-summary.txt', createCombinedOrderSummary(manifest));
+
+  return {
+    blob: await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' }),
+    filename: 'inkmaster-combined-order.zip',
+    manifest,
+  };
+};
