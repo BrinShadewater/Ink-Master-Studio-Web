@@ -53,6 +53,9 @@ test('describes operator template production settings for review', () => {
   assert.equal(summary.printSize, '12×14 in DTG');
   assert.match(summary.placement, /full-front/);
   assert.match(summary.output, /PNG/);
+  assert.equal(summary.mockups, 'Charcoal, Heather, Black');
+  assert.match(summary.packageContents, /print master/);
+  assert.match(summary.packageContents, /manifest/);
   assert.equal(summary.proofBranding, 'River City Prints');
 });
 
@@ -67,6 +70,19 @@ test('describes which job settings a template will replace', () => {
   const changes = describeTemplateChanges(target, template);
 
   assert.deepEqual(changes, ['product', 'naming', 'proof branding']);
+});
+
+test('describes template package and mockup changes separately', () => {
+  const source = createStudioJob('Source');
+  source.packageOptions.includeUnderbase = true;
+  source.packageOptions.selectedMockupIndices = [0, 6];
+  const template = createTemplateFromJob(source, 'Template', '');
+  const target = createStudioJob('Target');
+
+  const changes = describeTemplateChanges(target, template);
+
+  assert.ok(changes.includes('package contents'));
+  assert.ok(changes.includes('mockup colors'));
 });
 
 test('round-trips templates through versioned JSON', () => {

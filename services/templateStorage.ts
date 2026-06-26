@@ -1,5 +1,6 @@
 import { createStudioJob, touchStudioJob } from './jobModel';
 import { placementVariantKey } from './placement';
+import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
 import { ShopTemplate, StudioJob } from '../types';
 
 const STORAGE_KEY = 'inkmaster_shop_templates_v1';
@@ -67,6 +68,15 @@ export const describeTemplate = (template: ShopTemplate) => ({
   placement: `${template.placement.presetId} · ${template.placement.widthInches}×${template.placement.heightInches} in · ${template.placement.location}`,
   output: `${template.settings.format}${template.settings.preserveTransparency ? ' · transparent' : ''}`,
   namingPattern: template.packageOptions.namingPattern,
+  mockups: describeSelectedMockups(template.packageOptions.selectedMockupIndices),
+  packageContents: [
+    template.packageOptions.includePrintMaster ? 'print master' : null,
+    template.packageOptions.includeProductionPdf ? 'spec PDF' : null,
+    template.packageOptions.includeMockups ? 'mockups' : null,
+    template.packageOptions.includeUnderbase ? 'underbase' : null,
+    template.packageOptions.includeSummary ? 'summary' : null,
+    template.packageOptions.includeManifest ? 'manifest' : null,
+  ].filter((entry): entry is string => Boolean(entry)).join(', ') || 'none',
   proofBranding: template.proofBranding.shopName || 'InkMaster Studio',
 });
 
@@ -75,6 +85,8 @@ export const describeTemplateChanges = (
   template: ShopTemplate,
 ) => {
   const activePlacement = job.placements[job.activePlacementKey];
+  const jobMockups = normalizeMockupSelection(job.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).join(',');
+  const templateMockups = normalizeMockupSelection(template.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).join(',');
   return [
     job.selectedRecipeId !== template.recipeId ? 'recipe' : null,
     job.settings.itemType !== template.itemType ? 'product' : null,
@@ -92,6 +104,15 @@ export const describeTemplateChanges = (
       ? 'placement'
       : null,
     job.packageOptions.namingPattern !== template.packageOptions.namingPattern ? 'naming' : null,
+    job.packageOptions.includePrintMaster !== template.packageOptions.includePrintMaster
+      || job.packageOptions.includeProductionPdf !== template.packageOptions.includeProductionPdf
+      || job.packageOptions.includeMockups !== template.packageOptions.includeMockups
+      || job.packageOptions.includeUnderbase !== template.packageOptions.includeUnderbase
+      || job.packageOptions.includeSummary !== template.packageOptions.includeSummary
+      || job.packageOptions.includeManifest !== template.packageOptions.includeManifest
+      ? 'package contents'
+      : null,
+    jobMockups !== templateMockups ? 'mockup colors' : null,
     job.proofBranding.shopName !== template.proofBranding.shopName
       || job.proofBranding.contactLine !== template.proofBranding.contactLine
       || job.proofBranding.footerNote !== template.proofBranding.footerNote

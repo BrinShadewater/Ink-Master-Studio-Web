@@ -72,6 +72,8 @@ const TemplateSummary: React.FC<{ template: ShopTemplate }> = ({ template }) => 
     <span className="mt-1 block space-y-0.5 text-[10px] text-slate-500">
       <span className="block truncate">{summary.product} · {summary.placement}</span>
       <span className="block truncate">{summary.recipe} · {summary.printSize} · {summary.output}</span>
+      <span className="block truncate">Mockups: {summary.mockups}</span>
+      <span className="block truncate">Package: {summary.packageContents}</span>
       <span className="block truncate">Naming: {summary.namingPattern}</span>
     </span>
   );
