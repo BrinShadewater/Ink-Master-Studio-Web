@@ -15,6 +15,26 @@ export interface BatchManifestCandidate {
   acknowledged: boolean;
 }
 
+export const createBatchOutputFilename = (
+  sourceFilename: string,
+  format: string,
+  usedFilenames: Set<string> = new Set(),
+): string => {
+  const extension = format.toLowerCase();
+  const rawStem = sourceFilename.replace(/\.[^.]+$/, '') || 'artwork';
+  const safeStem = rawStem.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'artwork';
+  let filename = `${safeStem}.${extension}`;
+  let copy = 2;
+
+  while (usedFilenames.has(filename.toLowerCase())) {
+    filename = `${safeStem}-${copy}.${extension}`;
+    copy += 1;
+  }
+
+  usedFilenames.add(filename.toLowerCase());
+  return filename;
+};
+
 export const resolveBatchRecipe = (
   selection: BatchRecipeSelection,
   analysis: ArtworkAnalysis,

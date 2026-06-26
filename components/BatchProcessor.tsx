@@ -10,6 +10,7 @@ import {
   batchExportEligibility,
   BatchRecipeSelection,
   BatchProductionStatus,
+  createBatchOutputFilename,
   createCombinedOrderManifest,
   createCombinedOrderSummary,
   resolveBatchRecipe,
@@ -143,13 +144,17 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
     const eligible = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport && item.resultBlob);
     if (!eligible.length) return;
     const zip = new JSZip();
+    const usedFilenames = new Set<string>();
+    const outputFilenames = new Map<string, string>();
     for (const item of eligible) {
-      zip.file(`${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`, await item.resultBlob!.arrayBuffer());
+      const outputFilename = createBatchOutputFilename(item.file.name, item.settings.format, usedFilenames);
+      outputFilenames.set(item.id, outputFilename);
+      zip.file(outputFilename, await item.resultBlob!.arrayBuffer());
     }
     const manifest = createCombinedOrderManifest(items.map((item) => ({
       id: item.id,
       filename: item.file.name,
-      outputFilename: `${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`,
+      outputFilename: outputFilenames.get(item.id),
       status: item.status,
       recipeId: item.recipeId,
       findings: item.findings,
@@ -235,7 +240,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
                       )}
                       {item.status === 'ready' && <button type="button" onClick={() => updateItem(item.id, { status: 'cancelled' })} className="text-[10px] font-bold text-slate-500 hover:text-rose-300">Cancel item</button>}
                       {item.status === 'failed' && <button type="button" onClick={() => void processItem(item)} className="text-[10px] font-bold text-indigo-300">Retry</button>}
-                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => downloadBlob(item.resultBlob!, `${item.file.name.replace(/\.[^.]+$/, '')}.${item.settings.format.toLowerCase()}`)} className="text-[10px] font-bold text-emerald-300">Export design</button>}
+                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => downloadBlob(item.resultBlob!, createBatchOutputFilename(item.file.name, item.settings.format))} className="text-[10px] font-bold text-emerald-300">Export design</button>}
                     </div>
                   </div>
                 </article>

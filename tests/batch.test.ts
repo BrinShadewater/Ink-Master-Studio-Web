@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { batchExportEligibility, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
+import { batchExportEligibility, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
 import { ArtworkAnalysis, PreflightFinding } from '../types';
 
 const finding = (severity: PreflightFinding['severity']): PreflightFinding => ({
@@ -45,6 +45,15 @@ test('resolves batch auto recipe from artwork analysis', () => {
 
 test('resolves a forced batch recipe without using recommendation', () => {
   assert.equal(resolveBatchRecipe('dark-garment', analysis()), 'dark-garment');
+});
+
+test('createBatchOutputFilename sanitizes names and avoids collisions', () => {
+  const used = new Set<string>();
+
+  assert.equal(createBatchOutputFilename('logo.png', 'PNG', used), 'logo.png');
+  assert.equal(createBatchOutputFilename('logo.jpg', 'PNG', used), 'logo-2.png');
+  assert.equal(createBatchOutputFilename('Client Art!.webp', 'JPG', used), 'Client-Art.jpg');
+  assert.equal(createBatchOutputFilename('!!!.svg', 'SVG', used), 'artwork.svg');
 });
 
 test('excludes failed, cancelled, and critical batch items', () => {
