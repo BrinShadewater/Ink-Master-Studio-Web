@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeMockupSelection } from '../services/mockups';
+import {
+  describeSelectedMockups,
+  getSelectedProductionMockups,
+  normalizeMockupSelection,
+} from '../services/mockups';
 
 test('normalizeMockupSelection sorts unique valid mockup indices', () => {
   assert.deepEqual(
@@ -19,4 +23,19 @@ test('normalizeMockupSelection removes invalid and out-of-range indices', () => 
 test('normalizeMockupSelection handles empty selections', () => {
   assert.deepEqual(normalizeMockupSelection(undefined, 11), []);
   assert.deepEqual(normalizeMockupSelection([], 11), []);
+});
+
+test('getSelectedProductionMockups resolves selected catalog entries', () => {
+  assert.deepEqual(
+    getSelectedProductionMockups([6, 2]).map((mockup) => [mockup.slug, mockup.name]),
+    [
+      ['heather', 'Heather'],
+      ['black', 'Black'],
+    ],
+  );
+});
+
+test('describeSelectedMockups names selected colors for operator review', () => {
+  assert.equal(describeSelectedMockups([6, 2]), 'Heather, Black');
+  assert.equal(describeSelectedMockups([]), 'No mockup colors selected');
 });

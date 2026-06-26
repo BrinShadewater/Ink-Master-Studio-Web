@@ -66,6 +66,7 @@ interface WorkflowInspectorProps {
   proofBranding: ProofBranding;
   proofFilenames: { print: string; email: string };
   selectedMockupCount: number;
+  selectedMockupSummary: string;
   onStageChange: (stage: WorkspaceStage) => void;
   onApplyRecipe: (recipeId: RecipeId, settings?: ProcessingSettings) => void;
   onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
@@ -150,6 +151,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     proofBranding,
     proofFilenames,
     selectedMockupCount,
+    selectedMockupSummary,
     onStageChange,
     onApplyRecipe,
     onSettingsChange,
@@ -506,6 +508,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               printFilename={proofFilenames.print}
               emailFilename={proofFilenames.email}
               mockupCount={selectedMockupCount}
+              mockupSummary={selectedMockupSummary}
               canExport={preflightGate.canExport}
               hasProcessedResult={hasProcessedResult}
               onChange={onProofBrandingChange}

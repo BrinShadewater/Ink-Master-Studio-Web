@@ -44,6 +44,10 @@ test('previews the final package filename and included production files', () => 
       ['manifest', 'ready', 'job-manifest.json'],
     ],
   );
+  assert.match(
+    review.items.find((entry) => entry.id === 'mockups')?.note ?? '',
+    /Red, Heather/,
+  );
 });
 
 test('blocks package export until artwork has been processed', () => {

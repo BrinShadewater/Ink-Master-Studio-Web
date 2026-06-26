@@ -6,6 +6,7 @@ interface CustomerProofBuilderProps {
   printFilename: string;
   emailFilename: string;
   mockupCount: number;
+  mockupSummary: string;
   canExport: boolean;
   hasProcessedResult: boolean;
   onChange: (branding: ProofBranding) => void;
@@ -23,6 +24,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   printFilename,
   emailFilename,
   mockupCount,
+  mockupSummary,
   canExport,
   hasProcessedResult,
   onChange,
@@ -70,7 +72,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
     <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Proof contents</p>
       <p className="mt-1 text-xs text-slate-300">
-        {mockupCount} selected mockup{mockupCount === 1 ? '' : 's'} · print-ready PDF · compressed email PDF
+        {mockupCount} selected mockup{mockupCount === 1 ? '' : 's'} · {mockupSummary} · print-ready PDF · compressed email PDF
       </p>
       {!hasProcessedResult && <p className="mt-1 text-[10px] font-semibold text-amber-300">Process artwork before proof export.</p>}
       {hasProcessedResult && !canExport && <p className="mt-1 text-[10px] font-semibold text-amber-300">Resolve or acknowledge preflight findings before proof export.</p>}

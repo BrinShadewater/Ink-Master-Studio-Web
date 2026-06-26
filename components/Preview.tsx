@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
 import { compositeMockup, generatePrintPDF } from '../services/imageProcessing';
-import { normalizeMockupSelection } from '../services/mockups';
+import { normalizeMockupSelection, PRODUCTION_MOCKUPS } from '../services/mockups';
 
 interface PercentPlacement {
   x: number;
@@ -30,19 +30,7 @@ interface PreviewProps {
   onProductionPlacementChange?: (placement: PercentPlacement) => void;
 }
 
-const MOCKUPS = [
-  { name: 'Red', file: '/mockups/mockup-red.png', color: '#C0392B' },
-  { name: 'Charcoal', file: '/mockups/mockup-charcoal.png', color: '#3D3D3D' },
-  { name: 'Heather', file: '/mockups/mockup-heather.png', color: '#8E9A9A' },
-  { name: 'Military Green', file: '/mockups/mockup-miltarygreen.png', color: '#4A5240' },
-  { name: 'Forest Green', file: '/mockups/mockup-forestgreen.png', color: '#2D5A27' },
-  { name: 'Cardinal', file: '/mockups/mockup-cardinal.png', color: '#8B1A1A' },
-  { name: 'Black', file: '/mockups/mockup-black.png', color: '#1A1A1A' },
-  { name: 'Burgundy', file: '/mockups/mockup-burgundy.png', color: '#6B2737' },
-  { name: 'Navy', file: '/mockups/mockup-navy.png', color: '#1B2A4A' },
-  { name: 'Orange', file: '/mockups/mockup-orange.png', color: '#D4620A' },
-  { name: 'Royal Blue', file: '/mockups/mockup-royalblue.png', color: '#2255A4' },
-];
+const MOCKUPS = PRODUCTION_MOCKUPS;
 
 // Feature 4: Print Presets
 const PRINT_PRESETS = [

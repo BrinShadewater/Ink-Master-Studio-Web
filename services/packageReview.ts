@@ -1,5 +1,6 @@
 import { getPreflightGate } from './preflight';
 import { resolveFilenamePattern } from './naming';
+import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
 import { PreflightFinding, StudioJob } from '../types';
 import { ProfileUpdateStatus } from './productionProfiles';
 
@@ -49,6 +50,8 @@ export const buildProductionPackageReview = (
   profileStatus: ProfileUpdateStatus,
 ): ProductionPackageReview => {
   const options = job.packageOptions;
+  const selectedMockupIndices = normalizeMockupSelection(options.selectedMockupIndices, PRODUCTION_MOCKUPS.length);
+  const selectedMockupDescription = describeSelectedMockups(selectedMockupIndices);
   const placementName = placementNameForJob(job);
   const baseFilename = resolveFilenamePattern(options.namingPattern, job, placementName);
   const gate = getPreflightGate(findings, preflightAcknowledged);
@@ -71,7 +74,7 @@ export const buildProductionPackageReview = (
   } else if (profileStatus === 'missing') {
     warnings.push('The original production profile is missing locally; this package uses the job snapshot.');
   }
-  if (options.includeMockups && options.selectedMockupIndices.length === 0) {
+  if (options.includeMockups && selectedMockupIndices.length === 0) {
     warnings.push('Mockups are enabled, but no mockup colors are selected.');
   }
 
@@ -119,10 +122,10 @@ export const buildProductionPackageReview = (
         'Selected mockups',
         'mockups/*.png',
         options.includeMockups
-          ? options.selectedMockupIndices.length > 0 && hasProcessedResult ? 'ready' : 'missing'
+          ? selectedMockupIndices.length > 0 && hasProcessedResult ? 'ready' : 'missing'
           : 'excluded',
         options.includeMockups
-          ? `${options.selectedMockupIndices.length} mockup color${options.selectedMockupIndices.length === 1 ? '' : 's'} selected.`
+          ? `${selectedMockupIndices.length} mockup color${selectedMockupIndices.length === 1 ? '' : 's'} selected: ${selectedMockupDescription}.`
           : 'Disabled in package options.',
       ),
       item(

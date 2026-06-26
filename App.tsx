@@ -68,7 +68,12 @@ import {
   getProfileUpdateState,
   snapshotProductionProfile,
 } from './services/productionProfiles';
-import { normalizeMockupSelection } from './services/mockups';
+import {
+  describeSelectedMockups,
+  getSelectedProductionMockups,
+  normalizeMockupSelection,
+  PRODUCTION_MOCKUPS,
+} from './services/mockups';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
@@ -107,20 +112,6 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, rej
 
 const jobFilename = (job: StudioJob) =>
   `${job.metadata.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'inkmaster-job'}.inkmaster-job`;
-
-const MOCKUP_FILES = [
-  ['red', '/mockups/mockup-red.png'],
-  ['charcoal', '/mockups/mockup-charcoal.png'],
-  ['heather', '/mockups/mockup-heather.png'],
-  ['military-green', '/mockups/mockup-miltarygreen.png'],
-  ['forest-green', '/mockups/mockup-forestgreen.png'],
-  ['cardinal', '/mockups/mockup-cardinal.png'],
-  ['black', '/mockups/mockup-black.png'],
-  ['burgundy', '/mockups/mockup-burgundy.png'],
-  ['navy', '/mockups/mockup-navy.png'],
-  ['orange', '/mockups/mockup-orange.png'],
-  ['royal-blue', '/mockups/mockup-royalblue.png'],
-] as const;
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
@@ -571,11 +562,9 @@ const App: React.FC = () => {
     if (!currentJob || !processedResult) return [];
     const placement = placementToMockupPercent(activePlacement, activeProductionProfile);
     const assets: PackageAsset[] = [];
-    for (const index of normalizeMockupSelection(currentJob.packageOptions.selectedMockupIndices, MOCKUP_FILES.length)) {
-      const mockup = MOCKUP_FILES[index];
-      if (!mockup) continue;
-      const result = await compositeMockup(mockup[1], processedResult.url, placement, 'PNG');
-      assets.push({ filename: `${mockup[0]}-mockup.png`, blob: result.blob });
+    for (const mockup of getSelectedProductionMockups(currentJob.packageOptions.selectedMockupIndices)) {
+      const result = await compositeMockup(mockup.file, processedResult.url, placement, 'PNG');
+      assets.push({ filename: `${mockup.slug}-mockup.png`, blob: result.blob });
     }
     return assets;
   };
@@ -851,7 +840,8 @@ const App: React.FC = () => {
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
               proofFilenames={proofFilenames}
-              selectedMockupCount={currentJob?.packageOptions.selectedMockupIndices.length ?? 0}
+              selectedMockupCount={normalizeMockupSelection(currentJob?.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).length}
+              selectedMockupSummary={describeSelectedMockups(currentJob?.packageOptions.selectedMockupIndices)}
               onStageChange={setStage}
               onApplyRecipe={handleApplyRecipe}
               onSettingsChange={handleSettingsChange}
