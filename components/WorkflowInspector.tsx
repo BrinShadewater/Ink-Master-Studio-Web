@@ -8,6 +8,7 @@ import {
   PlacementMeasurement,
   PreflightFinding,
   PrintSpecification,
+  ProductionProfile,
   ProcessingSettings,
   RecipeId,
   RecipeRecommendation,
@@ -43,6 +44,7 @@ interface WorkflowInspectorProps {
   isEyedropperMode: boolean;
   printSpecification: PrintSpecification;
   placement: PlacementMeasurement;
+  productionProfile: ProductionProfile;
   preflightFindings: PreflightFinding[];
   preflightAcknowledged: boolean;
   jobMetadata: JobMetadata;
@@ -121,6 +123,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     isEyedropperMode,
     printSpecification,
     placement,
+    productionProfile,
     preflightFindings,
     preflightAcknowledged,
     jobMetadata,
@@ -395,7 +398,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 <span className={`h-3 w-3 rounded-full ${analysis?.printQuality.status === 'good' ? 'bg-emerald-400' : analysis?.printQuality.status === 'low' ? 'bg-amber-400' : 'bg-rose-400'}`} />
               </div>
             </Section>
-            <PlacementPanel placement={placement} onChange={onPlacementChange} />
+            <PlacementPanel placement={placement} profile={productionProfile} onChange={onPlacementChange} />
             <Section title="Review checklist">
               <ul className="space-y-2 text-xs text-slate-400">
                 <li>✓ Check the design on both light and dark garments.</li>
@@ -446,7 +449,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" disabled={!hasProcessedResult} onClick={onDownloadPdf} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Production PDF</button>
-                  <button type="button" disabled={!hasProcessedResult} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
+                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
                 </div>
               </div>
             </Section>

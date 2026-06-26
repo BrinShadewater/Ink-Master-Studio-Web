@@ -8,6 +8,7 @@ import {
   ItemType,
   PrintSpecification,
   ProductionPackageOptions,
+  ProductionThresholds,
   ProofBranding,
 } from './types';
 
@@ -75,4 +76,12 @@ export const DEFAULT_PACKAGE_OPTIONS: ProductionPackageOptions = {
   includeUnderbase: false,
   includeSummary: true,
   includeManifest: true,
+};
+
+export const DEFAULT_PRODUCTION_THRESHOLDS: ProductionThresholds = {
+  targetDpi: 300,
+  warningDpi: 200,
+  criticalDpi: 150,
+  significantUpscaleRatio: 1.5,
+  extremeUpscaleRatio: 3,
 };

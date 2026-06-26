@@ -165,6 +165,63 @@ export interface ProductionPackageOptions {
   includeManifest: boolean;
 }
 
+export interface PrintableArea {
+  widthInches: number;
+  heightInches: number;
+  xPercent: number;
+  yPercent: number;
+  widthPercent: number;
+  heightPercent: number;
+}
+
+export interface ProductionThresholds {
+  targetDpi: number;
+  warningDpi: number;
+  criticalDpi: number;
+  significantUpscaleRatio: number;
+  extremeUpscaleRatio: number;
+}
+
+export interface ProductionProfileDefaults {
+  format: OutputFormat;
+  preserveTransparency: boolean;
+  includeUnderbase: boolean;
+  packageOptions: ProductionPackageOptions;
+}
+
+export interface ProductionProfile {
+  schemaVersion: 1;
+  id: string;
+  revision: number;
+  name: string;
+  description: string;
+  printerName: string;
+  method: ProductionMethod;
+  thresholds: ProductionThresholds;
+  printableAreas: Record<string, PrintableArea>;
+  defaults: ProductionProfileDefaults;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+}
+
+export interface ProductionProfileStore {
+  schemaVersion: 1;
+  defaultProfileId: string;
+  profiles: ProductionProfile[];
+}
+
+export interface AppliedProductionProfile {
+  profileId: string;
+  profileRevision: number;
+  snapshot: ProductionProfile;
+}
+
+export interface ProfileValidationError {
+  field: string;
+  message: string;
+}
+
 export interface StoredJobExport {
   id: string;
   filename: string;
@@ -180,6 +237,7 @@ export interface StudioJob {
   updatedAt: number;
   archivedAt: number | null;
   revision: number;
+  productionProfile: AppliedProductionProfile;
   metadata: JobMetadata;
   sourceArtwork: SourceArtwork | null;
   settings: ProcessingSettings;

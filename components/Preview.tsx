@@ -22,6 +22,7 @@ interface PreviewProps {
   embedded?: boolean;
   workspaceStage?: WorkspaceStage;
   exportRequestToken?: number;
+  mockupExportAllowed?: boolean;
   productionPlacement?: PercentPlacement;
   onProductionPlacementChange?: (placement: PercentPlacement) => void;
 }
@@ -72,6 +73,7 @@ export const Preview: React.FC<PreviewProps> = ({
   embedded = false,
   workspaceStage = 'prepare',
   exportRequestToken = 0,
+  mockupExportAllowed = true,
   productionPlacement,
   onProductionPlacementChange,
 }) => {
@@ -275,6 +277,7 @@ export const Preview: React.FC<PreviewProps> = ({
   };
 
   const handleMockupDownload = async () => {
+    if (!mockupExportAllowed) return;
     const designUrl = getDesignUrl();
     if (!designUrl || selectedMockupIndices.size === 0) return;
     setIsDownloading(true);
@@ -330,12 +333,13 @@ export const Preview: React.FC<PreviewProps> = ({
   };
 
   useEffect(() => {
-    if (exportRequestToken > 0) {
+    if (exportRequestToken > 0 && mockupExportAllowed) {
       void handleMockupDownload();
     }
   }, [exportRequestToken]);
 
   const handleDownloadSingle = async (idx: number) => {
+    if (!mockupExportAllowed) return;
     const designUrl = getDesignUrl();
     if (!designUrl) return;
     const mockup = MOCKUPS[idx];
@@ -964,7 +968,8 @@ export const Preview: React.FC<PreviewProps> = ({
                     </span>
                     <button
                       onClick={() => handleDownloadSingle(idx)}
-                      className="text-[8px] text-slate-600 hover:text-indigo-400 transition-colors"
+                      disabled={!mockupExportAllowed}
+                      className="text-[8px] text-slate-600 hover:text-indigo-400 transition-colors disabled:cursor-not-allowed disabled:opacity-30"
                       title={`Download ${m.name}`}
                     >
                       ↓
@@ -1017,9 +1022,9 @@ export const Preview: React.FC<PreviewProps> = ({
             <div className="flex gap-3 pt-1">
               <button
                 onClick={handleMockupDownload}
-                disabled={isDownloading || selectedMockupIndices.size === 0}
+                disabled={!mockupExportAllowed || isDownloading || selectedMockupIndices.size === 0}
                 className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                  isDownloading || selectedMockupIndices.size === 0
+                  !mockupExportAllowed || isDownloading || selectedMockupIndices.size === 0
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                     : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20 border border-indigo-500 active:scale-95'
                 }`}

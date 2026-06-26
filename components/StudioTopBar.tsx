@@ -13,6 +13,7 @@ interface StudioTopBarProps {
   onRedo: () => void;
   versions: React.ReactNode;
   templates: React.ReactNode;
+  productionProfile: React.ReactNode;
 }
 
 const IconButton: React.FC<{
@@ -46,6 +47,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   onRedo,
   versions,
   templates,
+  productionProfile,
 }) => (
   <header className="relative z-40 flex h-14 flex-none items-center justify-between border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur lg:px-5">
     <div className="flex min-w-0 items-center gap-2">
@@ -63,7 +65,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
       </div>
     </div>
 
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
       <IconButton label="Open production jobs" onClick={onOpenJobs}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h6l2 2h8v9H4z" /><path d="M4 7V5h6l2 2" /></svg>
         <span className="hidden md:inline">Jobs</span>
@@ -83,6 +85,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
       <IconButton label="Redo" disabled={!canRedo} onClick={onRedo}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 7 5 5-5 5M19 12h-9a6 6 0 0 0-6 6" /></svg>
       </IconButton>
+      {productionProfile}
       {templates}
       {versions}
     </div>

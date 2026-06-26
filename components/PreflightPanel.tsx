@@ -1,14 +1,17 @@
-import React from 'react';
-import { PreflightFinding, PrintSpecification } from '../types';
+import React, { createContext, useContext } from 'react';
+import { AppliedProductionProfile, PreflightFinding, PrintSpecification } from '../types';
 import { getPreflightGate } from '../services/preflight';
 
 interface PreflightPanelProps {
+  profile?: AppliedProductionProfile;
   specification: PrintSpecification;
   findings: PreflightFinding[];
   acknowledged: boolean;
   onSpecificationChange: (specification: PrintSpecification) => void;
   onAcknowledge: (acknowledged: boolean) => void;
 }
+
+export const AppliedProductionProfileContext = createContext<AppliedProductionProfile | null>(null);
 
 const severityStyle: Record<PreflightFinding['severity'], string> = {
   pass: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-300',
@@ -17,12 +20,15 @@ const severityStyle: Record<PreflightFinding['severity'], string> = {
 };
 
 export const PreflightPanel: React.FC<PreflightPanelProps> = ({
+  profile: profileProp,
   specification,
   findings,
   acknowledged,
   onSpecificationChange,
   onAcknowledge,
 }) => {
+  const contextualProfile = useContext(AppliedProductionProfileContext);
+  const profile = profileProp ?? contextualProfile;
   const gate = getPreflightGate(findings, acknowledged);
   const updateNumber = (key: 'widthInches' | 'heightInches' | 'targetDpi', value: string) => {
     const parsed = Number(value);
@@ -34,6 +40,11 @@ export const PreflightPanel: React.FC<PreflightPanelProps> = ({
       <div className="mb-3">
         <h3 className="text-sm font-bold text-slate-100">Production preflight</h3>
         <p className="mt-1 text-xs text-slate-500">Check the artwork at its actual requested print size.</p>
+        {profile && (
+          <p className="mt-2 text-[11px] font-semibold text-indigo-300">
+            Production profile: {profile.snapshot.name} · revision {profile.profileRevision}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
@@ -44,7 +55,7 @@ export const PreflightPanel: React.FC<PreflightPanelProps> = ({
           </select>
         </label>
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-          Target DPI
+          Job/output target DPI
           <input type="number" min="150" max="600" value={specification.targetDpi} onChange={(event) => updateNumber('targetDpi', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white" />
         </label>
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">

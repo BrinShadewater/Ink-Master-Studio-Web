@@ -4,24 +4,13 @@ import {
   PlacementLocation,
   PlacementMeasurement,
   PlacementPreset,
+  PreflightFinding,
+  PrintableArea,
+  ProcessingSettings,
+  ProductionProfile,
+  StudioJob,
 } from '../types';
-
-interface PrintableArea {
-  widthInches: number;
-  heightInches: number;
-  xPercent: number;
-  yPercent: number;
-  widthPercent: number;
-  heightPercent: number;
-}
-
-const PRINTABLE_AREAS: Record<ItemType, PrintableArea> = {
-  [ItemType.TSHIRT]: { widthInches: 15, heightInches: 18, xPercent: 25, yPercent: 14, widthPercent: 50, heightPercent: 62 },
-  [ItemType.HOODIE]: { widthInches: 14, heightInches: 15, xPercent: 27, yPercent: 18, widthPercent: 46, heightPercent: 52 },
-  [ItemType.HAT]: { widthInches: 5, heightInches: 2.25, xPercent: 31, yPercent: 34, widthPercent: 38, heightPercent: 22 },
-  [ItemType.MUG]: { widthInches: 8.5, heightInches: 3.5, xPercent: 18, yPercent: 30, widthPercent: 64, heightPercent: 40 },
-  [ItemType.TOTE]: { widthInches: 12, heightInches: 14, xPercent: 24, yPercent: 20, widthPercent: 52, heightPercent: 58 },
-};
+import { printableAreaKey } from './productionProfiles';
 
 export const DEFAULT_PLACEMENT: PlacementMeasurement = {
   presetId: 'full-front',
@@ -74,26 +63,241 @@ export const placementVariantKey = (
   garmentSize: GarmentSize,
 ) => `${itemType}:${location}:${garmentSize}`;
 
-export const validatePlacement = (placement: PlacementMeasurement) => {
-  const area = PRINTABLE_AREAS[placement.itemType];
+const placementNumbers = (
+  placement: Pick<
+    PlacementMeasurement,
+    'widthInches' | 'heightInches' | 'offsetXInches' | 'offsetYInches'
+  >,
+) => [
+  placement.widthInches,
+  placement.heightInches,
+  placement.offsetXInches,
+  placement.offsetYInches,
+];
+
+const assertFiniteNumbers = (values: number[]) => {
+  if (!values.every(Number.isFinite)) {
+    throw new Error('Placement conversion requires finite numeric values.');
+  }
+};
+
+export const getPrintableArea = (
+  itemType: ItemType,
+  location: PlacementLocation,
+  profile: ProductionProfile,
+): PrintableArea | undefined => {
+  const area = profile.printableAreas[printableAreaKey(itemType, location)];
+  return area ? { ...area } : undefined;
+};
+
+export const validatePlacement = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+): { valid: boolean; errors: string[] } => {
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  if (!area) {
+    return {
+      valid: false,
+      errors: ['The selected profile does not support this product and placement.'],
+    };
+  }
+
   const errors: string[] = [];
-  if (placement.widthInches <= 0 || placement.widthInches > area.widthInches) {
+  if (!Number.isFinite(placement.widthInches) || placement.widthInches <= 0 || placement.widthInches > area.widthInches) {
     errors.push(`Print width must be between 0 and ${area.widthInches} inches.`);
   }
-  if (placement.heightInches <= 0 || placement.heightInches > area.heightInches) {
+  if (!Number.isFinite(placement.heightInches) || placement.heightInches <= 0 || placement.heightInches > area.heightInches) {
     errors.push(`Print height must be between 0 and ${area.heightInches} inches.`);
   }
-  if (Math.abs(placement.offsetXInches) + placement.widthInches / 2 > area.widthInches / 2) {
+  if (
+    !Number.isFinite(placement.offsetXInches)
+    || !Number.isFinite(placement.widthInches)
+    || Math.abs(placement.offsetXInches) + placement.widthInches / 2 > area.widthInches / 2
+  ) {
     errors.push('Horizontal offset places artwork outside the printable width.');
   }
-  if (placement.offsetYInches < 0 || placement.offsetYInches + placement.heightInches > area.heightInches) {
+  if (
+    !Number.isFinite(placement.offsetYInches)
+    || !Number.isFinite(placement.heightInches)
+    || placement.offsetYInches < 0
+    || placement.offsetYInches + placement.heightInches > area.heightInches
+  ) {
     errors.push('Vertical offset places artwork outside the printable height.');
   }
   return { valid: errors.length === 0, errors };
 };
 
-export const placementToMockupPercent = (placement: PlacementMeasurement) => {
-  const area = PRINTABLE_AREAS[placement.itemType];
+const fitPlacementToArea = (
+  placement: PlacementMeasurement,
+  area: PrintableArea,
+): PlacementMeasurement => {
+  const defaultWidth = Math.min(DEFAULT_PLACEMENT.widthInches, area.widthInches);
+  const defaultHeight = Math.min(DEFAULT_PLACEMENT.heightInches, area.heightInches);
+  const widthInches = Number.isFinite(placement.widthInches) && placement.widthInches > 0
+    ? Math.min(placement.widthInches, area.widthInches)
+    : defaultWidth;
+  const heightInches = Number.isFinite(placement.heightInches) && placement.heightInches > 0
+    ? Math.min(placement.heightInches, area.heightInches)
+    : defaultHeight;
+  const maximumOffsetX = Math.max(0, (area.widthInches - widthInches) / 2);
+  const offsetXInches = Number.isFinite(placement.offsetXInches)
+    ? Math.max(-maximumOffsetX, Math.min(placement.offsetXInches, maximumOffsetX))
+    : 0;
+  const maximumOffsetY = Math.max(0, area.heightInches - heightInches);
+  const offsetYInches = Number.isFinite(placement.offsetYInches)
+    ? Math.max(0, Math.min(placement.offsetYInches, maximumOffsetY))
+    : 0;
+
+  return {
+    ...placement,
+    widthInches,
+    heightInches,
+    offsetXInches,
+    offsetYInches,
+  };
+};
+
+export const storePlacementVariant = (
+  placements: Record<string, PlacementMeasurement>,
+  placement: PlacementMeasurement,
+) => {
+  const activePlacementKey = placementVariantKey(
+    placement.itemType,
+    placement.location,
+    placement.garmentSize,
+  );
+  return {
+    activePlacementKey,
+    placements: {
+      ...placements,
+      [activePlacementKey]: { ...placement },
+    },
+  };
+};
+
+export const ensurePlacementForProduct = (
+  placements: Record<string, PlacementMeasurement>,
+  activePlacementKey: string,
+  itemType: ItemType,
+  profile: ProductionProfile,
+) => {
+  const current = placements[activePlacementKey] ?? DEFAULT_PLACEMENT;
+  const location = getPrintableArea(itemType, current.location, profile)
+    ? current.location
+    : 'front';
+  const nextKey = placementVariantKey(itemType, location, current.garmentSize);
+  const existing = placements[nextKey];
+  if (existing?.itemType === itemType) {
+    return {
+      activePlacementKey: nextKey,
+      placement: { ...existing },
+      placements: { ...placements },
+    };
+  }
+
+  const area = getPrintableArea(itemType, location, profile);
+  const placement = area
+    ? fitPlacementToArea({
+        ...current,
+        presetId: 'custom',
+        itemType,
+        location,
+      }, area)
+    : {
+        ...current,
+        presetId: 'custom',
+        itemType,
+        location,
+      };
+  const stored = storePlacementVariant(placements, placement);
+  return { ...stored, placement };
+};
+
+export const synchronizeJobProductionState = (
+  job: StudioJob,
+  settings: ProcessingSettings,
+  profile: ProductionProfile,
+): { job: StudioJob; changed: boolean } => {
+  const synchronized = ensurePlacementForProduct(
+    job.placements,
+    job.activePlacementKey,
+    settings.itemType,
+    profile,
+  );
+  const activePlacement = job.placements[synchronized.activePlacementKey];
+  const settingsMatch = JSON.stringify(job.settings) === JSON.stringify(settings);
+  const placementMatches = activePlacement
+    && JSON.stringify(activePlacement) === JSON.stringify(synchronized.placement);
+  const keyMatches = job.activePlacementKey === synchronized.activePlacementKey;
+
+  if (settingsMatch && placementMatches && keyMatches) {
+    return { job, changed: false };
+  }
+
+  return {
+    changed: true,
+    job: {
+      ...job,
+      settings: structuredClone(settings),
+      activePlacementKey: synchronized.activePlacementKey,
+      placements: synchronized.placements,
+    },
+  };
+};
+
+export const transitionJobProductionState = (
+  job: StudioJob,
+  settings: ProcessingSettings,
+  profile: ProductionProfile,
+  persist: boolean,
+): { job: StudioJob; changed: boolean } => (
+  persist
+    ? synchronizeJobProductionState(job, settings, profile)
+    : { job, changed: false }
+);
+
+export const applyPlacementPreset = (
+  preset: PlacementPreset,
+  current: PlacementMeasurement,
+  profile: ProductionProfile,
+): PlacementMeasurement => {
+  const {
+    id: _id,
+    name: _name,
+    description: _description,
+    itemType: _itemType,
+    ...measurement
+  } = preset;
+  const location = getPrintableArea(current.itemType, measurement.location, profile)
+    ? measurement.location
+    : 'front';
+  const placement = {
+    ...measurement,
+    itemType: current.itemType,
+    location,
+  };
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  return area ? fitPlacementToArea(placement, area) : placement;
+};
+
+const requirePrintableArea = (
+  itemType: ItemType,
+  location: PlacementLocation,
+  profile: ProductionProfile,
+) => {
+  const area = getPrintableArea(itemType, location, profile);
+  if (!area) {
+    throw new Error('Unsupported product and placement for the applied profile.');
+  }
+  return area;
+};
+
+export const placementToMockupPercent = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+) => {
+  assertFiniteNumbers(placementNumbers(placement));
+  const area = requirePrintableArea(placement.itemType, placement.location, profile);
   const width = (placement.widthInches / area.widthInches) * area.widthPercent;
   const height = (placement.heightInches / area.heightInches) * area.heightPercent;
   const centerX = area.xPercent + area.widthPercent / 2
@@ -110,8 +314,16 @@ export const placementToMockupPercent = (placement: PlacementMeasurement) => {
 export const mockupPercentToPlacement = (
   percent: { x: number; y: number; width: number; height: number },
   base: PlacementMeasurement,
+  profile: ProductionProfile,
 ): PlacementMeasurement => {
-  const area = PRINTABLE_AREAS[base.itemType];
+  assertFiniteNumbers([
+    percent.x,
+    percent.y,
+    percent.width,
+    percent.height,
+    ...placementNumbers(base),
+  ]);
+  const area = requirePrintableArea(base.itemType, base.location, profile);
   const widthInches = (percent.width / area.widthPercent) * area.widthInches;
   const heightInches = (percent.height / area.heightPercent) * area.heightInches;
   const centerPercent = percent.x + percent.width / 2;
@@ -126,4 +338,32 @@ export const mockupPercentToPlacement = (
   };
 };
 
-export const getPrintableArea = (itemType: ItemType) => ({ ...PRINTABLE_AREAS[itemType] });
+export const createPlacementPreflightFinding = (
+  placement: PlacementMeasurement,
+  profile: ProductionProfile,
+): PreflightFinding | null => {
+  const validation = validatePlacement(placement, profile);
+  if (validation.valid) return null;
+
+  const area = getPrintableArea(placement.itemType, placement.location, profile);
+  const context = area
+    ? `${profile.name} maximum for ${placement.itemType} ${placement.location} is ${area.widthInches} × ${area.heightInches} in.`
+    : `${profile.name} does not define a printable area for ${placement.itemType} ${placement.location}.`;
+
+  return {
+    id: 'placement-area',
+    severity: 'critical',
+    title: 'Placement exceeds printable area',
+    message: `${validation.errors.join(' ')} ${context}`,
+    action: 'Reduce dimensions/offset or choose a compatible production profile.',
+  };
+};
+
+export const combinePreflightFindings = (
+  findings: PreflightFinding[],
+  placementFinding: PreflightFinding | null,
+): PreflightFinding[] => {
+  const placementId = placementFinding?.id;
+  const combined = findings.filter((finding) => finding.id !== placementId);
+  return placementFinding ? [...combined, placementFinding] : [...combined];
+};

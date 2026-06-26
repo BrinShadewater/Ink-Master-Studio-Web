@@ -1,14 +1,21 @@
 import React from 'react';
-import { PlacementMeasurement } from '../types';
-import { PLACEMENT_PRESETS, validatePlacement } from '../services/placement';
+import { PlacementMeasurement, ProductionProfile } from '../types';
+import {
+  applyPlacementPreset,
+  getPrintableArea,
+  PLACEMENT_PRESETS,
+  validatePlacement,
+} from '../services/placement';
 
 interface PlacementPanelProps {
   placement: PlacementMeasurement;
+  profile: ProductionProfile;
   onChange: (placement: PlacementMeasurement) => void;
 }
 
-export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, onChange }) => {
-  const validation = validatePlacement(placement);
+export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, profile, onChange }) => {
+  const printableArea = getPrintableArea(placement.itemType, placement.location, profile);
+  const validation = validatePlacement(placement, profile);
   const update = (key: keyof PlacementMeasurement, value: string | number) =>
     onChange({ ...placement, presetId: 'custom', [key]: value });
   const numberField = (label: string, key: 'widthInches' | 'heightInches' | 'offsetXInches' | 'offsetYInches') => (
@@ -22,14 +29,22 @@ export const PlacementPanel: React.FC<PlacementPanelProps> = ({ placement, onCha
     <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
       <h3 className="text-sm font-bold text-slate-100">Measured placement</h3>
       <p className="mt-1 text-xs text-slate-500">Dimensions and offsets are stored in inches for this garment variant.</p>
+      {printableArea ? (
+        <p className="mt-2 text-[10px] font-bold text-slate-400">
+          Printable maximum: {printableArea.widthInches} × {printableArea.heightInches} in · {placement.itemType} {placement.location}
+        </p>
+      ) : (
+        <p className="mt-2 text-[10px] font-bold text-rose-300">
+          This profile does not support {placement.itemType} {placement.location}.
+        </p>
+      )}
       <select
         aria-label="Placement preset"
         value={placement.presetId}
         onChange={(event) => {
           const preset = PLACEMENT_PRESETS.find((candidate) => candidate.id === event.target.value);
           if (preset) {
-            const { id: _id, name: _name, description: _description, ...measurement } = preset;
-            onChange(measurement);
+            onChange(applyPlacementPreset(preset, placement, profile));
           }
         }}
         className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"

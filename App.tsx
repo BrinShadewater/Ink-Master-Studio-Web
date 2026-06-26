@@ -3,12 +3,16 @@ import { AnimatedBackground } from './components/AnimatedBackground';
 import { Dropzone } from './components/Dropzone';
 import { Header } from './components/Header';
 import { JobLibrary } from './components/JobLibrary';
+import { ProfileManager } from './components/ProfileManager';
+import { ProfileSelector } from './components/ProfileSelector';
+import { ProfileUpdateReview } from './components/ProfileUpdateReview';
 import { TemplatesPopover } from './components/TemplatesPopover';
 import { Preview } from './components/Preview';
 import { StudioTopBar } from './components/StudioTopBar';
 import { VersionsPopover } from './components/VersionsPopover';
 import { WorkflowInspector } from './components/WorkflowInspector';
 import { Checkpoint } from './components/CheckpointBar';
+import { AppliedProductionProfileContext } from './components/PreflightPanel';
 import {
   ArtworkAnalysis,
   ExportHistoryEntry,
@@ -19,6 +23,7 @@ import {
   ShirtColor,
   ShopTemplate,
   StudioJob,
+  ProductionProfile,
   WorkspaceStage,
 } from './types';
 import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_SETTINGS } from './constants';
@@ -32,11 +37,37 @@ import {
 } from './services/imageProcessing';
 import { analyzeArtwork } from './services/artworkAnalysis';
 import { recommendRecipe, resolveRecipeSettings } from './services/recipes';
-import { createStudioJob, duplicateStudioJob, touchStudioJob } from './services/jobModel';
+import {
+  applyProductionProfileTransitionToJob,
+  createStudioJob,
+  duplicateStudioJob,
+  touchStudioJob,
+} from './services/jobModel';
 import { archiveJob, listJobs, saveJob } from './services/jobRepository';
 import { exportPortableJob, importPortableJob } from './services/portableJob';
-import { DEFAULT_PLACEMENT, mockupPercentToPlacement, placementToMockupPercent } from './services/placement';
-import { evaluatePreflight } from './services/preflight';
+import {
+  combinePreflightFindings,
+  createPlacementPreflightFinding,
+  DEFAULT_PLACEMENT,
+  ensurePlacementForProduct,
+  getPrintableArea,
+  mockupPercentToPlacement,
+  placementToMockupPercent,
+  placementVariantKey,
+  storePlacementVariant,
+  transitionJobProductionState,
+  validatePlacement,
+} from './services/placement';
+import { evaluatePreflight, getPreflightGate } from './services/preflight';
+import {
+  getDefaultProfile,
+  loadProfileStore,
+  saveProfileStore,
+} from './services/profileStorage';
+import {
+  getProfileUpdateState,
+  snapshotProductionProfile,
+} from './services/productionProfiles';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { generateCustomerProof } from './services/proofBuilder';
 import {
@@ -112,21 +143,86 @@ const App: React.FC = () => {
   const [showJobs, setShowJobs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [shopTemplates, setShopTemplates] = useState<ShopTemplate[]>([]);
+  const [profileStore, setProfileStore] = useState(() => loadProfileStore());
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [profileUpdateSource, setProfileUpdateSource] = useState<ProductionProfile | null>(null);
 
   const originalImage = appState.image;
   const settings = appState.settings;
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
   const dpiInfo = analysis?.printQuality ?? null;
+  const defaultProductionProfile = useMemo(
+    () => getDefaultProfile(profileStore),
+    [profileStore],
+  );
+  const defaultAppliedProductionProfile = useMemo(
+    () => snapshotProductionProfile(defaultProductionProfile),
+    [defaultProductionProfile],
+  );
   const printSpecification = currentJob?.printSpecification ?? DEFAULT_PRINT_SPECIFICATION;
-  const activePlacement = currentJob?.placements[currentJob.activePlacementKey] ?? DEFAULT_PLACEMENT;
+  const appliedProductionProfile = currentJob?.productionProfile ?? defaultAppliedProductionProfile;
+  const activeProductionProfile = appliedProductionProfile.snapshot;
+  const profileUpdateState = useMemo(
+    () => currentJob
+      ? getProfileUpdateState(currentJob, profileStore.profiles)
+      : { status: 'current' as const, source: defaultProductionProfile },
+    [currentJob, defaultProductionProfile, profileStore.profiles],
+  );
+  const batchDefaultSettings = useMemo(
+    () => currentJob
+      ? settings
+      : {
+          ...settings,
+          format: defaultProductionProfile.defaults.format,
+          preserveTransparency: defaultProductionProfile.defaults.preserveTransparency,
+        },
+    [currentJob, defaultProductionProfile, settings],
+  );
+  const fallbackPlacementKey = placementVariantKey(
+    DEFAULT_PLACEMENT.itemType,
+    DEFAULT_PLACEMENT.location,
+    DEFAULT_PLACEMENT.garmentSize,
+  );
+  const placementState = ensurePlacementForProduct(
+    currentJob?.placements ?? { [fallbackPlacementKey]: DEFAULT_PLACEMENT },
+    currentJob?.activePlacementKey ?? fallbackPlacementKey,
+    settings.itemType,
+    activeProductionProfile,
+  );
+  const activePlacement = placementState.placement;
+  const activePrintableArea = getPrintableArea(
+    activePlacement.itemType,
+    activePlacement.location,
+    activeProductionProfile,
+  );
   const preflightFindings = useMemo(
-    () => analysis ? evaluatePreflight(analysis, printSpecification, settings) : [],
-    [analysis, printSpecification, settings],
+    () => combinePreflightFindings(
+      analysis ? evaluatePreflight(
+          analysis,
+          printSpecification,
+          settings,
+          activeProductionProfile,
+        )
+        : [],
+      createPlacementPreflightFinding(activePlacement, activeProductionProfile),
+    ),
+    [activePlacement, activeProductionProfile, analysis, printSpecification, settings],
   );
   const preflightAcknowledged = Boolean(
     currentJob && currentJob.acknowledgedPreflightRevision === currentJob.revision,
   );
+  const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const productionPlacement = validatePlacement(activePlacement, activeProductionProfile).valid
+    ? placementToMockupPercent(activePlacement, activeProductionProfile)
+    : undefined;
+  const currentProductionJob = currentJob ? {
+    ...currentJob,
+    settings,
+    activePlacementKey: placementState.activePlacementKey,
+    placements: placementState.placements,
+    preflightFindings,
+  } : null;
 
   const refreshJobs = async () => {
     try {
@@ -173,7 +269,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const state = history[historyIndex];
-    if (state) setAppState(state);
+    if (!state) return;
+    setAppState(state);
+    setCurrentJob((job) => {
+      if (!job) return job;
+      const synchronized = transitionJobProductionState(
+        job,
+        state.settings,
+        job.productionProfile.snapshot,
+        true,
+      );
+      return synchronized.changed ? touchStudioJob(synchronized.job) : job;
+    });
   }, [history, historyIndex]);
 
   useEffect(() => {
@@ -210,6 +317,38 @@ const App: React.FC = () => {
     setAppState(state);
   };
 
+  const handleProfileStoreChange = (nextStore: typeof profileStore): boolean => {
+    try {
+      saveProfileStore(nextStore);
+      setProfileStore(nextStore);
+      return true;
+    } catch (storageError) {
+      console.error(storageError);
+      return false;
+    }
+  };
+
+  const applyProfileToCurrentJob = (profile: ProductionProfile) => {
+    if (!currentJob || profile.archivedAt !== null) return;
+    const transitioned = applyProductionProfileTransitionToJob(currentJob, profile);
+    setCurrentJob(transitioned);
+    const nextState = {
+      ...appState,
+      settings: structuredClone(transitioned.settings),
+    };
+    setHistory([nextState]);
+    setHistoryIndex(0);
+    setAppState(nextState);
+    setProfileUpdateSource(null);
+  };
+
+  const handleAssignProfile = (profileId: string) => {
+    const profile = profileStore.profiles.find(
+      (candidate) => candidate.id === profileId && candidate.archivedAt === null,
+    );
+    if (profile) applyProfileToCurrentJob(profile);
+  };
+
   const addToExportHistory = (entry: Omit<ExportHistoryEntry, 'id'>) => {
     const storedEntry = { ...entry, id: `export_${Date.now()}` };
     setExportHistory((current) => [storedEntry, ...current].slice(0, 20));
@@ -230,7 +369,16 @@ const App: React.FC = () => {
     setAppState(next);
     if (commit) {
       addToHistory(next);
-      updateCurrentJob((job) => ({ ...job, settings: nextSettings }));
+      setCurrentJob((job) => {
+        if (!job) return job;
+        const synchronized = transitionJobProductionState(
+          job,
+          nextSettings,
+          job.productionProfile.snapshot,
+          true,
+        );
+        return synchronized.changed ? touchStudioJob(synchronized.job) : job;
+      });
     }
   };
 
@@ -241,8 +389,15 @@ const App: React.FC = () => {
     try {
       const base64 = await fileToBase64(file);
       const dataUrl = `data:${file.type};base64,${base64}`;
-      const next = { image: dataUrl, settings: DEFAULT_SETTINGS, hasUsedAi: false };
-      const job = createStudioJob(file.name.replace(/\.[^.]+$/, '') || 'Untitled job');
+      const job = createStudioJob(
+        file.name.replace(/\.[^.]+$/, '') || 'Untitled job',
+        defaultProductionProfile,
+      );
+      const next = {
+        image: dataUrl,
+        settings: structuredClone(job.settings),
+        hasUsedAi: false,
+      };
       job.sourceArtwork = {
         name: file.name,
         type: file.type,
@@ -285,7 +440,7 @@ const App: React.FC = () => {
     const nextSettings = savedSettings ?? resolveRecipeSettings(recipeId, analysis, settings);
     setSelectedRecipeId(recipeId);
     handleSettingsChange(nextSettings, true);
-    updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId, settings: nextSettings }));
+    updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId }), false);
     setStage('prepare');
   };
 
@@ -307,7 +462,16 @@ const App: React.FC = () => {
       settings: { ...checkpoint.settings },
       hasUsedAi: appState.hasUsedAi,
     });
-    updateCurrentJob((job) => ({ ...job, settings: { ...checkpoint.settings } }));
+    setCurrentJob((job) => {
+      if (!job) return job;
+      const synchronized = transitionJobProductionState(
+        job,
+        checkpoint.settings,
+        job.productionProfile.snapshot,
+        true,
+      );
+      return synchronized.changed ? touchStudioJob(synchronized.job) : job;
+    });
   };
 
   const handleOpenJob = async (job: StudioJob) => {
@@ -376,7 +540,7 @@ const App: React.FC = () => {
 
   const buildSelectedMockups = async (): Promise<PackageAsset[]> => {
     if (!currentJob || !processedResult) return [];
-    const placement = placementToMockupPercent(activePlacement);
+    const placement = placementToMockupPercent(activePlacement, activeProductionProfile);
     const assets: PackageAsset[] = [];
     for (const index of currentJob.packageOptions.selectedMockupIndices) {
       const mockup = MOCKUP_FILES[index];
@@ -389,13 +553,19 @@ const App: React.FC = () => {
 
   const handleDownloadProductionPackage = async () => {
     if (!currentJob || !processedResult) return;
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
+        ? 'Production export is blocked until all critical preflight findings are resolved.'
+        : 'Acknowledge the preflight warnings before exporting the production package.');
+      return;
+    }
     try {
       const productionPdf = await generatePrintPDF(processedResult.url, settings.itemType);
       const underbase = currentJob.packageOptions.includeUnderbase
         ? await generateUnderbase(processedResult.url, 'PNG')
         : null;
       const result = await buildProductionPackage({
-        job: { ...currentJob, preflightFindings },
+        job: currentProductionJob ?? currentJob,
         printMaster: { filename: `print-master.${settings.format.toLowerCase()}`, blob: processedResult.blob },
         productionPdf: { filename: 'production-spec.pdf', blob: productionPdf.blob },
         mockups: await buildSelectedMockups(),
@@ -412,8 +582,18 @@ const App: React.FC = () => {
 
   const handleDownloadProof = async (quality: 'print' | 'email') => {
     if (!currentJob || !processedResult) return;
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
+        ? 'Proof export is blocked until all critical preflight findings are resolved.'
+        : 'Acknowledge the preflight warnings before exporting a proof.');
+      return;
+    }
     try {
-      const result = await generateCustomerProof(currentJob, await buildSelectedMockups(), quality);
+      const result = await generateCustomerProof(
+        currentProductionJob ?? currentJob,
+        await buildSelectedMockups(),
+        quality,
+      );
       downloadBlob(result.blob, result.filename);
       addToExportHistory({ filename: result.filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
     } catch (proofError) {
@@ -427,6 +607,16 @@ const App: React.FC = () => {
     const next = [createTemplateFromJob(currentJob, name, description), ...shopTemplates];
     setShopTemplates(next);
     saveTemplates(next);
+  };
+
+  const handleDownloadMockups = () => {
+    if (!preflightGate.canExport) {
+      setError(preflightGate.criticalCount > 0
+        ? 'Mockup export is blocked until all critical preflight findings are resolved.'
+        : 'Acknowledge the preflight warnings before exporting mockups.');
+      return;
+    }
+    setMockupExportToken((token) => token + 1);
   };
 
   const handleApplyTemplate = (template: ShopTemplate) => {
@@ -528,10 +718,17 @@ const App: React.FC = () => {
           <button type="button" onClick={() => setShowJobs(true)} className="mt-3 rounded-lg px-5 py-2 text-xs font-bold text-indigo-300 hover:text-indigo-200">
             Open saved production job{jobs.length ? ` (${jobs.length})` : ''}
           </button>
+          <button type="button" onClick={() => setShowProfiles(true)} className="mt-1 rounded-lg px-5 py-2 text-xs font-bold text-slate-400 hover:text-white">
+            Manage production profiles
+          </button>
         </main>
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
-            <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
+            <BatchProcessor
+              onClose={() => setShowBatch(false)}
+              defaultSettings={batchDefaultSettings}
+              productionProfile={currentJob?.productionProfile.snapshot ?? defaultProductionProfile}
+            />
           </Suspense>
         )}
         {showJobs && (
@@ -544,6 +741,13 @@ const App: React.FC = () => {
             onArchive={(job) => void handleArchiveJob(job)}
             onExport={(job) => void handleExportJob(job)}
             onImport={(file) => void handleImportJob(file)}
+          />
+        )}
+        {showProfiles && (
+          <ProfileManager
+            store={profileStore}
+            onStoreChange={handleProfileStoreChange}
+            onClose={() => setShowProfiles(false)}
           />
         )}
       </div>
@@ -566,6 +770,20 @@ const App: React.FC = () => {
         onBatch={() => setShowBatch(true)}
         onUndo={() => canUndo && setHistoryIndex((index) => index - 1)}
         onRedo={() => canRedo && setHistoryIndex((index) => index + 1)}
+        productionProfile={(
+          <ProfileSelector
+            applied={appliedProductionProfile}
+            profiles={profileStore.profiles}
+            updateState={profileUpdateState}
+            onAssign={handleAssignProfile}
+            onApplyUpdate={() => {
+              if (profileUpdateState.status === 'update-available' && profileUpdateState.source) {
+                setProfileUpdateSource(structuredClone(profileUpdateState.source));
+              }
+            }}
+            onManage={() => setShowProfiles(true)}
+          />
+        )}
         templates={(
           <TemplatesPopover
             templates={shopTemplates}
@@ -581,52 +799,55 @@ const App: React.FC = () => {
 
       <main className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(315px,44dvh)] lg:grid-cols-[370px_minmax(0,1fr)] lg:grid-rows-1">
         <div className="order-2 min-h-0 lg:order-1">
-          <WorkflowInspector
-            stage={stage}
-            selectedRecipeId={selectedRecipeId}
-            analysis={analysis}
-            recommendation={recommendation}
-            settings={settings}
-            palette={palette}
-            exportHistory={exportHistory}
-            hasProcessedResult={Boolean(processedResult)}
-            lowResolutionAcknowledged={lowResolutionAcknowledged}
-            isEyedropperMode={isEyedropperMode}
-            printSpecification={printSpecification}
-            placement={activePlacement}
-            preflightFindings={preflightFindings}
-            preflightAcknowledged={preflightAcknowledged}
-            jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
-            namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
-            onStageChange={setStage}
-            onApplyRecipe={handleApplyRecipe}
-            onSettingsChange={handleSettingsChange}
-            onToggleEyedropper={() => setIsEyedropperMode((value) => !value)}
-            onGenerateUnderbase={handleGenerateUnderbase}
-            onDownloadPrintFile={handleDownloadPrintFile}
-            onDownloadPdf={handleDownloadPdf}
-            onDownloadMockups={() => setMockupExportToken((token) => token + 1)}
-            onAcknowledgeLowResolution={setLowResolutionAcknowledged}
-            onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
-              ...job,
-              printSpecification: specification,
-            }))}
-            onPlacementChange={(placement) => updateCurrentJob((job) => ({
-              ...job,
-              placements: { ...job.placements, [job.activePlacementKey]: placement },
-            }))}
-            onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
-              ...job,
-              acknowledgedPreflightRevision: acknowledged ? job.revision : null,
-            } : job)}
-            onJobMetadataChange={(metadata) => updateCurrentJob((job) => ({ ...job, metadata }))}
-            onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
-              ...job,
-              packageOptions: { ...job.packageOptions, namingPattern },
-            }))}
-            onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
-            onDownloadProof={(quality) => void handleDownloadProof(quality)}
-          />
+          <AppliedProductionProfileContext.Provider value={appliedProductionProfile}>
+            <WorkflowInspector
+              stage={stage}
+              selectedRecipeId={selectedRecipeId}
+              analysis={analysis}
+              recommendation={recommendation}
+              settings={settings}
+              palette={palette}
+              exportHistory={exportHistory}
+              hasProcessedResult={Boolean(processedResult)}
+              lowResolutionAcknowledged={lowResolutionAcknowledged}
+              isEyedropperMode={isEyedropperMode}
+              printSpecification={printSpecification}
+              placement={activePlacement}
+              productionProfile={activeProductionProfile}
+              preflightFindings={preflightFindings}
+              preflightAcknowledged={preflightAcknowledged}
+              jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
+              namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
+              onStageChange={setStage}
+              onApplyRecipe={handleApplyRecipe}
+              onSettingsChange={handleSettingsChange}
+              onToggleEyedropper={() => setIsEyedropperMode((value) => !value)}
+              onGenerateUnderbase={handleGenerateUnderbase}
+              onDownloadPrintFile={handleDownloadPrintFile}
+              onDownloadPdf={handleDownloadPdf}
+              onDownloadMockups={handleDownloadMockups}
+              onAcknowledgeLowResolution={setLowResolutionAcknowledged}
+              onPrintSpecificationChange={(specification) => updateCurrentJob((job) => ({
+                ...job,
+                printSpecification: specification,
+              }))}
+              onPlacementChange={(placement) => updateCurrentJob((job) => ({
+                ...job,
+                ...storePlacementVariant(job.placements, placement),
+              }))}
+              onAcknowledgePreflight={(acknowledged) => setCurrentJob((job) => job ? {
+                ...job,
+                acknowledgedPreflightRevision: acknowledged ? job.revision : null,
+              } : job)}
+              onJobMetadataChange={(metadata) => updateCurrentJob((job) => ({ ...job, metadata }))}
+              onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
+                ...job,
+                packageOptions: { ...job.packageOptions, namingPattern },
+              }))}
+              onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
+              onDownloadProof={(quality) => void handleDownloadProof(quality)}
+            />
+          </AppliedProductionProfileContext.Provider>
         </div>
 
         <section className="relative order-1 min-h-0 overflow-hidden bg-slate-900/40 p-2 lg:order-2 lg:p-4">
@@ -658,14 +879,21 @@ const App: React.FC = () => {
                 embedded
                 workspaceStage={stage}
                 exportRequestToken={mockupExportToken}
-                productionPlacement={placementToMockupPercent(activePlacement)}
-                onProductionPlacementChange={(percent) => updateCurrentJob((job) => ({
-                  ...job,
-                  placements: {
-                    ...job.placements,
-                    [job.activePlacementKey]: mockupPercentToPlacement(percent, job.placements[job.activePlacementKey] ?? DEFAULT_PLACEMENT),
-                  },
-                }))}
+                mockupExportAllowed={preflightGate.canExport}
+                productionPlacement={productionPlacement}
+                onProductionPlacementChange={activePrintableArea && productionPlacement
+                  ? (percent) => updateCurrentJob((job) => ({
+                      ...job,
+                      ...storePlacementVariant(
+                        job.placements,
+                        mockupPercentToPlacement(
+                          percent,
+                          activePlacement,
+                          activeProductionProfile,
+                        ),
+                      ),
+                    }))
+                  : undefined}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-center text-slate-600">
@@ -678,7 +906,11 @@ const App: React.FC = () => {
 
       {showBatch && (
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
-          <BatchProcessor onClose={() => setShowBatch(false)} defaultSettings={settings} />
+          <BatchProcessor
+            onClose={() => setShowBatch(false)}
+            defaultSettings={batchDefaultSettings}
+            productionProfile={currentJob?.productionProfile.snapshot ?? defaultProductionProfile}
+          />
         </Suspense>
       )}
       {showJobs && (
@@ -691,6 +923,21 @@ const App: React.FC = () => {
           onArchive={(job) => void handleArchiveJob(job)}
           onExport={(job) => void handleExportJob(job)}
           onImport={(file) => void handleImportJob(file)}
+        />
+      )}
+      {showProfiles && (
+        <ProfileManager
+          store={profileStore}
+          onStoreChange={handleProfileStoreChange}
+          onClose={() => setShowProfiles(false)}
+        />
+      )}
+      {currentJob && profileUpdateSource && (
+        <ProfileUpdateReview
+          applied={currentJob.productionProfile}
+          source={profileUpdateSource}
+          onCancel={() => setProfileUpdateSource(null)}
+          onApply={() => applyProfileToCurrentJob(profileUpdateSource)}
         />
       )}
     </div>
