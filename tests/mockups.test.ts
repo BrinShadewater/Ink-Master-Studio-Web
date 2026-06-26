@@ -4,6 +4,7 @@ import {
   describeSelectedMockups,
   getSelectedProductionMockups,
   normalizeMockupSelection,
+  resolveProductionMockupLabel,
 } from '../services/mockups';
 
 test('normalizeMockupSelection sorts unique valid mockup indices', () => {
@@ -38,4 +39,10 @@ test('getSelectedProductionMockups resolves selected catalog entries', () => {
 test('describeSelectedMockups names selected colors for operator review', () => {
   assert.equal(describeSelectedMockups([6, 2]), 'Heather, Black');
   assert.equal(describeSelectedMockups([]), 'No mockup colors selected');
+});
+
+test('resolveProductionMockupLabel turns production mockup filenames into color labels', () => {
+  assert.equal(resolveProductionMockupLabel('mockups/black-mockup.png'), 'Black');
+  assert.equal(resolveProductionMockupLabel('royal-blue-mockup.png'), 'Royal Blue');
+  assert.equal(resolveProductionMockupLabel('customer-alt-view.png'), 'Customer Alt View');
 });

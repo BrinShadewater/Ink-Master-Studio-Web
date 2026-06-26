@@ -3,6 +3,7 @@ import { PlacementMeasurement, StudioJob } from '../types';
 import { PackageAsset } from './productionPackage';
 import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary } from './handoffDetails';
+import { resolveProductionMockupLabel } from './mockups';
 
 export const buildProofDescriptor = (
   job: StudioJob,
@@ -31,6 +32,9 @@ export const buildProofDescriptor = (
     approvalText: 'I approve the artwork, spelling, garment color, print size, and placement shown in this proof.',
   };
 };
+
+export const buildProofMockupCaption = (mockup: PackageAsset, index: number): string =>
+  `Mockup ${index + 1}: ${resolveProductionMockupLabel(mockup.filename)}`;
 
 const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -87,11 +91,13 @@ export const generateCustomerProof = async (
   let y = 210;
   const imageWidth = mockups.length > 1 ? 250 : 500;
   const imageHeight = mockups.length > 1 ? 250 : 360;
+  const cardHeight = imageHeight + 30;
   for (let index = 0; index < Math.min(mockups.length, 4); index += 1) {
     const column = index % 2;
     const row = Math.floor(index / 2);
     const x = mockups.length > 1 ? 36 + column * 270 : 56;
-    const imageY = y + row * 265;
+    const imageY = y + row * cardHeight;
+    const caption = buildProofMockupCaption(mockups[index], index);
     try {
       doc.addImage(await blobToDataUrl(mockups[index].blob), 'PNG', x, imageY, imageWidth, imageHeight, undefined, quality === 'email' ? 'FAST' : 'MEDIUM');
     } catch {
@@ -99,8 +105,11 @@ export const generateCustomerProof = async (
       doc.rect(x, imageY, imageWidth, imageHeight);
       doc.text(mockups[index].filename, x + 10, imageY + 20);
     }
+    doc.setFontSize(9);
+    doc.setTextColor(25, 30, 45);
+    doc.text(caption, x, imageY + imageHeight + 14, { maxWidth: imageWidth });
   }
-  if (mockups.length > 0) y += mockups.length > 2 ? 530 : 270;
+  if (mockups.length > 0) y += mockups.length > 2 ? cardHeight * 2 : cardHeight;
 
   doc.setFontSize(9);
   doc.setTextColor(70);

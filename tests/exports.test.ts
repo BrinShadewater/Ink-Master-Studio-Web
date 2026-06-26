@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { createStudioJob } from '../services/jobModel';
 import { resolveFilenamePattern } from '../services/naming';
 import { buildProductionPackage } from '../services/productionPackage';
-import { buildProofDescriptor, buildProofFilename, generateCustomerProof } from '../services/proofBuilder';
+import { buildProofDescriptor, buildProofFilename, buildProofMockupCaption, generateCustomerProof } from '../services/proofBuilder';
 import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
 
 test('resolves and sanitizes production filename tokens', () => {
@@ -173,6 +173,17 @@ test('creates proof metadata with editable branding fields', () => {
   const descriptor = buildProofDescriptor(job, job.placements[job.activePlacementKey]);
 
   assert.deepEqual(descriptor.branding, job.proofBranding);
+});
+
+test('creates customer-facing mockup captions from generated mockup filenames', () => {
+  assert.equal(
+    buildProofMockupCaption({ filename: 'black-mockup.png', blob: new Blob(['mockup']) }, 0),
+    'Mockup 1: Black',
+  );
+  assert.equal(
+    buildProofMockupCaption({ filename: 'customer-alt-view.png', blob: new Blob(['mockup']) }, 1),
+    'Mockup 2: Customer Alt View',
+  );
 });
 
 test('previews proof filenames with the same naming logic used by export', async () => {

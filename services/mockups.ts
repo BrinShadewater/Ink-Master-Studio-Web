@@ -41,6 +41,21 @@ export const getSelectedProductionMockups = (
 ): ProductionMockup[] => normalizeMockupSelection(indices, PRODUCTION_MOCKUPS.length)
   .map((index) => PRODUCTION_MOCKUPS[index]);
 
+export const getProductionMockupBySlug = (slug: string): ProductionMockup | undefined =>
+  PRODUCTION_MOCKUPS.find((mockup) => mockup.slug === slug);
+
+export const resolveProductionMockupLabel = (filename: string): string => {
+  const normalized = filename.split(/[\\/]/).pop() ?? filename;
+  const slug = normalized.toLowerCase().replace(/\.(png|jpe?g|webp)$/i, '').replace(/-mockup$/, '');
+  const mockup = getProductionMockupBySlug(slug);
+  if (mockup) return mockup.name;
+
+  return normalized
+    .replace(/\.(png|jpe?g|webp)$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
 export const describeSelectedMockups = (
   indices: Iterable<number> | null | undefined,
 ): string => {
