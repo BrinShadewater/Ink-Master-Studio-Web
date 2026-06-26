@@ -8,9 +8,9 @@ import { RECIPES, resolveRecipeSettings } from '../services/recipes';
 import {
   batchExportEligibility,
   buildCombinedBatchOrderPackage,
+  buildSingleBatchItemPackage,
   BatchRecipeSelection,
   BatchProductionStatus,
-  createBatchOutputFilename,
   resolveBatchRecipe,
 } from '../services/batch';
 
@@ -154,6 +154,22 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
     downloadBlob(result.blob, result.filename);
   };
 
+  const exportSinglePackage = async (item: GuidedBatchItem) => {
+    if (!item.resultBlob) return;
+    const result = await buildSingleBatchItemPackage({
+      id: item.id,
+      filename: item.file.name,
+      status: item.status,
+      recipeId: item.recipeId,
+      recipeSelection: item.recipeSelection,
+      findings: item.findings,
+      acknowledged: item.acknowledged,
+      format: item.settings.format,
+      resultBlob: item.resultBlob,
+    });
+    downloadBlob(result.blob, result.filename);
+  };
+
   const eligibleCount = items.filter((item) => batchExportEligibility(item.status, item.findings, item.acknowledged).canExport).length;
 
   return (
@@ -229,7 +245,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
                       )}
                       {item.status === 'ready' && <button type="button" onClick={() => updateItem(item.id, { status: 'cancelled' })} className="text-[10px] font-bold text-slate-500 hover:text-rose-300">Cancel item</button>}
                       {item.status === 'failed' && <button type="button" onClick={() => void processItem(item)} className="text-[10px] font-bold text-indigo-300">Retry</button>}
-                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => downloadBlob(item.resultBlob!, createBatchOutputFilename(item.file.name, item.settings.format))} className="text-[10px] font-bold text-emerald-300">Export design</button>}
+                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => void exportSinglePackage(item)} className="text-[10px] font-bold text-emerald-300">Export package</button>}
                     </div>
                   </div>
                 </article>

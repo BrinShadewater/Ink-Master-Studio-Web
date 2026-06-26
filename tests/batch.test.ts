@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import JSZip from 'jszip';
 
-import { batchExportEligibility, buildCombinedBatchOrderPackage, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, resolveBatchRecipe } from '../services/batch';
+import { batchExportEligibility, buildCombinedBatchOrderPackage, buildSingleBatchItemPackage, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, createSingleBatchItemSummary, resolveBatchRecipe } from '../services/batch';
 import { ArtworkAnalysis, PreflightFinding } from '../types';
 
 const finding = (severity: PreflightFinding['severity']): PreflightFinding => ({
@@ -133,4 +133,55 @@ test('combined batch order packages contain unique files, manifest, and summary'
   assert.deepEqual(manifest.items.map((item: { filename: string }) => item.filename), ['logo.png', 'logo-2.png']);
   assert.deepEqual(manifest.excludedItems.map((item: { sourceFilename: string }) => item.sourceFilename), ['blocked.png']);
   assert.match(summary, /logo-2\.png from logo\.jpg/);
+});
+
+test('single batch item packages include design, manifest, and summary', async () => {
+  const result = await buildSingleBatchItemPackage({
+    id: 'single',
+    filename: 'Client Logo!.png',
+    status: 'ready',
+    recipeId: 'clean-logo',
+    recipeSelection: 'auto',
+    findings: [finding('warning')],
+    acknowledged: true,
+    format: 'PNG',
+    resultBlob: new Blob(['design']),
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('design-manifest.json')!.async('string'));
+  const summary = await zip.file('design-summary.txt')!.async('string');
+
+  assert.equal(result.filename, 'Client-Logo.zip');
+  assert.ok(zip.file('Client-Logo.png'));
+  assert.equal(manifest.format, 'inkmaster-batch-design');
+  assert.equal(manifest.recipeSelection, 'auto');
+  assert.deepEqual(manifest.items.map((item: { filename: string }) => item.filename), ['Client-Logo.png']);
+  assert.match(summary, /InkMaster Batch Design Package/);
+  assert.match(summary, /Exported file: Client-Logo\.png/);
+  assert.match(summary, /Warnings: 1/);
+});
+
+test('single batch item packages reject ineligible items', async () => {
+  await assert.rejects(
+    () => buildSingleBatchItemPackage({
+      id: 'blocked',
+      filename: 'blocked.png',
+      status: 'ready',
+      recipeId: 'custom',
+      recipeSelection: 'custom',
+      findings: [finding('critical')],
+      acknowledged: true,
+      format: 'PNG',
+      resultBlob: new Blob(['blocked']),
+    }),
+    /not eligible/,
+  );
+});
+
+test('single batch item summaries explain blocked fallbacks', () => {
+  const manifest = createCombinedOrderManifest([
+    { id: 'blocked', filename: 'blocked.png', status: 'ready', recipeId: 'custom', findings: [finding('critical')], acknowledged: true },
+  ]);
+
+  assert.match(createSingleBatchItemSummary(manifest), /Blocked: 1 critical preflight issue must be resolved\./);
 });

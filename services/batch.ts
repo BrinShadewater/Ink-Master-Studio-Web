@@ -21,6 +21,10 @@ export interface CombinedBatchPackageItem extends BatchManifestCandidate {
   resultBlob: Blob | null;
 }
 
+export interface SingleBatchPackageItem extends CombinedBatchPackageItem {
+  recipeSelection: BatchRecipeSelection;
+}
+
 export const createBatchOutputFilename = (
   sourceFilename: string,
   format: string,
@@ -182,6 +186,75 @@ export const buildCombinedBatchOrderPackage = async (
   return {
     blob: await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' }),
     filename: 'inkmaster-combined-order.zip',
+    manifest,
+  };
+};
+
+export const createSingleBatchItemSummary = (
+  manifest: ReturnType<typeof createCombinedOrderManifest>,
+): string => {
+  const exported = manifest.items[0];
+  const blocked = manifest.excludedItems[0];
+
+  return [
+    'InkMaster Batch Design Package',
+    `Generated: ${manifest.generatedAt}`,
+    '',
+    exported
+      ? `Exported file: ${exported.filename}`
+      : 'Exported file: None',
+    exported
+      ? `Source file: ${exported.sourceFilename}`
+      : blocked
+        ? `Source file: ${blocked.sourceFilename}`
+        : 'Source file: Unknown',
+    exported
+      ? `Recipe: ${exported.recipeId ?? 'custom'}`
+      : blocked
+        ? `Recipe: ${blocked.recipeId ?? 'custom'}`
+        : 'Recipe: custom',
+    exported
+      ? `Warnings: ${exported.warningCount}`
+      : blocked
+        ? `Blocked: ${blocked.reasons.join(' ')}`
+        : 'Blocked: No item supplied.',
+  ].join('\n');
+};
+
+export const buildSingleBatchItemPackage = async (
+  item: SingleBatchPackageItem,
+): Promise<{ blob: Blob; filename: string; manifest: ReturnType<typeof createCombinedOrderManifest> }> => {
+  const eligibility = batchExportEligibility(item.status, item.findings, item.acknowledged);
+  if (!eligibility.canExport || !item.resultBlob) {
+    throw new Error('Batch item is not eligible for export.');
+  }
+
+  const zip = new JSZip();
+  const outputFilename = createBatchOutputFilename(item.filename, item.format);
+  zip.file(outputFilename, await item.resultBlob.arrayBuffer());
+
+  const manifest = createCombinedOrderManifest([{
+    id: item.id,
+    filename: item.filename,
+    outputFilename,
+    status: item.status,
+    recipeId: item.recipeId,
+    findings: item.findings,
+    acknowledged: item.acknowledged,
+  }]);
+
+  zip.file('design-manifest.json', JSON.stringify({
+    ...manifest,
+    format: 'inkmaster-batch-design',
+    recipeSelection: item.recipeSelection,
+  }, null, 2));
+  zip.file('design-summary.txt', createSingleBatchItemSummary(manifest));
+
+  const packageName = createBatchOutputFilename(item.filename, 'zip');
+
+  return {
+    blob: await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' }),
+    filename: packageName,
     manifest,
   };
 };
