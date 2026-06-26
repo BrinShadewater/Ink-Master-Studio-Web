@@ -84,10 +84,14 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
     && editor.original
     && productionProfilesHaveSameEditableContent(editor.original, editor.draft),
   );
+  const closeEditor = useCallback(() => {
+    setEditor(null);
+    window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+  }, []);
   const closeMainDialog = useCallback(() => {
-    if (editor) setEditor(null);
+    if (editor) closeEditor();
     else onClose();
-  }, [editor, onClose]);
+  }, [closeEditor, editor, onClose]);
   const cancelArchiveDialog = useCallback(() => {
     setArchiveTargetId(null);
     setReplacementId('');
@@ -148,7 +152,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
               archivedAt: editor.original!.archivedAt,
             }),
           );
-      if (commitStore(next)) setEditor(null);
+      if (commitStore(next)) closeEditor();
     } catch (error) {
       reportError(error instanceof Error ? error.message : 'The profile could not be saved.');
     }
@@ -276,7 +280,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
             validationErrors={validation.errors}
             onChange={(draft) => setEditor((current) => current ? { ...current, draft } : current)}
             onSave={saveEditor}
-            onCancel={() => setEditor(null)}
+            onCancel={closeEditor}
             saveDisabledReason={editorUnchanged ? 'No profile changes to save.' : null}
           />
         ) : (
