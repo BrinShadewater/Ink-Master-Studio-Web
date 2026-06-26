@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
 import { compositeMockup, generatePrintPDF } from '../services/imageProcessing';
+import { normalizeMockupSelection } from '../services/mockups';
 
 interface PercentPlacement {
   x: number;
@@ -23,6 +24,8 @@ interface PreviewProps {
   workspaceStage?: WorkspaceStage;
   exportRequestToken?: number;
   mockupExportAllowed?: boolean;
+  selectedMockupIndices?: readonly number[];
+  onSelectedMockupIndicesChange?: (indices: number[]) => void;
   productionPlacement?: PercentPlacement;
   onProductionPlacementChange?: (placement: PercentPlacement) => void;
 }
@@ -74,13 +77,21 @@ export const Preview: React.FC<PreviewProps> = ({
   workspaceStage = 'prepare',
   exportRequestToken = 0,
   mockupExportAllowed = true,
+  selectedMockupIndices: controlledSelectedMockupIndices,
+  onSelectedMockupIndicesChange,
   productionPlacement,
   onProductionPlacementChange,
 }) => {
+  const initialMockupSelection = normalizeMockupSelection(
+    controlledSelectedMockupIndices ?? [6],
+    MOCKUPS.length,
+  );
   const [viewMode, setViewMode] = useState<'ARTBOARD' | 'MOCKUP'>('ARTBOARD');
   const [bgMode, setBgMode] = useState<'CHECKER' | 'BLACK' | 'WHITE'>('CHECKER');
-  const [selectedMockupIndices, setSelectedMockupIndices] = useState<Set<number>>(new Set([6]));
-  const [previewMockupIndex, setPreviewMockupIndex] = useState(6);
+  const [selectedMockupIndices, setSelectedMockupIndices] = useState<Set<number>>(
+    () => new Set(initialMockupSelection),
+  );
+  const [previewMockupIndex, setPreviewMockupIndex] = useState(initialMockupSelection[0] ?? 6);
   const [placement, setPlacement] = useState(DEFAULT_PLACEMENT);
   const [designSource, setDesignSource] = useState<'processed' | 'original'>('processed');
   const [mockupFormat, setMockupFormat] = useState<'PNG' | 'JPG'>('PNG');
@@ -108,6 +119,26 @@ export const Preview: React.FC<PreviewProps> = ({
   const lastPanPos = useRef({ x: 0, y: 0 });
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const controlledMockupSelectionKey = controlledSelectedMockupIndices?.join(',') ?? '';
+
+  useEffect(() => {
+    if (!controlledSelectedMockupIndices) return;
+
+    const normalized = normalizeMockupSelection(controlledSelectedMockupIndices, MOCKUPS.length);
+    setSelectedMockupIndices(new Set(normalized));
+    setPreviewMockupIndex((current) => (
+      normalized.length > 0 && !normalized.includes(current)
+        ? normalized[0]
+        : current
+    ));
+  }, [controlledMockupSelectionKey]);
+
+  const commitSelectedMockupIndices = useCallback((indices: Iterable<number>) => {
+    const normalized = normalizeMockupSelection(indices, MOCKUPS.length);
+    setSelectedMockupIndices(new Set(normalized));
+    onSelectedMockupIndicesChange?.(normalized);
+  }, [onSelectedMockupIndicesChange]);
   const dragState = useRef<DragState>({
     dragging: false,
     resizing: false,
@@ -254,16 +285,27 @@ export const Preview: React.FC<PreviewProps> = ({
   }, [softProofColor, processedResult]);
 
   const toggleMockup = (idx: number) => {
-    setSelectedMockupIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) {
-        next.delete(idx);
-      } else {
-        next.add(idx);
-      }
-      return next;
-    });
+    const next = new Set(selectedMockupIndices);
+    if (next.has(idx)) {
+      next.delete(idx);
+    } else {
+      next.add(idx);
+    }
+    commitSelectedMockupIndices(next);
     setPreviewMockupIndex(idx);
+  };
+
+  const handleSingleMockupSelection = (idx: number) => {
+    commitSelectedMockupIndices([idx]);
+    setPreviewMockupIndex(idx);
+  };
+
+  const handleSelectAllMockups = () => {
+    commitSelectedMockupIndices(MOCKUPS.map((_, i) => i));
+  };
+
+  const handleClearMockups = () => {
+    commitSelectedMockupIndices([]);
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -280,14 +322,11 @@ export const Preview: React.FC<PreviewProps> = ({
     if (!mockupExportAllowed) return;
     const designUrl = getDesignUrl();
     if (!designUrl || selectedMockupIndices.size === 0) return;
+    const indices = normalizeMockupSelection(selectedMockupIndices, MOCKUPS.length);
+    if (indices.length === 0) return;
+
     setIsDownloading(true);
     setDownloadProgress(0);
-
-    const indices = Array.from(selectedMockupIndices).filter(
-      (idx): idx is number =>
-        typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < MOCKUPS.length
-    );
-    if (indices.length === 0) return;
 
     try {
       if (indices.length === 1) {
@@ -478,7 +517,7 @@ export const Preview: React.FC<PreviewProps> = ({
                   <button
                     type="button"
                     key={mockup.name}
-                    onClick={() => { setPreviewMockupIndex(index); setSelectedMockupIndices(new Set([index])); }}
+                    onClick={() => handleSingleMockupSelection(index)}
                     aria-label={`Preview ${mockup.name} shirt`}
                     className={`h-5 w-5 rounded-full border-2 transition hover:scale-110 sm:h-6 sm:w-6 ${previewMockupIndex === index ? 'border-white ring-2 ring-indigo-400/40' : 'border-slate-600'}`}
                     style={{ backgroundColor: mockup.color }}
@@ -928,14 +967,14 @@ export const Preview: React.FC<PreviewProps> = ({
                 <label className="text-xs text-slate-500">Select Colors to Download</label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setSelectedMockupIndices(new Set(MOCKUPS.map((_, i) => i)))}
+                    onClick={handleSelectAllMockups}
                     className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
                     Select All
                   </button>
                   <span className="text-slate-700">·</span>
                   <button
-                    onClick={() => setSelectedMockupIndices(new Set())}
+                    onClick={handleClearMockups}
                     className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
                   >
                     Clear

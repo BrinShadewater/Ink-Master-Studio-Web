@@ -68,6 +68,7 @@ import {
   getProfileUpdateState,
   snapshotProductionProfile,
 } from './services/productionProfiles';
+import { normalizeMockupSelection } from './services/mockups';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
@@ -570,7 +571,7 @@ const App: React.FC = () => {
     if (!currentJob || !processedResult) return [];
     const placement = placementToMockupPercent(activePlacement, activeProductionProfile);
     const assets: PackageAsset[] = [];
-    for (const index of currentJob.packageOptions.selectedMockupIndices) {
+    for (const index of normalizeMockupSelection(currentJob.packageOptions.selectedMockupIndices, MOCKUP_FILES.length)) {
       const mockup = MOCKUP_FILES[index];
       if (!mockup) continue;
       const result = await compositeMockup(mockup[1], processedResult.url, placement, 'PNG');
@@ -917,6 +918,14 @@ const App: React.FC = () => {
                 workspaceStage={stage}
                 exportRequestToken={mockupExportToken}
                 mockupExportAllowed={preflightGate.canExport}
+                selectedMockupIndices={currentJob?.packageOptions.selectedMockupIndices}
+                onSelectedMockupIndicesChange={(selectedMockupIndices) => updateCurrentJob((job) => ({
+                  ...job,
+                  packageOptions: {
+                    ...job.packageOptions,
+                    selectedMockupIndices,
+                  },
+                }))}
                 productionPlacement={productionPlacement}
                 onProductionPlacementChange={activePrintableArea && productionPlacement
                   ? (percent) => updateCurrentJob((job) => ({
