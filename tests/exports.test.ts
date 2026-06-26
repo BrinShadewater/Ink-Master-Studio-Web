@@ -25,11 +25,12 @@ test('resolves and sanitizes production filename tokens', () => {
 test('builds a production package with selected assets and manifest', async () => {
   const job = createStudioJob('Package');
   job.packageOptions.includeUnderbase = true;
+  job.packageOptions.selectedMockupIndices = [6];
   const result = await buildProductionPackage({
     job,
     printMaster: { filename: 'print.png', blob: new Blob(['print']) },
     productionPdf: { filename: 'spec.pdf', blob: new Blob(['pdf']) },
-    mockups: [{ filename: 'black.png', blob: new Blob(['mockup']) }],
+    mockups: [{ filename: 'black-mockup.png', blob: new Blob(['mockup']) }],
     underbase: { filename: 'underbase.png', blob: new Blob(['underbase']) },
     palette: ['#000000', '#FFFFFF'],
   });
@@ -38,13 +39,49 @@ test('builds a production package with selected assets and manifest', async () =
 
   assert.ok(zip.file('print.png'));
   assert.ok(zip.file('spec.pdf'));
-  assert.ok(zip.file('mockups/black.png'));
+  assert.ok(zip.file('mockups/black-mockup.png'));
   assert.ok(zip.file('underbase.png'));
   assert.ok(zip.file('production-summary.txt'));
   assert.equal(manifest.job.name, 'Package');
   assert.equal(manifest.printSpecification.widthInches, 12);
   assert.match(manifest.placementSummary, /T-shirt front/);
   assert.match(manifest.placementSummary, /offset 0 in horizontal, 2 in from top/);
+  assert.deepEqual(manifest.packageOptions.selectedMockups, [
+    { slug: 'black', name: 'Black', filename: 'black-mockup.png' },
+  ]);
+  assert.deepEqual(
+    manifest.packageAssets.filter((asset: { status: string }) => asset.status === 'included').map((asset: { filename: string }) => asset.filename),
+    [
+      'print.png',
+      'spec.pdf',
+      'mockups/black-mockup.png',
+      'underbase.png',
+      'production-summary.txt',
+      'job-manifest.json',
+    ],
+  );
+});
+
+test('production package manifest records requested assets that could not be generated', async () => {
+  const job = createStudioJob('Missing mockup');
+  job.packageOptions.selectedMockupIndices = [6];
+
+  const result = await buildProductionPackage({
+    job,
+    printMaster: { filename: 'print.png', blob: new Blob(['print']) },
+    productionPdf: { filename: 'spec.pdf', blob: new Blob(['pdf']) },
+    mockups: [],
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.deepEqual(
+    manifest.packageAssets.filter((asset: { status: string }) => asset.status === 'missing').map((asset: { filename: string; label?: string }) => [asset.filename, asset.label]),
+    [['mockups/black-mockup.png', 'Black']],
+  );
+  assert.match(summary, /Missing requested files: mockups\/black-mockup\.png \(Black\)/);
 });
 
 test('includes profile provenance in production package manifest without full snapshot', async () => {

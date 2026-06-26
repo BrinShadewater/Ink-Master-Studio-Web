@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary, formatPrintSizeSummary } from './handoffDetails';
+import { getSelectedProductionMockups } from './mockups';
 import { StudioJob } from '../types';
 
 export interface PackageAsset {
@@ -17,8 +18,80 @@ export interface ProductionPackageInput {
   palette: string[];
 }
 
-export const createJobManifest = (job: StudioJob, palette: string[]) => {
+interface PackageManifestAsset {
+  role: 'print-master' | 'production-pdf' | 'mockup' | 'underbase' | 'summary' | 'manifest';
+  filename: string;
+  status: 'included' | 'missing' | 'disabled';
+  label?: string;
+}
+
+const packageAsset = (
+  role: PackageManifestAsset['role'],
+  filename: string,
+  status: PackageManifestAsset['status'],
+  label?: string,
+): PackageManifestAsset => ({ role, filename, status, ...(label ? { label } : {}) });
+
+const createPackageAssetManifest = (input: ProductionPackageInput): PackageManifestAsset[] => {
+  const { job } = input;
+  const options = job.packageOptions;
+  const assets: PackageManifestAsset[] = [
+    packageAsset(
+      'print-master',
+      input.printMaster?.filename ?? 'print-master',
+      options.includePrintMaster ? input.printMaster ? 'included' : 'missing' : 'disabled',
+    ),
+    packageAsset(
+      'production-pdf',
+      input.productionPdf?.filename ?? 'production-spec.pdf',
+      options.includeProductionPdf ? input.productionPdf ? 'included' : 'missing' : 'disabled',
+    ),
+  ];
+
+  if (options.includeMockups) {
+    const mockups = input.mockups ?? [];
+    const selected = getSelectedProductionMockups(options.selectedMockupIndices);
+    for (const mockup of selected) {
+      const expectedFilename = `${mockup.slug}-mockup.png`;
+      const includedAsset = mockups.find((asset) => asset.filename === expectedFilename);
+      assets.push(packageAsset(
+        'mockup',
+        `mockups/${includedAsset?.filename ?? expectedFilename}`,
+        includedAsset ? 'included' : 'missing',
+        mockup.name,
+      ));
+    }
+    if (selected.length === 0) {
+      assets.push(packageAsset('mockup', 'mockups/', 'missing', 'No mockup colors selected'));
+    }
+  } else {
+    assets.push(packageAsset('mockup', 'mockups/', 'disabled'));
+  }
+
+  assets.push(
+    packageAsset(
+      'underbase',
+      input.underbase?.filename ?? 'white-underbase.png',
+      options.includeUnderbase ? input.underbase ? 'included' : 'missing' : 'disabled',
+    ),
+    packageAsset(
+      'summary',
+      'production-summary.txt',
+      options.includeSummary ? 'included' : 'disabled',
+    ),
+    packageAsset(
+      'manifest',
+      'job-manifest.json',
+      options.includeManifest ? 'included' : 'disabled',
+    ),
+  );
+
+  return assets;
+};
+
+export const createJobManifest = (job: StudioJob, palette: string[], packageAssets: PackageManifestAsset[] = []) => {
   const placement = job.placements[job.activePlacementKey];
+  const selectedMockups = getSelectedProductionMockups(job.packageOptions.selectedMockupIndices);
   return {
     format: 'inkmaster-production-package',
     schemaVersion: 1,
@@ -44,13 +117,28 @@ export const createJobManifest = (job: StudioJob, palette: string[]) => {
     printSpecification: job.printSpecification,
     placement,
     placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
+    packageOptions: {
+      ...job.packageOptions,
+      selectedMockups: selectedMockups.map((mockup) => ({
+        slug: mockup.slug,
+        name: mockup.name,
+        filename: `${mockup.slug}-mockup.png`,
+      })),
+    },
+    packageAssets,
     palette,
     preflightFindings: job.preflightFindings,
   };
 };
 
-const summaryText = (job: StudioJob, palette: string[]) => {
+const summaryText = (job: StudioJob, palette: string[], packageAssets: PackageManifestAsset[]) => {
   const placement = job.placements[job.activePlacementKey];
+  const includedAssets = packageAssets
+    .filter((asset) => asset.status === 'included')
+    .map((asset) => asset.label ? `${asset.filename} (${asset.label})` : asset.filename);
+  const missingAssets = packageAssets
+    .filter((asset) => asset.status === 'missing')
+    .map((asset) => asset.label ? `${asset.filename} (${asset.label})` : asset.filename);
   return [
     `Job: ${job.metadata.name}`,
     `Customer: ${job.metadata.customerName || 'Not supplied'}`,
@@ -62,6 +150,8 @@ const summaryText = (job: StudioJob, palette: string[]) => {
     `Format: ${job.settings.format}`,
     `Palette: ${palette.join(', ') || 'Not analyzed'}`,
     `Recipe: ${job.selectedRecipeId ?? 'custom'}`,
+    `Included files: ${includedAssets.join(', ') || 'None'}`,
+    `Missing requested files: ${missingAssets.join(', ') || 'None'}`,
     '',
     `Notes: ${job.metadata.notes || 'None'}`,
   ].join('\n');
@@ -73,6 +163,7 @@ export const buildProductionPackage = async (
   const { job } = input;
   const zip = new JSZip();
   const options = job.packageOptions;
+  const packageAssets = createPackageAssetManifest(input);
 
   if (options.includePrintMaster && input.printMaster) {
     zip.file(input.printMaster.filename, await input.printMaster.blob.arrayBuffer());
@@ -89,10 +180,10 @@ export const buildProductionPackage = async (
     zip.file(input.underbase.filename, await input.underbase.blob.arrayBuffer());
   }
   if (options.includeSummary) {
-    zip.file('production-summary.txt', summaryText(job, input.palette));
+    zip.file('production-summary.txt', summaryText(job, input.palette, packageAssets));
   }
   if (options.includeManifest) {
-    zip.file('job-manifest.json', JSON.stringify(createJobManifest(job, input.palette), null, 2));
+    zip.file('job-manifest.json', JSON.stringify(createJobManifest(job, input.palette, packageAssets), null, 2));
   }
 
   const placementName = job.placements[job.activePlacementKey]?.presetId ?? 'custom';
