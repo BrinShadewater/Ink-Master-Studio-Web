@@ -8,6 +8,7 @@ import {
   PlacementMeasurement,
   PreflightFinding,
   PrintSpecification,
+  ProofBranding,
   ProductionProfile,
   ProcessingSettings,
   RecipeId,
@@ -16,6 +17,7 @@ import {
   UserRecipe,
   WorkspaceStage,
 } from '../types';
+import { CustomerProofBuilder } from './CustomerProofBuilder';
 import { PlacementPanel } from './PlacementPanel';
 import { PreflightPanel } from './PreflightPanel';
 import { ProductionPackageReview } from './ProductionPackageReview';
@@ -52,6 +54,9 @@ interface WorkflowInspectorProps {
   packageReview: ProductionPackageReviewModel | null;
   jobMetadata: JobMetadata;
   namingPattern: string;
+  proofBranding: ProofBranding;
+  proofFilenames: { print: string; email: string };
+  selectedMockupCount: number;
   onStageChange: (stage: WorkspaceStage) => void;
   onApplyRecipe: (recipeId: RecipeId, settings?: ProcessingSettings) => void;
   onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
@@ -66,6 +71,7 @@ interface WorkflowInspectorProps {
   onAcknowledgePreflight: (value: boolean) => void;
   onJobMetadataChange: (metadata: JobMetadata) => void;
   onNamingPatternChange: (pattern: string) => void;
+  onProofBrandingChange: (branding: ProofBranding) => void;
   onDownloadProductionPackage: () => void;
   onDownloadProof: (quality: 'print' | 'email') => void;
 }
@@ -132,6 +138,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     packageReview,
     jobMetadata,
     namingPattern,
+    proofBranding,
+    proofFilenames,
+    selectedMockupCount,
     onStageChange,
     onApplyRecipe,
     onSettingsChange,
@@ -146,6 +155,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onAcknowledgePreflight,
     onJobMetadataChange,
     onNamingPatternChange,
+    onProofBrandingChange,
     onDownloadProductionPackage,
     onDownloadProof,
   } = props;
@@ -463,12 +473,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
             <Section title="Production handoff" description="Create the complete shop package or a customer approval proof.">
               <div className="space-y-2">
                 <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Download production package</button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('print')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Print proof</button>
-                  <button type="button" disabled={!hasProcessedResult} onClick={() => onDownloadProof('email')} className="rounded-lg border border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Email proof</button>
-                </div>
               </div>
             </Section>
+
+            <CustomerProofBuilder
+              branding={proofBranding}
+              printFilename={proofFilenames.print}
+              emailFilename={proofFilenames.email}
+              mockupCount={selectedMockupCount}
+              canExport={preflightGate.canExport}
+              hasProcessedResult={hasProcessedResult}
+              onChange={onProofBrandingChange}
+              onDownloadProof={onDownloadProof}
+            />
 
             {settings.shirtColor === ShirtColor.BLACK && (
               <Section title="White underbase" description="Optional silhouette layer for dark-garment DTG production.">

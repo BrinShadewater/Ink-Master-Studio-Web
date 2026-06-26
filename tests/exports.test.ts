@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { createStudioJob } from '../services/jobModel';
 import { resolveFilenamePattern } from '../services/naming';
 import { buildProductionPackage } from '../services/productionPackage';
-import { buildProofDescriptor, generateCustomerProof } from '../services/proofBuilder';
+import { buildProofDescriptor, buildProofFilename, generateCustomerProof } from '../services/proofBuilder';
 import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
 
 test('resolves and sanitizes production filename tokens', () => {
@@ -117,6 +117,32 @@ test('creates proof metadata with profile provenance', () => {
   assert.match(descriptor.productionProfileText, /DTF night shift/);
   assert.match(descriptor.productionProfileText, /revision 1/);
   assert.match(descriptor.productionProfileText, /DTF/);
+});
+
+test('creates proof metadata with editable branding fields', () => {
+  const job = createStudioJob('Proof branding');
+  job.proofBranding = {
+    shopName: 'River City Prints',
+    contactLine: 'proofs@example.com · 555-0123',
+    accentColor: '#22C55E',
+    footerNote: 'Reply approved to schedule production.',
+  };
+
+  const descriptor = buildProofDescriptor(job, job.placements[job.activePlacementKey]);
+
+  assert.deepEqual(descriptor.branding, job.proofBranding);
+});
+
+test('previews proof filenames with the same naming logic used by export', async () => {
+  const job = createStudioJob('Proof / Filename');
+  job.metadata.customerName = 'Alex & Co.';
+  job.revision = 5;
+
+  const filename = buildProofFilename(job, 'email');
+  const proof = await generateCustomerProof(job, [], 'email');
+
+  assert.equal(filename, 'proof-filename_alex-co_tshirt_full-front_v5_email-proof.pdf');
+  assert.equal(proof.filename, filename);
 });
 
 test('generates both print and email proof PDFs', async () => {

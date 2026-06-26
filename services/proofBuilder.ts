@@ -21,6 +21,12 @@ export const buildProofDescriptor = (
     productionProfile,
     productionProfileText: `Profile: ${productionProfile.name} · revision ${productionProfile.revision} · Method: ${productionProfile.method}`,
     placement: `${placement.widthInches}×${placement.heightInches} in · ${placement.presetId} · ${placement.garmentSize}`,
+    branding: {
+      shopName: job.proofBranding.shopName || 'InkMaster Studio',
+      contactLine: job.proofBranding.contactLine,
+      accentColor: job.proofBranding.accentColor,
+      footerNote: job.proofBranding.footerNote,
+    },
     approvalText: 'I approve the artwork, spelling, garment color, print size, and placement shown in this proof.',
   };
 };
@@ -31,6 +37,19 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, rej
   reader.onerror = () => reject(reader.error ?? new Error('Could not read proof image.'));
   reader.readAsDataURL(blob);
 });
+
+export const buildProofFilename = (
+  job: StudioJob,
+  quality: 'print' | 'email',
+) => {
+  const placement = job.placements[job.activePlacementKey];
+  const baseName = resolveFilenamePattern(
+    job.packageOptions.namingPattern,
+    job,
+    placement.presetId,
+  );
+  return `${baseName}_${quality}-proof.pdf`;
+};
 
 export const generateCustomerProof = async (
   job: StudioJob,
@@ -49,9 +68,10 @@ export const generateCustomerProof = async (
   doc.rect(0, 0, 612, 70, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.text(job.proofBranding.shopName || 'InkMaster Studio', 36, 32);
+  doc.text(descriptor.branding.shopName, 36, 30);
   doc.setFontSize(10);
-  doc.text(quality === 'print' ? 'PRINT-READY CUSTOMER PROOF' : 'EMAIL CUSTOMER PROOF', 36, 52);
+  doc.text(quality === 'print' ? 'PRINT-READY CUSTOMER PROOF' : 'EMAIL CUSTOMER PROOF', 36, 48);
+  if (descriptor.branding.contactLine) doc.text(descriptor.branding.contactLine, 36, 62);
 
   doc.setTextColor(25, 30, 45);
   doc.setFontSize(16);
@@ -91,15 +111,10 @@ export const generateCustomerProof = async (
   doc.text('Date', 336, 742);
   doc.setFontSize(7);
   doc.text(descriptor.approvalText, 36, 765, { maxWidth: 540 });
-  doc.text(job.proofBranding.footerNote, 36, 782, { maxWidth: 540 });
+  doc.text(descriptor.branding.footerNote, 36, 782, { maxWidth: 540 });
 
-  const baseName = resolveFilenamePattern(
-    job.packageOptions.namingPattern,
-    job,
-    placement.presetId,
-  );
   return {
     blob: doc.output('blob'),
-    filename: `${baseName}_${quality}-proof.pdf`,
+    filename: buildProofFilename(job, quality),
   };
 };

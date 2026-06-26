@@ -26,7 +26,7 @@ import {
   ProductionProfile,
   WorkspaceStage,
 } from './types';
-import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_PROOF_BRANDING, DEFAULT_SETTINGS } from './constants';
 import {
   fileToBase64,
   compositeMockup,
@@ -70,7 +70,7 @@ import {
 } from './services/productionProfiles';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
-import { generateCustomerProof } from './services/proofBuilder';
+import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
 import {
   applyTemplateToJob,
   createTemplateFromJob,
@@ -238,6 +238,18 @@ const App: React.FC = () => {
         )
       : null,
     [currentProductionJob, preflightAcknowledged, preflightFindings, processedResult, profileUpdateState.status],
+  );
+  const proofFilenames = useMemo(
+    () => currentProductionJob
+      ? {
+          print: buildProofFilename(currentProductionJob, 'print'),
+          email: buildProofFilename(currentProductionJob, 'email'),
+        }
+      : {
+          print: 'customer_print-proof.pdf',
+          email: 'customer_email-proof.pdf',
+        },
+    [currentProductionJob],
   );
 
   const refreshJobs = async () => {
@@ -835,6 +847,9 @@ const App: React.FC = () => {
               packageReview={packageReview}
               jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
+              proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
+              proofFilenames={proofFilenames}
+              selectedMockupCount={currentJob?.packageOptions.selectedMockupIndices.length ?? 0}
               onStageChange={setStage}
               onApplyRecipe={handleApplyRecipe}
               onSettingsChange={handleSettingsChange}
@@ -860,6 +875,10 @@ const App: React.FC = () => {
               onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
                 ...job,
                 packageOptions: { ...job.packageOptions, namingPattern },
+              }))}
+              onProofBrandingChange={(proofBranding) => updateCurrentJob((job) => ({
+                ...job,
+                proofBranding,
               }))}
               onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
               onDownloadProof={(quality) => void handleDownloadProof(quality)}
