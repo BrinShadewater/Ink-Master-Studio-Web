@@ -128,6 +128,35 @@ test('uses location-specific areas for the same item type', () => {
   );
 });
 
+test('standard profile ships calibrated product and location previews', () => {
+  const profile = standardProfile();
+  const front = placementToMockupPercent({
+    ...DEFAULT_PLACEMENT,
+    widthInches: 12,
+    heightInches: 10,
+  }, profile);
+  const leftChest = placementToMockupPercent({
+    ...DEFAULT_PLACEMENT,
+    presetId: 'left-chest',
+    location: 'left-chest',
+    widthInches: 3,
+    heightInches: 3,
+  }, profile);
+  const mugWrap = placementToMockupPercent({
+    ...DEFAULT_PLACEMENT,
+    itemType: ItemType.MUG,
+    presetId: 'wrap',
+    location: 'sleeve',
+    widthInches: 6,
+    heightInches: 2.5,
+  }, profile);
+
+  assert.ok(leftChest.width < front.width);
+  assert.ok(leftChest.x > front.x);
+  assert.ok(mugWrap.width > leftChest.width);
+  assert.ok(mugWrap.y > front.y);
+});
+
 test('reports unsupported product and placement for missing profile areas', () => {
   const profile = standardProfile();
   delete profile.printableAreas[printableAreaKey(ItemType.TSHIRT, 'front')];

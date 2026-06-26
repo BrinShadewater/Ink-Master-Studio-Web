@@ -50,6 +50,8 @@ const profileFixture = (
 test('creates the standard DTG production profile', () => {
   const profile = createProductionProfile('Standard DTG');
   const tshirtFront = profile.printableAreas[printableAreaKey(ItemType.TSHIRT, 'front')];
+  const leftChest = profile.printableAreas[printableAreaKey(ItemType.TSHIRT, 'left-chest')];
+  const mugWrap = profile.printableAreas[printableAreaKey(ItemType.MUG, 'sleeve')];
 
   assert.equal(profile.schemaVersion, 1);
   assert.equal(profile.revision, 1);
@@ -68,6 +70,22 @@ test('creates the standard DTG production profile', () => {
     yPercent: 14,
     widthPercent: 50,
     heightPercent: 62,
+  });
+  assert.deepEqual(leftChest, {
+    widthInches: 4,
+    heightInches: 5,
+    xPercent: 56,
+    yPercent: 21,
+    widthPercent: 16,
+    heightPercent: 20,
+  });
+  assert.deepEqual(mugWrap, {
+    widthInches: 8.5,
+    heightInches: 3.5,
+    xPercent: 18,
+    yPercent: 30,
+    widthPercent: 64,
+    heightPercent: 40,
   });
   assert.equal(profile.defaults.format, OutputFormat.PNG);
 });
@@ -397,7 +415,7 @@ test('describes profile changes in deterministic human-readable groups', () => {
       label: 'Printable areas',
       changes: [
         '2 printable areas changed: HOODIE:back, TSHIRT:front',
-        'Hoodie / Back — height percent: 52 → 48',
+        'Hoodie / Back — height percent: 54 → 48',
         'T-shirt / Front — width inches: 15 → 14',
       ],
     },

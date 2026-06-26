@@ -75,12 +75,37 @@ const stableSerialize = (value: unknown): string => {
 
 const LOCATIONS: PlacementLocation[] = ['front', 'back', 'left-chest', 'sleeve'];
 
-const BASE_PRINTABLE_AREAS: Record<ItemType, PrintableArea> = {
-  [ItemType.TSHIRT]: { widthInches: 15, heightInches: 18, xPercent: 25, yPercent: 14, widthPercent: 50, heightPercent: 62 },
-  [ItemType.HOODIE]: { widthInches: 14, heightInches: 15, xPercent: 27, yPercent: 18, widthPercent: 46, heightPercent: 52 },
-  [ItemType.HAT]: { widthInches: 5, heightInches: 2.25, xPercent: 31, yPercent: 34, widthPercent: 38, heightPercent: 22 },
-  [ItemType.MUG]: { widthInches: 8.5, heightInches: 3.5, xPercent: 18, yPercent: 30, widthPercent: 64, heightPercent: 40 },
-  [ItemType.TOTE]: { widthInches: 12, heightInches: 14, xPercent: 24, yPercent: 20, widthPercent: 52, heightPercent: 58 },
+const DEFAULT_PRINTABLE_AREAS: Record<ItemType, Record<PlacementLocation, PrintableArea>> = {
+  [ItemType.TSHIRT]: {
+    front: { widthInches: 15, heightInches: 18, xPercent: 25, yPercent: 14, widthPercent: 50, heightPercent: 62 },
+    back: { widthInches: 15, heightInches: 18, xPercent: 25, yPercent: 12, widthPercent: 50, heightPercent: 64 },
+    'left-chest': { widthInches: 4, heightInches: 5, xPercent: 56, yPercent: 21, widthPercent: 16, heightPercent: 20 },
+    sleeve: { widthInches: 3.5, heightInches: 12, xPercent: 10, yPercent: 22, widthPercent: 13, heightPercent: 46 },
+  },
+  [ItemType.HOODIE]: {
+    front: { widthInches: 13, heightInches: 12, xPercent: 28, yPercent: 24, widthPercent: 44, heightPercent: 42 },
+    back: { widthInches: 14, heightInches: 15, xPercent: 27, yPercent: 16, widthPercent: 46, heightPercent: 54 },
+    'left-chest': { widthInches: 4, heightInches: 4.5, xPercent: 56, yPercent: 26, widthPercent: 16, heightPercent: 18 },
+    sleeve: { widthInches: 3.5, heightInches: 12, xPercent: 9, yPercent: 24, widthPercent: 13, heightPercent: 44 },
+  },
+  [ItemType.HAT]: {
+    front: { widthInches: 5, heightInches: 2.25, xPercent: 31, yPercent: 34, widthPercent: 38, heightPercent: 22 },
+    back: { widthInches: 4, heightInches: 1.75, xPercent: 36, yPercent: 42, widthPercent: 28, heightPercent: 16 },
+    'left-chest': { widthInches: 2.25, heightInches: 1.75, xPercent: 25, yPercent: 39, widthPercent: 18, heightPercent: 16 },
+    sleeve: { widthInches: 2.25, heightInches: 1.75, xPercent: 57, yPercent: 39, widthPercent: 18, heightPercent: 16 },
+  },
+  [ItemType.MUG]: {
+    front: { widthInches: 3.5, heightInches: 3.25, xPercent: 33, yPercent: 30, widthPercent: 34, heightPercent: 40 },
+    back: { widthInches: 3.5, heightInches: 3.25, xPercent: 33, yPercent: 30, widthPercent: 34, heightPercent: 40 },
+    'left-chest': { widthInches: 3.25, heightInches: 3.25, xPercent: 19, yPercent: 30, widthPercent: 28, heightPercent: 40 },
+    sleeve: { widthInches: 8.5, heightInches: 3.5, xPercent: 18, yPercent: 30, widthPercent: 64, heightPercent: 40 },
+  },
+  [ItemType.TOTE]: {
+    front: { widthInches: 12, heightInches: 14, xPercent: 24, yPercent: 20, widthPercent: 52, heightPercent: 58 },
+    back: { widthInches: 12, heightInches: 14, xPercent: 24, yPercent: 20, widthPercent: 52, heightPercent: 58 },
+    'left-chest': { widthInches: 5, heightInches: 6, xPercent: 33, yPercent: 24, widthPercent: 22, heightPercent: 26 },
+    sleeve: { widthInches: 10, heightInches: 4, xPercent: 28, yPercent: 60, widthPercent: 44, heightPercent: 16 },
+  },
 };
 
 export const printableAreaKey = (
@@ -100,7 +125,7 @@ export const createDefaultPrintableAreas = (): Record<string, PrintableArea> => 
   for (const itemType of Object.values(ItemType)) {
     for (const location of LOCATIONS) {
       printableAreas[printableAreaKey(itemType, location)] = {
-        ...BASE_PRINTABLE_AREAS[itemType],
+        ...DEFAULT_PRINTABLE_AREAS[itemType][location],
       };
     }
   }
