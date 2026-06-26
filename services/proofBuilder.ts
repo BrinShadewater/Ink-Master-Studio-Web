@@ -6,15 +6,24 @@ import { resolveFilenamePattern } from './naming';
 export const buildProofDescriptor = (
   job: StudioJob,
   placement: PlacementMeasurement,
-) => ({
-  jobName: job.metadata.name,
-  customerName: job.metadata.customerName || 'Customer',
-  orderNumber: job.metadata.orderNumber || 'Not supplied',
-  notes: job.metadata.notes || 'No production notes.',
-  version: job.revision,
-  placement: `${placement.widthInches}×${placement.heightInches} in · ${placement.presetId} · ${placement.garmentSize}`,
-  approvalText: 'I approve the artwork, spelling, garment color, print size, and placement shown in this proof.',
-});
+) => {
+  const productionProfile = {
+    name: job.productionProfile.snapshot.name,
+    revision: job.productionProfile.profileRevision,
+    method: job.productionProfile.snapshot.method,
+  };
+  return {
+    jobName: job.metadata.name,
+    customerName: job.metadata.customerName || 'Customer',
+    orderNumber: job.metadata.orderNumber || 'Not supplied',
+    notes: job.metadata.notes || 'No production notes.',
+    version: job.revision,
+    productionProfile,
+    productionProfileText: `Profile: ${productionProfile.name} · revision ${productionProfile.revision} · Method: ${productionProfile.method}`,
+    placement: `${placement.widthInches}×${placement.heightInches} in · ${placement.presetId} · ${placement.garmentSize}`,
+    approvalText: 'I approve the artwork, spelling, garment color, print size, and placement shown in this proof.',
+  };
+};
 
 const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -52,8 +61,9 @@ export const generateCustomerProof = async (
   doc.text(`Order: ${descriptor.orderNumber}`, 36, 138);
   doc.text(`Version: ${descriptor.version}`, 36, 154);
   doc.text(`Placement: ${descriptor.placement}`, 36, 170);
+  doc.text(descriptor.productionProfileText, 36, 186);
 
-  let y = 194;
+  let y = 210;
   const imageWidth = mockups.length > 1 ? 250 : 500;
   const imageHeight = mockups.length > 1 ? 250 : 360;
   for (let index = 0; index < Math.min(mockups.length, 4); index += 1) {

@@ -10,6 +10,7 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 - Runs deterministic preflight against actual print dimensions, effective DPI, transparency, backgrounds, upscaling, detail, and output format.
 - Stores garment placement in inches with full-front, chest, back, sleeve, youth, and oversized presets.
 - Generates portable `.inkmaster-job` backups, production ZIP packages, print/email proofs, PDFs, mockups, and manifests.
+- Supports multiple named production profiles for local DTG/DTF defaults, with a default profile for new jobs and explicit per-job override.
 - Supports guided batch processing with per-file recipes, preflight findings, warning acknowledgement, cancellation, and combined-order export.
 - Saves portable shop templates separately from artwork-treatment recipes.
 - Uses AI assistance where it helps move artwork toward usable proof material.
@@ -89,6 +90,16 @@ nginx.conf
 - `api/edit-image.ts`, `services/geminiService.ts`, and `services/imageProcessing.ts` are security- and cost-sensitive.
 - `nginx.conf` and `Dockerfile` support production hosting.
 
+## 🏷️ Production Profiles
+
+Production profiles are local-first shop defaults for printer name, DTG/DTF method, thresholds, printable areas, package options, and proof defaults. New jobs use the selected default profile; operators can override the profile on a job before export.
+
+Each job stores an immutable profile snapshot and revision in its IndexedDB job record, so later profile edits do not silently change existing work. When the source profile changes, review the revision update before applying it to the job. Portable `.inkmaster-job` archives remain self-contained because they include the job snapshot.
+
+Profiles can be backed up and imported as JSON from the localStorage key `inkmaster_production_profiles_v1`. Production packages and customer proofs include profile provenance — name, revision, printer when set, and method — while shop templates stay profile-independent operational defaults.
+
+Beta limitation: profiles do not sync to cloud accounts, printers, RIP queues, ICC profiles, or other workstations.
+
 ## 📚 Documentation
 
 - `SECURITY.md`
@@ -112,6 +123,8 @@ Keep the tool practical and production-minded. Every control should help someone
 - Run `npm test` and `npx tsc --noEmit`.
 - Test uploads with safe sample files.
 - Create, reload, duplicate, archive, export, and import a local job.
+- Review profile manager create/edit/archive/default flows, profile JSON import/export, missing or archived source profile states, and revision update review.
 - Review measured placement, preflight gating, production packages, proofs, templates, and batch exclusions.
+- Confirm production package manifests, summaries, and proofs show profile provenance without embedding full profile snapshots.
 - Check that no real client assets or secrets are committed.
 - Re-read `SECURITY.md` for any API, upload, or deployment change.

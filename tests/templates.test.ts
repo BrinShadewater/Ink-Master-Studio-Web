@@ -48,6 +48,23 @@ test('round-trips templates through versioned JSON', () => {
   assert.equal(imported[0].schemaVersion, 1);
 });
 
+test('keeps templates independent from production profile snapshots', () => {
+  const job = createStudioJob('Profiled job');
+  const template = createTemplateFromJob(job, 'Profile-independent template', '');
+  const exported = exportTemplates([template]);
+  const parsed = JSON.parse(exported);
+  const portableTemplate = parsed.templates[0];
+
+  assert.equal('productionProfile' in template, false);
+  assert.equal('profileId' in template, false);
+  assert.equal('profileRevision' in template, false);
+  assert.equal('snapshot' in template, false);
+  assert.equal('productionProfile' in portableTemplate, false);
+  assert.equal('profileId' in portableTemplate, false);
+  assert.equal('profileRevision' in portableTemplate, false);
+  assert.equal('snapshot' in portableTemplate, false);
+});
+
 test('drops malformed template entries during migration', () => {
   assert.deepEqual(migrateTemplates('[{"nope":true}]'), []);
   assert.deepEqual(migrateTemplates('not json'), []);

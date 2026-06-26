@@ -6,6 +6,7 @@ import { createStudioJob } from '../services/jobModel';
 import { resolveFilenamePattern } from '../services/naming';
 import { buildProductionPackage } from '../services/productionPackage';
 import { buildProofDescriptor, generateCustomerProof } from '../services/proofBuilder';
+import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
 
 test('resolves and sanitizes production filename tokens', () => {
   const job = createStudioJob('River / Street');
@@ -44,6 +45,50 @@ test('builds a production package with selected assets and manifest', async () =
   assert.equal(manifest.printSpecification.widthInches, 12);
 });
 
+test('includes profile provenance in production package manifest without full snapshot', async () => {
+  const baseProfile = createProductionProfile('Mimaki Daily DTG');
+  baseProfile.id = 'profile_mimaki_daily';
+  const profile = reviseProductionProfile(baseProfile, {
+    printerName: 'Mimaki TxF150',
+    method: 'DTF',
+  });
+  const job = createStudioJob('Profile package', profile);
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+
+  assert.deepEqual(manifest.productionProfile, {
+    id: 'profile_mimaki_daily',
+    revision: 2,
+    name: 'Mimaki Daily DTG',
+    printerName: 'Mimaki TxF150',
+    method: 'DTF',
+  });
+  assert.equal('snapshot' in manifest.productionProfile, false);
+  assert.equal('printableAreas' in manifest.productionProfile, false);
+});
+
+test('includes profile name and revision in production summary', async () => {
+  const profile = createProductionProfile('Brother GTX queue');
+  profile.id = 'profile_brother_gtx';
+  profile.printerName = 'Brother GTXpro';
+  const job = createStudioJob('Profile summary', profile);
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.match(summary, /Profile: Brother GTX queue/);
+  assert.match(summary, /revision 1/);
+});
+
 test('creates proof metadata with placement and approval fields', () => {
   const job = createStudioJob('Proof job');
   job.metadata.customerName = 'Taylor';
@@ -54,6 +99,24 @@ test('creates proof metadata with placement and approval fields', () => {
   assert.equal(descriptor.customerName, 'Taylor');
   assert.match(descriptor.placement, /12×14 in/);
   assert.match(descriptor.approvalText, /approve/i);
+});
+
+test('creates proof metadata with profile provenance', () => {
+  const profile = createProductionProfile('DTF night shift');
+  profile.id = 'profile_night_shift';
+  profile.method = 'DTF';
+  const job = createStudioJob('Proof profile', profile);
+
+  const descriptor = buildProofDescriptor(job, job.placements[job.activePlacementKey]);
+
+  assert.deepEqual(descriptor.productionProfile, {
+    name: 'DTF night shift',
+    revision: 1,
+    method: 'DTF',
+  });
+  assert.match(descriptor.productionProfileText, /DTF night shift/);
+  assert.match(descriptor.productionProfileText, /revision 1/);
+  assert.match(descriptor.productionProfileText, /DTF/);
 });
 
 test('generates both print and email proof PDFs', async () => {
