@@ -3,6 +3,7 @@ import {
   ArtworkAnalysis,
   EdgeBehavior,
   ExportHistoryEntry,
+  ItemType,
   JobMetadata,
   OutputFormat,
   PlacementMeasurement,
@@ -34,6 +35,14 @@ const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
 ];
 
 const STORAGE_KEY = 'inkmaster_presets';
+
+const PRODUCTS: Array<{ id: ItemType; label: string; icon: string; note: string }> = [
+  { id: ItemType.TSHIRT, label: 'T-shirt', icon: '👕', note: 'Front, back, chest, sleeve' },
+  { id: ItemType.HOODIE, label: 'Hoodie', icon: '🧥', note: 'Reduced front for pocket area' },
+  { id: ItemType.HAT, label: 'Hat', icon: '🧢', note: 'Small platen placements' },
+  { id: ItemType.MUG, label: 'Mug', icon: '☕', note: 'Front/back plus wrap area' },
+  { id: ItemType.TOTE, label: 'Tote', icon: '👜', note: 'Large bag print areas' },
+];
 
 interface WorkflowInspectorProps {
   stage: WorkspaceStage;
@@ -410,6 +419,22 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   <p className={`text-xs ${analysis?.printQuality.status === 'good' ? 'text-emerald-400' : analysis?.printQuality.status === 'low' ? 'text-amber-400' : 'text-rose-400'}`}>{analysis?.printQuality.label ?? 'Analyzing artwork'}</p>
                 </div>
                 <span className={`h-3 w-3 rounded-full ${analysis?.printQuality.status === 'good' ? 'bg-emerald-400' : analysis?.printQuality.status === 'low' ? 'bg-amber-400' : 'bg-rose-400'}`} />
+              </div>
+            </Section>
+            <Section title="Product type" description="Switch products before checking placement. The printable area updates from the applied production profile.">
+              <div className="grid grid-cols-2 gap-2">
+                {PRODUCTS.map((product) => (
+                  <button
+                    type="button"
+                    key={product.id}
+                    onClick={() => update('itemType', product.id)}
+                    className={`rounded-lg border p-2 text-left transition ${settings.itemType === product.id ? 'border-indigo-500 bg-indigo-500/10 text-white ring-1 ring-indigo-500/30' : 'border-slate-800 bg-slate-950/50 text-slate-400 hover:border-slate-700 hover:text-slate-200'}`}
+                  >
+                    <span className="text-base">{product.icon}</span>
+                    <span className="ml-2 text-xs font-black">{product.label}</span>
+                    <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">{product.note}</span>
+                  </button>
+                ))}
               </div>
             </Section>
             <PlacementPanel placement={placement} profile={productionProfile} onChange={onPlacementChange} />
