@@ -5,11 +5,13 @@ import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, ProductionProfil
 import { analyzeArtwork } from '../services/artworkAnalysis';
 import { fileToBase64, processImage } from '../services/imageProcessing';
 import { evaluatePreflight } from '../services/preflight';
-import { recommendRecipe, resolveRecipeSettings } from '../services/recipes';
+import { RECIPES, resolveRecipeSettings } from '../services/recipes';
 import {
   batchExportEligibility,
+  BatchRecipeSelection,
   BatchProductionStatus,
   createCombinedOrderManifest,
+  resolveBatchRecipe,
 } from '../services/batch';
 
 interface BatchProcessorProps {
@@ -25,6 +27,7 @@ interface GuidedBatchItem {
   status: BatchProductionStatus;
   analysis: ArtworkAnalysis | null;
   recipeId: RecipeId | null;
+  recipeSelection: BatchRecipeSelection;
   settings: ProcessingSettings;
   findings: PreflightFinding[];
   acknowledged: boolean;
@@ -47,19 +50,20 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
   productionProfile,
 }) => {
   const [items, setItems] = useState<GuidedBatchItem[]>([]);
+  const [batchRecipeSelection, setBatchRecipeSelection] = useState<BatchRecipeSelection>('auto');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const updateItem = (id: string, update: Partial<GuidedBatchItem>) =>
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...update } : item));
 
-  const processItem = async (item: GuidedBatchItem) => {
+  const processItem = async (item: GuidedBatchItem, recipeSelection = item.recipeSelection) => {
     updateItem(item.id, { status: 'analyzing', error: null });
     try {
       const base64 = await fileToBase64(item.file);
       const dataUrl = `data:${item.file.type};base64,${base64}`;
       const analysis = await analyzeArtwork(dataUrl);
-      const recommendation = recommendRecipe(analysis);
-      const settings = resolveRecipeSettings(recommendation.recipeId, analysis, defaultSettings);
+      const recipeId = resolveBatchRecipe(recipeSelection, analysis);
+      const settings = resolveRecipeSettings(recipeId, analysis, defaultSettings);
       const findings = evaluatePreflight(
         analysis,
         DEFAULT_PRINT_SPECIFICATION,
@@ -69,9 +73,11 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
       updateItem(item.id, {
         status: 'processing',
         analysis,
-        recipeId: recommendation.recipeId,
+        recipeId,
+        recipeSelection,
         settings,
         findings,
+        acknowledged: false,
       });
       const result = await processImage(dataUrl, settings);
       updateItem(item.id, { status: 'ready', resultBlob: result.blob });
@@ -91,6 +97,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
         status: 'pending',
         analysis: null,
         recipeId: null,
+        recipeSelection: batchRecipeSelection,
         settings: { ...defaultSettings, colorReplacements: [...defaultSettings.colorReplacements] },
         findings: [],
         acknowledged: false,
@@ -99,6 +106,36 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
       }));
     setItems((current) => [...current, ...next]);
     next.forEach((item) => void processItem(item));
+  };
+
+  const applyBatchRecipeToExisting = () => {
+    const reprocessable = items.filter((item) => item.status !== 'processing' && item.status !== 'analyzing');
+    setItems((current) => current.map((item) => reprocessable.some((candidate) => candidate.id === item.id)
+      ? {
+          ...item,
+          recipeSelection: batchRecipeSelection,
+          recipeId: null,
+          findings: [],
+          acknowledged: false,
+          resultBlob: null,
+          error: null,
+          status: 'pending',
+        }
+      : item));
+    reprocessable.forEach((item) => void processItem({ ...item, recipeSelection: batchRecipeSelection }, batchRecipeSelection));
+  };
+
+  const updateItemRecipe = (item: GuidedBatchItem, recipeSelection: BatchRecipeSelection) => {
+    updateItem(item.id, {
+      recipeSelection,
+      recipeId: null,
+      findings: [],
+      acknowledged: false,
+      resultBlob: null,
+      error: null,
+      status: 'pending',
+    });
+    void processItem({ ...item, recipeSelection }, recipeSelection);
   };
 
   const exportCombined = async () => {
@@ -112,6 +149,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
       id: item.id,
       filename: item.file.name,
       status: item.status,
+      recipeId: item.recipeId,
       findings: item.findings,
       acknowledged: item.acknowledged,
     }))), null, 2));
@@ -133,6 +171,14 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
       <div className="flex flex-none flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-3 lg:px-6">
         <button type="button" onClick={() => inputRef.current?.click()} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-500">Add artwork</button>
         <input ref={inputRef} type="file" multiple accept=".jpg,.jpeg,.png,.svg,.webp" className="hidden" onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ''; }} />
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          Batch recipe
+          <select value={batchRecipeSelection} onChange={(event) => setBatchRecipeSelection(event.target.value as BatchRecipeSelection)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-slate-200 outline-none focus:border-indigo-500">
+            <option value="auto">Auto per file</option>
+            {RECIPES.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}
+          </select>
+        </label>
+        <button type="button" disabled={!items.length} onClick={applyBatchRecipeToExisting} className="rounded-lg border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Apply to existing</button>
         <button type="button" disabled={!eligibleCount} onClick={() => void exportCombined()} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Export combined order ({eligibleCount})</button>
         <span className="text-xs text-slate-500">{items.length} total · {items.length - eligibleCount} waiting, warning, failed, cancelled, or blocked</span>
       </div>
@@ -167,6 +213,16 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
                       </div>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">
+                      <select
+                        value={item.recipeSelection}
+                        disabled={item.status === 'processing' || item.status === 'analyzing'}
+                        onChange={(event) => updateItemRecipe(item, event.target.value as BatchRecipeSelection)}
+                        aria-label={`Recipe for ${item.file.name}`}
+                        className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-300 disabled:opacity-40"
+                      >
+                        <option value="auto">Auto recipe</option>
+                        {RECIPES.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}
+                      </select>
                       {warnings.length > 0 && critical.length === 0 && (
                         <label className="flex items-center gap-2 text-[10px] text-slate-300">
                           <input type="checkbox" checked={item.acknowledged} onChange={(event) => updateItem(item.id, { acknowledged: event.target.checked })} className="accent-indigo-500" />

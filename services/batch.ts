@@ -1,15 +1,23 @@
 import { getPreflightGate } from './preflight';
-import { PreflightFinding } from '../types';
+import { ArtworkAnalysis, PreflightFinding, RecipeId } from '../types';
+import { recommendRecipe } from './recipes';
 
 export type BatchProductionStatus = 'pending' | 'analyzing' | 'processing' | 'ready' | 'failed' | 'cancelled';
+export type BatchRecipeSelection = 'auto' | RecipeId;
 
 export interface BatchManifestCandidate {
   id: string;
   filename: string;
   status: BatchProductionStatus;
+  recipeId: RecipeId | null;
   findings: PreflightFinding[];
   acknowledged: boolean;
 }
+
+export const resolveBatchRecipe = (
+  selection: BatchRecipeSelection,
+  analysis: ArtworkAnalysis,
+): RecipeId => selection === 'auto' ? recommendRecipe(analysis).recipeId : selection;
 
 export const batchExportEligibility = (
   status: BatchProductionStatus,
@@ -29,6 +37,7 @@ export const createCombinedOrderManifest = (candidates: BatchManifestCandidate[]
     .map((candidate) => ({
       id: candidate.id,
       filename: candidate.filename,
+      recipeId: candidate.recipeId,
       warningCount: candidate.findings.filter((finding) => finding.severity === 'warning').length,
     }));
   return {
