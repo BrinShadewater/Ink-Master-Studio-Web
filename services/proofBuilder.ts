@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import { PlacementMeasurement, StudioJob } from '../types';
 import { PackageAsset } from './productionPackage';
 import { resolveFilenamePattern } from './naming';
+import { formatPlacementSummary } from './handoffDetails';
 
 export const buildProofDescriptor = (
   job: StudioJob,
@@ -20,7 +21,7 @@ export const buildProofDescriptor = (
     version: job.revision,
     productionProfile,
     productionProfileText: `Profile: ${productionProfile.name} · revision ${productionProfile.revision} · Method: ${productionProfile.method}`,
-    placement: `${placement.widthInches}×${placement.heightInches} in · ${placement.presetId} · ${placement.garmentSize}`,
+    placement: formatPlacementSummary(placement),
     branding: {
       shopName: job.proofBranding.shopName || 'InkMaster Studio',
       contactLine: job.proofBranding.contactLine,

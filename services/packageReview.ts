@@ -1,6 +1,7 @@
 import { getPreflightGate } from './preflight';
 import { resolveFilenamePattern } from './naming';
 import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
+import { formatPlacementSummary } from './handoffDetails';
 import { PreflightFinding, StudioJob } from '../types';
 import { ProfileUpdateStatus } from './productionProfiles';
 
@@ -52,6 +53,8 @@ export const buildProductionPackageReview = (
   const options = job.packageOptions;
   const selectedMockupIndices = normalizeMockupSelection(options.selectedMockupIndices, PRODUCTION_MOCKUPS.length);
   const selectedMockupDescription = describeSelectedMockups(selectedMockupIndices);
+  const placement = job.placements[job.activePlacementKey];
+  const placementSummary = placement ? formatPlacementSummary(placement) : 'No placement selected';
   const placementName = placementNameForJob(job);
   const baseFilename = resolveFilenamePattern(options.namingPattern, job, placementName);
   const gate = getPreflightGate(findings, preflightAcknowledged);
@@ -115,7 +118,7 @@ export const buildProductionPackageReview = (
         'Production PDF/spec sheet',
         'production-spec.pdf',
         options.includeProductionPdf ? hasProcessedResult ? 'ready' : 'missing' : 'excluded',
-        options.includeProductionPdf ? 'Printable job specification PDF.' : 'Disabled in package options.',
+        options.includeProductionPdf ? `Printable job specification PDF with ${placementSummary}.` : 'Disabled in package options.',
       ),
       item(
         'mockups',

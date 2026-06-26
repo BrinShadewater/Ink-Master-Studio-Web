@@ -48,6 +48,10 @@ test('previews the final package filename and included production files', () => 
     review.items.find((entry) => entry.id === 'mockups')?.note ?? '',
     /Red, Heather/,
   );
+  assert.match(
+    review.items.find((entry) => entry.id === 'production-pdf')?.note ?? '',
+    /T-shirt front/,
+  );
 });
 
 test('blocks package export until artwork has been processed', () => {

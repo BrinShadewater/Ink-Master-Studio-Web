@@ -43,6 +43,8 @@ test('builds a production package with selected assets and manifest', async () =
   assert.ok(zip.file('production-summary.txt'));
   assert.equal(manifest.job.name, 'Package');
   assert.equal(manifest.printSpecification.widthInches, 12);
+  assert.match(manifest.placementSummary, /T-shirt front/);
+  assert.match(manifest.placementSummary, /offset 0 in horizontal, 2 in from top/);
 });
 
 test('includes profile provenance in production package manifest without full snapshot', async () => {
@@ -87,6 +89,7 @@ test('includes profile name and revision in production summary', async () => {
 
   assert.match(summary, /Profile: Brother GTX queue/);
   assert.match(summary, /revision 1/);
+  assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
 });
 
 test('creates proof metadata with placement and approval fields', () => {
@@ -97,7 +100,9 @@ test('creates proof metadata with placement and approval fields', () => {
   const descriptor = buildProofDescriptor(job, job.placements[job.activePlacementKey]);
 
   assert.equal(descriptor.customerName, 'Taylor');
+  assert.match(descriptor.placement, /T-shirt front/);
   assert.match(descriptor.placement, /12×14 in/);
+  assert.match(descriptor.placement, /offset 0 in horizontal, 2 in from top/);
   assert.match(descriptor.approvalText, /approve/i);
 });
 

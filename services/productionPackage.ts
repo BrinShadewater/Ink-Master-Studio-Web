@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { resolveFilenamePattern } from './naming';
+import { formatPlacementSummary, formatPrintSizeSummary } from './handoffDetails';
 import { StudioJob } from '../types';
 
 export interface PackageAsset {
@@ -42,6 +43,7 @@ export const createJobManifest = (job: StudioJob, palette: string[]) => {
     },
     printSpecification: job.printSpecification,
     placement,
+    placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
     palette,
     preflightFindings: job.preflightFindings,
   };
@@ -55,8 +57,8 @@ const summaryText = (job: StudioJob, palette: string[]) => {
     `Order: ${job.metadata.orderNumber || 'Not supplied'}`,
     `Profile: ${job.productionProfile.snapshot.name} · revision ${job.productionProfile.profileRevision} · ${job.productionProfile.snapshot.printerName ? `Printer: ${job.productionProfile.snapshot.printerName} · ` : ''}Method: ${job.productionProfile.snapshot.method}`,
     `Method: ${job.printSpecification.method}`,
-    `Print size: ${job.printSpecification.widthInches} × ${job.printSpecification.heightInches} in`,
-    `Placement: ${placement?.presetId ?? 'custom'} · ${placement?.widthInches ?? 0} × ${placement?.heightInches ?? 0} in`,
+    `Print size: ${formatPrintSizeSummary(job.printSpecification.widthInches, job.printSpecification.heightInches)}`,
+    `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
     `Format: ${job.settings.format}`,
     `Palette: ${palette.join(', ') || 'Not analyzed'}`,
     `Recipe: ${job.selectedRecipeId ?? 'custom'}`,
