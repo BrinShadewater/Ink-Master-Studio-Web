@@ -14,6 +14,7 @@ import {
   mergeImportedTemplates,
   migrateTemplates,
   renameTemplate,
+  updateTemplateFromJob,
 } from '../services/templateStorage';
 import { ItemType } from '../types';
 
@@ -177,6 +178,45 @@ test('renames templates while avoiding sibling name collisions', () => {
   assert.equal(renamed.id, daily.id);
   assert.equal(renamed.name, 'Youth DTG (Renamed)');
   assert.equal(youth.name, 'Youth DTG');
+});
+
+test('updates an applied template from current job settings while preserving identity', () => {
+  const source = createStudioJob('Template source');
+  source.packageOptions.namingPattern = '{customer}_{placement}';
+  source.settings.colorReplacements = [{ sourceColor: '#ffffff', targetColor: '#f7f7f7', tolerance: 6 }];
+  const template = createTemplateFromJob(source, 'Daily DTG', 'Shop default');
+  const applied = applyTemplateToJob(createStudioJob('Customer job'), template);
+  const drifted = {
+    ...applied,
+    packageOptions: {
+      ...applied.packageOptions,
+      namingPattern: '{customer}_{job}_{version}',
+    },
+    proofBranding: {
+      ...applied.proofBranding,
+      shopName: 'Updated Shop',
+    },
+    settings: {
+      ...applied.settings,
+      colorReplacements: [{ sourceColor: '#ffffff', targetColor: '#eeeeee', tolerance: 9 }],
+    },
+  };
+
+  const updated = updateTemplateFromJob(template, drifted);
+  const status = getAppliedTemplateStatus(drifted, [updated]);
+
+  assert.equal(updated.id, template.id);
+  assert.equal(updated.name, 'Daily DTG');
+  assert.equal(updated.description, 'Shop default');
+  assert.equal(updated.createdAt, template.createdAt);
+  assert.ok(updated.updatedAt >= template.updatedAt);
+  assert.equal(updated.packageOptions.namingPattern, '{customer}_{job}_{version}');
+  assert.equal(updated.proofBranding.shopName, 'Updated Shop');
+  assert.equal(status.status, 'matches');
+  assert.deepEqual(status.changes, []);
+
+  updated.settings.colorReplacements[0].targetColor = '#000000';
+  assert.equal(drifted.settings.colorReplacements[0].targetColor, '#eeeeee');
 });
 
 test('reports applied template status as matched, drifted, missing, or none', () => {

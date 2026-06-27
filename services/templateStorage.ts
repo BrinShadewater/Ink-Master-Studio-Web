@@ -33,7 +33,10 @@ export const createTemplateFromJob = (
     updatedAt: timestamp,
     recipeId: job.selectedRecipeId,
     itemType: job.settings.itemType,
-    settings: { ...job.settings, colorReplacements: [...job.settings.colorReplacements] },
+    settings: {
+      ...job.settings,
+      colorReplacements: job.settings.colorReplacements.map((replacement) => ({ ...replacement })),
+    },
     printSpecification: { ...job.printSpecification },
     placement: { ...placement },
     packageOptions: {
@@ -158,6 +161,19 @@ export const getAppliedTemplateStatus = (
     appliedTemplate: job.appliedTemplate,
     status: changes.length ? 'drifted' : 'matches',
     changes,
+  };
+};
+
+export const updateTemplateFromJob = (
+  template: ShopTemplate,
+  job: StudioJob,
+): ShopTemplate => {
+  const updated = createTemplateFromJob(job, template.name, template.description);
+  return {
+    ...updated,
+    id: template.id,
+    createdAt: template.createdAt,
+    updatedAt: now(),
   };
 };
 

@@ -83,6 +83,7 @@ interface WorkflowInspectorProps {
   onAcknowledgePreflight: (value: boolean) => void;
   onJobMetadataChange: (metadata: JobMetadata) => void;
   onNamingPatternChange: (pattern: string) => void;
+  onUpdateAppliedTemplate: () => void;
   onProofBrandingChange: (branding: ProofBranding) => void;
   onDownloadProductionPackage: () => void;
   onDownloadProof: (quality: 'print' | 'email') => void;
@@ -169,6 +170,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onAcknowledgePreflight,
     onJobMetadataChange,
     onNamingPatternChange,
+    onUpdateAppliedTemplate,
     onProofBrandingChange,
     onDownloadProductionPackage,
     onDownloadProof,
@@ -392,6 +394,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 <p className={`rounded-lg border px-3 py-2 text-[10px] font-semibold ${templateStatusClass}`}>
                   Template: <span>{templateStatusLabel}</span>
                 </p>
+                {appliedTemplateStatus.status === 'drifted' && (
+                  <button type="button" onClick={onUpdateAppliedTemplate} className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] font-bold text-amber-100 hover:bg-amber-500/20">
+                    Update saved template from current job
+                  </button>
+                )}
                 <input value={jobMetadata.customerName} onChange={(event) => onJobMetadataChange({ ...jobMetadata, customerName: event.target.value })} placeholder="Customer name" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
                 <input value={jobMetadata.orderNumber} onChange={(event) => onJobMetadataChange({ ...jobMetadata, orderNumber: event.target.value })} placeholder="Order number" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
                 <textarea value={jobMetadata.notes} onChange={(event) => onJobMetadataChange({ ...jobMetadata, notes: event.target.value })} placeholder="Production and customer notes" rows={3} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />

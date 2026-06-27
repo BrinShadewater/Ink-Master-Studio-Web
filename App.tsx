@@ -88,6 +88,7 @@ import {
   mergeImportedTemplates,
   renameTemplate,
   saveTemplates,
+  updateTemplateFromJob,
 } from './services/templateStorage';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
@@ -681,6 +682,21 @@ const App: React.FC = () => {
     saveTemplates(next);
   };
 
+  const handleUpdateAppliedTemplate = () => {
+    if (!currentProductionJob?.appliedTemplate) return;
+    const template = shopTemplates.find((candidate) => candidate.id === currentProductionJob.appliedTemplate?.id);
+    if (!template) {
+      setError('That applied template is no longer in the template library.');
+      return;
+    }
+    const updated = updateTemplateFromJob(template, currentProductionJob);
+    const next = shopTemplates.map((candidate) => candidate.id === template.id ? updated : candidate);
+    setShopTemplates(next);
+    setTemplateImportMessage(`Updated ${updated.name} from the current job.`);
+    saveTemplates(next);
+    setError(null);
+  };
+
   const handleExportTemplates = () => {
     downloadBlob(new Blob([exportTemplates(shopTemplates)], { type: 'application/json' }), 'inkmaster-shop-templates.json');
   };
@@ -903,6 +919,7 @@ const App: React.FC = () => {
                 ...job,
                 packageOptions: { ...job.packageOptions, namingPattern },
               }))}
+              onUpdateAppliedTemplate={handleUpdateAppliedTemplate}
               onProofBrandingChange={(proofBranding) => updateCurrentJob((job) => ({
                 ...job,
                 proofBranding,
