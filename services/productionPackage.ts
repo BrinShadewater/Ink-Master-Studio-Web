@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary, formatPrintSizeSummary } from './handoffDetails';
 import { getSelectedProductionMockups } from './mockups';
-import { StudioJob } from '../types';
+import { AppliedTemplateStatus, StudioJob } from '../types';
 
 export interface PackageAsset {
   filename: string;
@@ -16,6 +16,7 @@ export interface ProductionPackageInput {
   mockups?: PackageAsset[];
   underbase?: PackageAsset | null;
   palette: string[];
+  appliedTemplateStatus?: AppliedTemplateStatus;
 }
 
 interface PackageManifestAsset {
@@ -89,7 +90,31 @@ const createPackageAssetManifest = (input: ProductionPackageInput): PackageManif
   return assets;
 };
 
-export const createJobManifest = (job: StudioJob, palette: string[], packageAssets: PackageManifestAsset[] = []) => {
+const appliedTemplateManifest = (job: StudioJob, status?: AppliedTemplateStatus) => {
+  if (!job.appliedTemplate) return null;
+  return {
+    ...job.appliedTemplate,
+    status: status?.status ?? 'unknown',
+    changes: status?.changes ?? [],
+  };
+};
+
+const appliedTemplateSummary = (job: StudioJob, status?: AppliedTemplateStatus) => {
+  if (!job.appliedTemplate) return 'None';
+  const applied = `${job.appliedTemplate.name} · applied ${new Date(job.appliedTemplate.appliedAt).toISOString()}`;
+  if (!status) return applied;
+  if (status.status === 'matches') return `${applied} · matches saved template`;
+  if (status.status === 'missing') return `${applied} · template missing from library`;
+  if (status.status === 'drifted') return `${applied} · changed after apply: ${status.changes.join(', ')}`;
+  return applied;
+};
+
+export const createJobManifest = (
+  job: StudioJob,
+  palette: string[],
+  packageAssets: PackageManifestAsset[] = [],
+  appliedTemplateStatus?: AppliedTemplateStatus,
+) => {
   const placement = job.placements[job.activePlacementKey];
   const selectedMockups = getSelectedProductionMockups(job.packageOptions.selectedMockupIndices);
   return {
@@ -114,7 +139,7 @@ export const createJobManifest = (job: StudioJob, palette: string[], packageAsse
       printerName: job.productionProfile.snapshot.printerName,
       method: job.productionProfile.snapshot.method,
     },
-    appliedTemplate: job.appliedTemplate,
+    appliedTemplate: appliedTemplateManifest(job, appliedTemplateStatus),
     printSpecification: job.printSpecification,
     placement,
     placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
@@ -132,7 +157,12 @@ export const createJobManifest = (job: StudioJob, palette: string[], packageAsse
   };
 };
 
-const summaryText = (job: StudioJob, palette: string[], packageAssets: PackageManifestAsset[]) => {
+const summaryText = (
+  job: StudioJob,
+  palette: string[],
+  packageAssets: PackageManifestAsset[],
+  appliedTemplateStatus?: AppliedTemplateStatus,
+) => {
   const placement = job.placements[job.activePlacementKey];
   const includedAssets = packageAssets
     .filter((asset) => asset.status === 'included')
@@ -145,7 +175,7 @@ const summaryText = (job: StudioJob, palette: string[], packageAssets: PackageMa
     `Customer: ${job.metadata.customerName || 'Not supplied'}`,
     `Order: ${job.metadata.orderNumber || 'Not supplied'}`,
     `Profile: ${job.productionProfile.snapshot.name} · revision ${job.productionProfile.profileRevision} · ${job.productionProfile.snapshot.printerName ? `Printer: ${job.productionProfile.snapshot.printerName} · ` : ''}Method: ${job.productionProfile.snapshot.method}`,
-    `Template: ${job.appliedTemplate ? `${job.appliedTemplate.name} · applied ${new Date(job.appliedTemplate.appliedAt).toISOString()}` : 'None'}`,
+    `Template: ${appliedTemplateSummary(job, appliedTemplateStatus)}`,
     `Method: ${job.printSpecification.method}`,
     `Print size: ${formatPrintSizeSummary(job.printSpecification.widthInches, job.printSpecification.heightInches)}`,
     `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
@@ -182,10 +212,10 @@ export const buildProductionPackage = async (
     zip.file(input.underbase.filename, await input.underbase.blob.arrayBuffer());
   }
   if (options.includeSummary) {
-    zip.file('production-summary.txt', summaryText(job, input.palette, packageAssets));
+    zip.file('production-summary.txt', summaryText(job, input.palette, packageAssets, input.appliedTemplateStatus));
   }
   if (options.includeManifest) {
-    zip.file('job-manifest.json', JSON.stringify(createJobManifest(job, input.palette, packageAssets), null, 2));
+    zip.file('job-manifest.json', JSON.stringify(createJobManifest(job, input.palette, packageAssets, input.appliedTemplateStatus), null, 2));
   }
 
   const placementName = job.placements[job.activePlacementKey]?.presetId ?? 'custom';

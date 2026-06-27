@@ -3,7 +3,7 @@ import {
   ArtworkAnalysis,
   EdgeBehavior,
   ExportHistoryEntry,
-  AppliedShopTemplate,
+  AppliedTemplateStatus,
   ItemType,
   JobMetadata,
   OutputFormat,
@@ -63,7 +63,7 @@ interface WorkflowInspectorProps {
   preflightAcknowledged: boolean;
   packageReview: ProductionPackageReviewModel | null;
   jobMetadata: JobMetadata;
-  appliedTemplate: AppliedShopTemplate | null;
+  appliedTemplateStatus: AppliedTemplateStatus;
   namingPattern: string;
   proofBranding: ProofBranding;
   proofFilenames: { print: string; email: string };
@@ -149,7 +149,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     preflightAcknowledged,
     packageReview,
     jobMetadata,
-    appliedTemplate,
+    appliedTemplateStatus,
     namingPattern,
     proofBranding,
     proofFilenames,
@@ -196,6 +196,20 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const templateStatusLabel = appliedTemplateStatus.status === 'none'
+    ? 'None applied'
+    : appliedTemplateStatus.status === 'matches'
+      ? `${appliedTemplateStatus.appliedTemplate?.name} · matches saved template`
+      : appliedTemplateStatus.status === 'missing'
+        ? `${appliedTemplateStatus.appliedTemplate?.name} · template missing from library`
+        : `${appliedTemplateStatus.appliedTemplate?.name} · changed after apply: ${appliedTemplateStatus.changes.join(', ')}`;
+  const templateStatusClass = appliedTemplateStatus.status === 'matches'
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    : appliedTemplateStatus.status === 'drifted'
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+      : appliedTemplateStatus.status === 'missing'
+        ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+        : 'border-slate-800 bg-slate-950/60 text-slate-400';
 
   const saveRecipe = () => {
     if (!recipeName.trim()) return;
@@ -375,8 +389,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
             <Section title="Job handoff details" description="These fields appear in filenames, manifests, packages, and customer proofs.">
               <div className="space-y-2">
-                <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold text-slate-400">
-                  Template: <span className="text-slate-200">{appliedTemplate?.name ?? 'None applied'}</span>
+                <p className={`rounded-lg border px-3 py-2 text-[10px] font-semibold ${templateStatusClass}`}>
+                  Template: <span>{templateStatusLabel}</span>
                 </p>
                 <input value={jobMetadata.customerName} onChange={(event) => onJobMetadataChange({ ...jobMetadata, customerName: event.target.value })} placeholder="Customer name" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
                 <input value={jobMetadata.orderNumber} onChange={(event) => onJobMetadataChange({ ...jobMetadata, orderNumber: event.target.value })} placeholder="Order number" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />

@@ -1,7 +1,7 @@
 import { createStudioJob, touchStudioJob } from './jobModel';
 import { placementVariantKey } from './placement';
 import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
-import { ShopTemplate, StudioJob } from '../types';
+import { AppliedTemplateStatus, ShopTemplate, StudioJob } from '../types';
 
 const STORAGE_KEY = 'inkmaster_shop_templates_v1';
 const now = () => Date.now();
@@ -132,6 +132,33 @@ export const describeTemplateChanges = (
       ? 'proof branding'
       : null,
   ].filter((entry): entry is string => Boolean(entry));
+};
+
+export const getAppliedTemplateStatus = (
+  job: StudioJob | null,
+  templates: ShopTemplate[],
+): AppliedTemplateStatus => {
+  if (!job?.appliedTemplate) {
+    return {
+      appliedTemplate: null,
+      status: 'none',
+      changes: [],
+    };
+  }
+  const template = templates.find((candidate) => candidate.id === job.appliedTemplate?.id);
+  if (!template) {
+    return {
+      appliedTemplate: job.appliedTemplate,
+      status: 'missing',
+      changes: ['template missing from library'],
+    };
+  }
+  const changes = describeTemplateChanges(job, template);
+  return {
+    appliedTemplate: job.appliedTemplate,
+    status: changes.length ? 'drifted' : 'matches',
+    changes,
+  };
 };
 
 const normalizeTemplate = (value: unknown): ShopTemplate | null => {

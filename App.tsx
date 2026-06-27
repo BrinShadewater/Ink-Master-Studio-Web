@@ -82,6 +82,7 @@ import {
   createTemplateFromJob,
   duplicateTemplate,
   exportTemplates,
+  getAppliedTemplateStatus,
   importTemplates,
   loadTemplates,
   mergeImportedTemplates,
@@ -234,6 +235,10 @@ const App: React.FC = () => {
         )
       : null,
     [currentProductionJob, preflightAcknowledged, preflightFindings, processedResult, profileUpdateState.status],
+  );
+  const appliedTemplateStatus = useMemo(
+    () => getAppliedTemplateStatus(currentProductionJob, shopTemplates),
+    [currentProductionJob, shopTemplates],
   );
   const proofFilenames = useMemo(
     () => currentProductionJob
@@ -593,6 +598,7 @@ const App: React.FC = () => {
         mockups: await buildSelectedMockups(),
         underbase: underbase ? { filename: 'white-underbase.png', blob: underbase.blob } : null,
         palette,
+        appliedTemplateStatus,
       });
       downloadBlob(result.blob, result.filename);
       addToExportHistory({ filename: result.filename, format: 'ZIP', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
@@ -865,7 +871,7 @@ const App: React.FC = () => {
               preflightAcknowledged={preflightAcknowledged}
               packageReview={packageReview}
               jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
-              appliedTemplate={currentJob?.appliedTemplate ?? null}
+              appliedTemplateStatus={appliedTemplateStatus}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
               proofFilenames={proofFilenames}

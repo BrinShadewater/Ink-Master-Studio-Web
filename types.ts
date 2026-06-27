@@ -223,6 +223,12 @@ export interface AppliedShopTemplate {
   appliedAt: number;
 }
 
+export interface AppliedTemplateStatus {
+  appliedTemplate: AppliedShopTemplate | null;
+  status: 'none' | 'matches' | 'drifted' | 'missing';
+  changes: string[];
+}
+
 export interface ProfileValidationError {
   field: string;
   message: string;

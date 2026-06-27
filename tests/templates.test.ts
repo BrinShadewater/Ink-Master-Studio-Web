@@ -9,6 +9,7 @@ import {
   describeTemplateChanges,
   duplicateTemplate,
   exportTemplates,
+  getAppliedTemplateStatus,
   importTemplates,
   mergeImportedTemplates,
   migrateTemplates,
@@ -176,6 +177,32 @@ test('renames templates while avoiding sibling name collisions', () => {
   assert.equal(renamed.id, daily.id);
   assert.equal(renamed.name, 'Youth DTG (Renamed)');
   assert.equal(youth.name, 'Youth DTG');
+});
+
+test('reports applied template status as matched, drifted, missing, or none', () => {
+  const source = createStudioJob('Template source');
+  source.settings.itemType = ItemType.HOODIE;
+  const template = createTemplateFromJob(source, 'Daily hoodie', '');
+  const applied = applyTemplateToJob(createStudioJob('Target'), template);
+
+  const matched = getAppliedTemplateStatus(applied, [template]);
+  const drifted = getAppliedTemplateStatus({
+    ...applied,
+    packageOptions: {
+      ...applied.packageOptions,
+      namingPattern: '{customer}_{job}',
+    },
+  }, [template]);
+  const missing = getAppliedTemplateStatus(applied, []);
+  const none = getAppliedTemplateStatus(createStudioJob('No template'), [template]);
+
+  assert.equal(matched.status, 'matches');
+  assert.deepEqual(matched.changes, []);
+  assert.equal(drifted.status, 'drifted');
+  assert.deepEqual(drifted.changes, ['naming']);
+  assert.equal(missing.status, 'missing');
+  assert.deepEqual(missing.changes, ['template missing from library']);
+  assert.equal(none.status, 'none');
 });
 
 test('keeps templates independent from production profile snapshots', () => {

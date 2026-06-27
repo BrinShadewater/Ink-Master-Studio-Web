@@ -149,8 +149,36 @@ test('includes applied template provenance in production package handoff', async
     id: 'template_daily_dtg',
     name: 'Daily DTG',
     appliedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+    status: 'unknown',
+    changes: [],
   });
   assert.match(summary, /Template: Daily DTG · applied 2026-01-02T03:04:05\.000Z/);
+});
+
+test('includes applied template drift status in production package handoff', async () => {
+  const job = createStudioJob('Template drift package');
+  job.appliedTemplate = {
+    id: 'template_daily_dtg',
+    name: 'Daily DTG',
+    appliedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+  };
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+    appliedTemplateStatus: {
+      appliedTemplate: job.appliedTemplate,
+      status: 'drifted',
+      changes: ['naming', 'mockup colors'],
+    },
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.equal(manifest.appliedTemplate.status, 'drifted');
+  assert.deepEqual(manifest.appliedTemplate.changes, ['naming', 'mockup colors']);
+  assert.match(summary, /changed after apply: naming, mockup colors/);
 });
 
 test('creates proof metadata with placement and approval fields', () => {
