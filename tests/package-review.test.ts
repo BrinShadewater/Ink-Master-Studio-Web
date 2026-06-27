@@ -102,6 +102,18 @@ test('reflects per-job package content toggles in the review', () => {
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'package-assets')?.status, 'ready');
 });
 
+test('flags enabled mockups with no selected colors for operator review', () => {
+  const job = createStudioJob('No mockup colors');
+  job.packageOptions.includeMockups = true;
+  job.packageOptions.selectedMockupIndices = [];
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.items.find((entry) => entry.id === 'mockups')?.status, 'missing');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'package-assets')?.status, 'attention');
+  assert.match(review.warnings.join(' '), /no mockup colors/i);
+});
+
 test('requires warning acknowledgement before package export', () => {
   const job = createStudioJob('Warning package');
 

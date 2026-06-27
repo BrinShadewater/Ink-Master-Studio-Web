@@ -31,6 +31,7 @@ import { getRecipe, RECIPES } from '../services/recipes';
 import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
 import { CloudApprovalCapability } from '../services/proofApproval';
+import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -240,6 +241,24 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
+  const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
+  const togglePackageOption = <K extends keyof ProductionPackageOptions>(
+    key: K,
+    value: ProductionPackageOptions[K],
+  ) => onPackageOptionsChange({ ...packageOptions, [key]: value });
+  const toggleHandoffMockup = (index: number) => {
+    const next = new Set<number>(packageOptions.selectedMockupIndices);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    onPackageOptionsChange({
+      ...packageOptions,
+      selectedMockupIndices: Array.from(next).sort((a, b) => a - b),
+    });
+  };
   const aiCleanupAvailable = aiCleanupStatus.availability === 'available' && aiCleanupStatus.supportedActions.includes('edge-cleanup');
   const aiCleanupBadgeClass = aiCleanupStatus.availability === 'available'
     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
@@ -614,15 +633,60 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                         </div>
                         <Toggle
                           checked={packageOptions[control.key]}
-                          onChange={() => onPackageOptionsChange({
-                            ...packageOptions,
-                            [control.key]: !packageOptions[control.key],
-                          })}
+                          onChange={() => {
+                            if (control.key === 'includeMockups' && !packageOptions.includeMockups && packageOptions.selectedMockupIndices.length === 0) {
+                              onPackageOptionsChange({
+                                ...packageOptions,
+                                includeMockups: true,
+                                selectedMockupIndices: getDefaultMockupSelectionForItemType(settings.itemType),
+                              });
+                              return;
+                            }
+                            togglePackageOption(control.key, !packageOptions[control.key]);
+                          }}
                           label={`Toggle ${control.label}`}
                         />
                       </div>
                     ))}
                   </div>
+                  {packageOptions.includeMockups && (
+                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Mockup selection</p>
+                          <p className="mt-0.5 text-[10px] text-slate-500">{selectedMockupCount} selected · {selectedMockupSummary}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onPackageOptionsChange({
+                            ...packageOptions,
+                            selectedMockupIndices: getDefaultMockupSelectionForItemType(settings.itemType),
+                          })}
+                          className="rounded-md border border-slate-700 px-2 py-1 text-[9px] font-bold text-slate-400 hover:border-indigo-500 hover:text-white"
+                        >
+                          Defaults
+                        </button>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {handoffMockupEntries.map(({ index, mockup }) => (
+                          <button
+                            type="button"
+                            key={mockup.slug}
+                            onClick={() => toggleHandoffMockup(index)}
+                            className={`flex items-center gap-2 rounded-lg border px-2 py-2 text-left transition ${selectedHandoffMockups.has(index) ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-600'}`}
+                          >
+                            <span className="h-4 w-4 flex-none rounded-full border border-white/20" style={{ backgroundColor: mockup.color }} />
+                            <span className="min-w-0 truncate text-[10px] font-bold">{mockup.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {selectedMockupCount === 0 && (
+                        <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] font-semibold text-amber-200">
+                          Select at least one mockup color or turn mockups off for this package.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button type="button" disabled={!packageReview?.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">
                   {packageReview?.exportAction.label ?? 'Production package not ready'}
