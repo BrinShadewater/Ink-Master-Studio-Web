@@ -262,6 +262,15 @@ export interface StoredJobExport {
   format: string;
   timestamp: number;
   blob: Blob;
+  metadata?: {
+    kind: 'production-package' | 'customer-proof' | 'print-master' | 'production-pdf' | 'mockup-set' | 'underbase';
+    readinessStatus?: 'ready' | 'attention' | 'blocked';
+    readinessSummary?: string;
+    packageContents?: string[];
+    preflightSummary?: string;
+    proofApprovalStatus?: ProofApprovalStatus;
+    placementSummary?: string;
+  };
 }
 
 export interface StudioJob {
@@ -409,4 +418,5 @@ export interface ExportHistoryEntry {
   timestamp: number;
   url: string;
   blob: Blob;
+  metadata?: StoredJobExport['metadata'];
 }

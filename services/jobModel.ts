@@ -22,6 +22,7 @@ import {
   ProofApprovalStatus,
   ProductionPackageOptions,
   ProductionProfile,
+  StoredJobExport,
   StudioJob,
 } from '../types';
 import { createProofApprovalState } from './proofApproval';
@@ -192,6 +193,42 @@ const migrateProofApproval = (value: unknown): ProofApprovalState => {
   };
 };
 
+const EXPORT_KINDS: Array<NonNullable<StoredJobExport['metadata']>['kind']> = [
+  'production-package',
+  'customer-proof',
+  'print-master',
+  'production-pdf',
+  'mockup-set',
+  'underbase',
+];
+
+const READINESS_STATUSES: Array<NonNullable<StoredJobExport['metadata']>['readinessStatus']> = [
+  'ready',
+  'attention',
+  'blocked',
+];
+
+const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | undefined => {
+  if (!isRecord(value) || typeof value.kind !== 'string' || !EXPORT_KINDS.includes(value.kind as NonNullable<StoredJobExport['metadata']>['kind'])) {
+    return undefined;
+  }
+  return {
+    kind: value.kind as NonNullable<StoredJobExport['metadata']>['kind'],
+    readinessStatus: typeof value.readinessStatus === 'string' && READINESS_STATUSES.includes(value.readinessStatus as NonNullable<StoredJobExport['metadata']>['readinessStatus'])
+      ? value.readinessStatus as NonNullable<StoredJobExport['metadata']>['readinessStatus']
+      : undefined,
+    readinessSummary: typeof value.readinessSummary === 'string' ? value.readinessSummary : undefined,
+    packageContents: Array.isArray(value.packageContents)
+      ? value.packageContents.filter((entry): entry is string => typeof entry === 'string')
+      : undefined,
+    preflightSummary: typeof value.preflightSummary === 'string' ? value.preflightSummary : undefined,
+    proofApprovalStatus: typeof value.proofApprovalStatus === 'string' && PROOF_APPROVAL_STATUSES.includes(value.proofApprovalStatus as ProofApprovalStatus)
+      ? value.proofApprovalStatus as ProofApprovalStatus
+      : undefined,
+    placementSummary: typeof value.placementSummary === 'string' ? value.placementSummary : undefined,
+  };
+};
+
 export const migrateStudioJob = (value: unknown): StudioJob => {
   const source = isRecord(value) ? value : {};
   const metadata = isRecord(source.metadata) ? source.metadata : {};
@@ -264,7 +301,16 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
     appliedTemplate: migrateAppliedTemplate(source.appliedTemplate),
     versions: Array.isArray(source.versions) ? source.versions as StudioJob['versions'] : [],
     exports: Array.isArray(source.exports)
-      ? source.exports.filter((entry) => isRecord(entry) && entry.blob instanceof Blob) as unknown as StudioJob['exports']
+      ? source.exports
+        .filter((entry) => isRecord(entry) && entry.blob instanceof Blob)
+        .map((entry) => ({
+          id: typeof entry.id === 'string' ? entry.id : createId('export'),
+          filename: typeof entry.filename === 'string' ? entry.filename : 'export',
+          format: typeof entry.format === 'string' ? entry.format : 'FILE',
+          timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : now(),
+          blob: entry.blob as Blob,
+          metadata: migrateExportMetadata(entry.metadata),
+        }))
       : [],
   };
 };

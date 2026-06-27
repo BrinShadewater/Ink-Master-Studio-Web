@@ -26,6 +26,7 @@ export const exportPortableJob = async (job: StudioJob): Promise<Blob> => {
       filename: entry.filename,
       format: entry.format,
       timestamp: entry.timestamp,
+      metadata: entry.metadata,
       path,
     };
   }));
@@ -77,6 +78,7 @@ export const importPortableJob = async (archive: Blob): Promise<StudioJob> => {
         filename: entry.filename,
         format: entry.format,
         timestamp: entry.timestamp,
+        metadata: entry.metadata,
         blob: new Blob([await file.async('uint8array')]),
       };
     }));

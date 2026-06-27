@@ -25,6 +25,7 @@ import {
   RecipeRecommendation,
   ShirtColor,
   ShopTemplate,
+  StoredJobExport,
   StudioJob,
   ProductionProfile,
   WorkspaceStage,
@@ -79,6 +80,7 @@ import {
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
+import { formatPlacementSummary } from './services/handoffDetails';
 import {
   createProofApprovalState,
   getCloudApprovalCapability,
@@ -438,8 +440,32 @@ const App: React.FC = () => {
         format: storedEntry.format,
         timestamp: storedEntry.timestamp,
         blob: storedEntry.blob,
+        metadata: storedEntry.metadata,
       }, ...job.exports].slice(0, 20),
     }));
+  };
+
+  const packageExportMetadata = (job: StudioJob): StoredJobExport['metadata'] => {
+    const review = packageReview ?? buildProductionPackageReview(
+      job,
+      preflightFindings,
+      preflightAcknowledged,
+      Boolean(processedResult),
+      profileUpdateState.status,
+    );
+    const gate = getPreflightGate(preflightFindings, preflightAcknowledged);
+    const placement = job.placements[job.activePlacementKey];
+    return {
+      kind: 'production-package',
+      readinessStatus: review.handoffReadiness.status,
+      readinessSummary: review.handoffReadiness.summary,
+      packageContents: review.items
+        .filter((entry) => entry.status === 'ready')
+        .map((entry) => entry.label),
+      preflightSummary: `${preflightFindings.filter((finding) => finding.severity === 'pass').length} pass · ${gate.warningCount} warning · ${gate.criticalCount} critical`,
+      proofApprovalStatus: job.proofApproval.status,
+      placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
+    };
   };
 
   const handleSettingsChange = (nextSettings: ProcessingSettings, commit: boolean) => {
@@ -734,7 +760,14 @@ const App: React.FC = () => {
         appliedTemplateStatus,
       });
       downloadBlob(result.blob, result.filename);
-      addToExportHistory({ filename: result.filename, format: 'ZIP', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+      addToExportHistory({
+        filename: result.filename,
+        format: 'ZIP',
+        timestamp: Date.now(),
+        url: URL.createObjectURL(result.blob),
+        blob: result.blob,
+        metadata: packageExportMetadata(currentProductionJob ?? currentJob),
+      });
     } catch (packageError) {
       console.error(packageError);
       setError('The production package could not be generated.');
@@ -756,7 +789,18 @@ const App: React.FC = () => {
         quality,
       );
       downloadBlob(result.blob, result.filename);
-      addToExportHistory({ filename: result.filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+      addToExportHistory({
+        filename: result.filename,
+        format: 'PDF',
+        timestamp: Date.now(),
+        url: URL.createObjectURL(result.blob),
+        blob: result.blob,
+        metadata: {
+          kind: 'customer-proof',
+          proofApprovalStatus: currentJob.proofApproval.status,
+          placementSummary: formatPlacementSummary(activePlacement),
+        },
+      });
     } catch (proofError) {
       console.error(proofError);
       setError('The customer proof could not be generated.');
@@ -852,7 +896,7 @@ const App: React.FC = () => {
       const result = await generateUnderbase(processedResult.url, format);
       const filename = `underbase_${settings.itemType.toLowerCase()}.${format.toLowerCase()}`;
       downloadBlob(result.blob, filename);
-      addToExportHistory({ filename, format, timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+      addToExportHistory({ filename, format, timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'underbase', placementSummary: formatPlacementSummary(activePlacement) } });
     } catch {
       setError('The white underbase could not be generated.');
     }
@@ -862,7 +906,7 @@ const App: React.FC = () => {
     if (!processedResult) return;
     const filename = `inkmaster_${selectedRecipeId ?? 'custom'}_${settings.itemType.toLowerCase()}.${settings.format.toLowerCase()}`;
     downloadBlob(processedResult.blob, filename);
-    addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob });
+    addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement) } });
   };
 
   const handleDownloadPdf = async () => {
@@ -871,7 +915,7 @@ const App: React.FC = () => {
       const result = await generatePrintPDF(processedResult.url, settings.itemType);
       const filename = `inkmaster_production_${settings.itemType.toLowerCase()}.pdf`;
       downloadBlob(result.blob, filename);
-      addToExportHistory({ filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob });
+      addToExportHistory({ filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'production-pdf', placementSummary: formatPlacementSummary(activePlacement) } });
     } catch {
       setError('The production PDF could not be generated.');
     }

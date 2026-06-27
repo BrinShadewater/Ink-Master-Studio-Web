@@ -535,6 +535,52 @@ test('round-trips proof approval state through a portable job archive', async ()
   assert.notEqual(imported.proofApproval, source.proofApproval);
 });
 
+test('round-trips production export metadata through a portable job archive', async () => {
+  const source = createStudioJob('Portable export metadata');
+  source.exports = [{
+    id: 'export-package',
+    filename: 'portable-production.zip',
+    format: 'ZIP',
+    timestamp: 1_700_000_000_000,
+    blob: new Blob(['zip']),
+    metadata: {
+      kind: 'production-package',
+      readinessStatus: 'ready',
+      readinessSummary: 'Production handoff is ready.',
+      packageContents: ['Print master', 'Job manifest'],
+      preflightSummary: '4 pass · 0 warning · 0 critical',
+      proofApprovalStatus: 'approved',
+      placementSummary: 'full-front placement · T-shirt front',
+    },
+  }];
+
+  const archive = await exportPortableJob(source);
+  const imported = await importPortableJob(archive);
+
+  assert.deepEqual(imported.exports[0].metadata, source.exports[0].metadata);
+  assert.equal(await imported.exports[0].blob.text(), 'zip');
+});
+
+test('drops malformed export metadata during migration', () => {
+  const migrated = migrateStudioJob({
+    ...createStudioJob('Malformed export metadata'),
+    exports: [{
+      id: 'export-bad',
+      filename: 'bad.zip',
+      format: 'ZIP',
+      timestamp: 1,
+      blob: new Blob(['bad']),
+      metadata: {
+        kind: 'public-link',
+        readinessStatus: 'published',
+        packageContents: ['Manifest'],
+      },
+    }],
+  });
+
+  assert.equal(migrated.exports[0].metadata, undefined);
+});
+
 test('migrates a malformed portable production profile to Standard DTG', async () => {
   const source = createStudioJob('Portable malformed', customProfile());
   const archive = await exportPortableJob(source);
