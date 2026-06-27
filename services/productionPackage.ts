@@ -3,6 +3,7 @@ import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary, formatPrintSizeSummary } from './handoffDetails';
 import { getSelectedProductionMockups } from './mockups';
 import { AppliedTemplateStatus, StudioJob } from '../types';
+import { buildProofApprovalAuditLine } from './proofApproval';
 
 export interface PackageAsset {
   filename: string;
@@ -154,6 +155,7 @@ export const createJobManifest = (
     packageAssets,
     palette,
     preflightFindings: job.preflightFindings,
+    proofApproval: job.proofApproval,
   };
 };
 
@@ -179,6 +181,7 @@ const summaryText = (
     `Method: ${job.printSpecification.method}`,
     `Print size: ${formatPrintSizeSummary(job.printSpecification.widthInches, job.printSpecification.heightInches)}`,
     `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
+    `Proof approval: ${buildProofApprovalAuditLine(job)}`,
     `Format: ${job.settings.format}`,
     `Palette: ${palette.join(', ') || 'Not analyzed'}`,
     `Recipe: ${job.selectedRecipeId ?? 'custom'}`,

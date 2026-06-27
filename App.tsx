@@ -20,6 +20,7 @@ import {
   OutputFormat,
   ProcessingSettings,
   ProcessedResult,
+  ProofApprovalState,
   RecipeId,
   RecipeRecommendation,
   ShirtColor,
@@ -78,6 +79,12 @@ import {
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
+import {
+  createProofApprovalState,
+  getCloudApprovalCapability,
+  markProofSent,
+  recordProofResponse,
+} from './services/proofApproval';
 import { editImageWithGemini, getAiCleanupStatus } from './services/geminiService';
 import {
   applyTemplateToJob,
@@ -282,6 +289,8 @@ const App: React.FC = () => {
         },
     [currentProductionJob],
   );
+  const cloudApprovalCapability = useMemo(() => getCloudApprovalCapability(), []);
+  const fallbackProofApproval = useMemo(() => createProofApprovalState(), []);
 
   const refreshJobs = async () => {
     try {
@@ -512,6 +521,21 @@ const App: React.FC = () => {
     updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId }), false);
     setStage('prepare');
   };
+
+  const handleProofApprovalChange = (proofApproval: ProofApprovalState) => updateCurrentJob((job) => ({
+    ...job,
+    proofApproval,
+  }));
+
+  const handleMarkProofSent = () => updateCurrentJob((job) => ({
+    ...job,
+    proofApproval: markProofSent(job.proofApproval),
+  }));
+
+  const handleRecordProofResponse = (status: 'approved' | 'changes-requested') => updateCurrentJob((job) => ({
+    ...job,
+    proofApproval: recordProofResponse(job.proofApproval, status),
+  }));
 
   const handleAiEdgeCleanup = async () => {
     if (!originalImage || !currentJob) return;
@@ -997,6 +1021,8 @@ const App: React.FC = () => {
               appliedTemplateStatus={appliedTemplateStatus}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
+              proofApproval={currentJob?.proofApproval ?? fallbackProofApproval}
+              cloudApprovalCapability={cloudApprovalCapability}
               proofFilenames={proofFilenames}
               selectedMockupCount={resolveMockupSelectionForItemType(currentJob?.packageOptions.selectedMockupIndices, settings.itemType).length}
               selectedMockupSummary={describeSelectedMockups(currentJob?.packageOptions.selectedMockupIndices, settings.itemType)}
@@ -1032,6 +1058,9 @@ const App: React.FC = () => {
                 ...job,
                 proofBranding,
               }))}
+              onProofApprovalChange={handleProofApprovalChange}
+              onMarkProofSent={handleMarkProofSent}
+              onRecordProofResponse={handleRecordProofResponse}
               onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
               onDownloadProof={(quality) => void handleDownloadProof(quality)}
             />

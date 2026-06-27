@@ -17,10 +17,13 @@ import {
 import {
   AppliedProductionProfile,
   AppliedShopTemplate,
+  ProofApprovalState,
+  ProofApprovalStatus,
   ProductionPackageOptions,
   ProductionProfile,
   StudioJob,
 } from '../types';
+import { createProofApprovalState } from './proofApproval';
 
 const now = () => Date.now();
 const createId = (prefix: string) =>
@@ -43,6 +46,13 @@ const packageOptionsFromProfile = (
   ...structuredClone(profile.defaults.packageOptions),
   includeUnderbase: profile.defaults.includeUnderbase,
 });
+
+const PROOF_APPROVAL_STATUSES: ProofApprovalStatus[] = [
+  'not-requested',
+  'sent',
+  'approved',
+  'changes-requested',
+];
 
 const migrateAppliedProductionProfile = (
   value: unknown,
@@ -120,6 +130,7 @@ export const createStudioJob = (
     preflightFindings: [],
     acknowledgedPreflightRevision: null,
     proofBranding: { ...DEFAULT_PROOF_BRANDING },
+    proofApproval: createProofApprovalState(),
     packageOptions: packageOptionsFromProfile(profile),
     appliedTemplate: null,
     versions: [],
@@ -145,6 +156,27 @@ const migrateAppliedTemplate = (value: unknown): AppliedShopTemplate | null => {
     id: value.id,
     name: value.name,
     appliedAt: value.appliedAt,
+  };
+};
+
+const migrateProofApproval = (value: unknown): ProofApprovalState => {
+  const base = createProofApprovalState();
+  if (!isRecord(value)) return base;
+  const status = typeof value.status === 'string' && PROOF_APPROVAL_STATUSES.includes(value.status as ProofApprovalStatus)
+    ? value.status as ProofApprovalStatus
+    : base.status;
+  return {
+    ...base,
+    status,
+    requestedAt: typeof value.requestedAt === 'number' ? value.requestedAt : null,
+    respondedAt: typeof value.respondedAt === 'number' ? value.respondedAt : null,
+    approverName: typeof value.approverName === 'string' ? value.approverName : '',
+    approverEmail: typeof value.approverEmail === 'string' ? value.approverEmail : '',
+    notes: typeof value.notes === 'string' ? value.notes : '',
+    shareUrl: typeof value.shareUrl === 'string' && value.shareUrl.trim() ? value.shareUrl : null,
+    cloudSyncStatus: value.cloudSyncStatus === 'ready' || value.cloudSyncStatus === 'not-configured'
+      ? value.cloudSyncStatus
+      : 'local-only',
   };
 };
 
@@ -209,6 +241,7 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
       ? source.acknowledgedPreflightRevision
       : null,
     proofBranding: { ...base.proofBranding, ...proofBranding },
+    proofApproval: migrateProofApproval(source.proofApproval),
     packageOptions: {
       ...base.packageOptions,
       ...packageOptions,
@@ -282,5 +315,6 @@ export const duplicateStudioJob = (job: StudioJob): StudioJob => {
     versions: [],
     exports: [],
     acknowledgedPreflightRevision: null,
+    proofApproval: createProofApprovalState(),
   };
 };

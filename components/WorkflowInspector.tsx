@@ -11,6 +11,7 @@ import {
   PlacementMeasurement,
   PreflightFinding,
   PrintSpecification,
+  ProofApprovalState,
   ProofBranding,
   ProductionProfile,
   ProcessingSettings,
@@ -28,6 +29,7 @@ import { getPreflightGate } from '../services/preflight';
 import { getRecipe, RECIPES } from '../services/recipes';
 import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
+import { CloudApprovalCapability } from '../services/proofApproval';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -70,6 +72,8 @@ interface WorkflowInspectorProps {
   appliedTemplateStatus: AppliedTemplateStatus;
   namingPattern: string;
   proofBranding: ProofBranding;
+  proofApproval: ProofApprovalState;
+  cloudApprovalCapability: CloudApprovalCapability;
   proofFilenames: { print: string; email: string };
   selectedMockupCount: number;
   selectedMockupSummary: string;
@@ -90,6 +94,9 @@ interface WorkflowInspectorProps {
   onNamingPatternChange: (pattern: string) => void;
   onUpdateAppliedTemplate: () => void;
   onProofBrandingChange: (branding: ProofBranding) => void;
+  onProofApprovalChange: (approval: ProofApprovalState) => void;
+  onMarkProofSent: () => void;
+  onRecordProofResponse: (status: 'approved' | 'changes-requested') => void;
   onDownloadProductionPackage: () => void;
   onDownloadProof: (quality: 'print' | 'email') => void;
 }
@@ -161,6 +168,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     appliedTemplateStatus,
     namingPattern,
     proofBranding,
+    proofApproval,
+    cloudApprovalCapability,
     proofFilenames,
     selectedMockupCount,
     selectedMockupSummary,
@@ -181,6 +190,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onNamingPatternChange,
     onUpdateAppliedTemplate,
     onProofBrandingChange,
+    onProofApprovalChange,
+    onMarkProofSent,
+    onRecordProofResponse,
     onDownloadProductionPackage,
     onDownloadProof,
   } = props;
@@ -573,6 +585,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
             <CustomerProofBuilder
               branding={proofBranding}
+              approval={proofApproval}
+              cloudCapability={cloudApprovalCapability}
               printFilename={proofFilenames.print}
               emailFilename={proofFilenames.email}
               mockupCount={selectedMockupCount}
@@ -580,6 +594,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               canExport={preflightGate.canExport}
               hasProcessedResult={hasProcessedResult}
               onChange={onProofBrandingChange}
+              onApprovalChange={onProofApprovalChange}
+              onMarkProofSent={onMarkProofSent}
+              onRecordProofResponse={onRecordProofResponse}
               onDownloadProof={onDownloadProof}
             />
 

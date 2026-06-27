@@ -40,6 +40,9 @@ test('creates a versioned job with production defaults', () => {
   assert.equal(job.printSpecification.widthInches, 12);
   assert.ok(job.activePlacementKey);
   assert.ok(job.placements[job.activePlacementKey]);
+  assert.equal(job.proofApproval.status, 'not-requested');
+  assert.equal(job.proofApproval.cloudSyncStatus, 'local-only');
+  assert.equal(job.proofApproval.shareUrl, null);
 });
 
 test('creates a job from an immutable applied production profile snapshot', () => {
@@ -83,6 +86,16 @@ test('migrates partial legacy job data into the current schema', () => {
     settings: { threshold: 42, format: OutputFormat.JPG },
     printSpecification: { method: 'DTF', targetDpi: 240 },
     packageOptions: { namingPattern: 'legacy-{job}', includeUnderbase: true },
+    proofApproval: {
+      status: 'approved',
+      requestedAt: 1_700_000_000_000,
+      respondedAt: 1_700_000_100_000,
+      approverName: 'Taylor',
+      approverEmail: 'taylor@example.com',
+      notes: 'Approved by email.',
+      shareUrl: 'https://example.com/proof',
+      cloudSyncStatus: 'ready',
+    },
   });
 
   assert.equal(migrated.id, 'legacy');
@@ -93,6 +106,9 @@ test('migrates partial legacy job data into the current schema', () => {
   assert.equal(migrated.printSpecification.targetDpi, 240);
   assert.equal(migrated.packageOptions.namingPattern, 'legacy-{job}');
   assert.equal(migrated.packageOptions.includeUnderbase, true);
+  assert.equal(migrated.proofApproval.status, 'approved');
+  assert.equal(migrated.proofApproval.approverName, 'Taylor');
+  assert.equal(migrated.proofApproval.cloudSyncStatus, 'ready');
   assert.equal(migrated.schemaVersion, 1);
   assert.equal(migrated.productionProfile.snapshot.name, 'Standard DTG');
   assert.equal(migrated.productionProfile.snapshot.method, 'DTG');
@@ -105,6 +121,25 @@ test('migrates partial legacy job data into the current schema', () => {
     migrated.productionProfile.snapshot.revision,
   );
   assert.equal(migrated.appliedTemplate, null);
+});
+
+test('drops malformed proof approval state during migration', () => {
+  const migrated = migrateStudioJob({
+    metadata: { name: 'Bad approval' },
+    proofApproval: {
+      status: 'posted',
+      requestedAt: 'yesterday',
+      respondedAt: false,
+      approverName: 123,
+      cloudSyncStatus: 'public',
+    },
+  });
+
+  assert.equal(migrated.proofApproval.status, 'not-requested');
+  assert.equal(migrated.proofApproval.requestedAt, null);
+  assert.equal(migrated.proofApproval.respondedAt, null);
+  assert.equal(migrated.proofApproval.approverName, '');
+  assert.equal(migrated.proofApproval.cloudSyncStatus, 'local-only');
 });
 
 test('migrates valid applied template provenance and drops malformed records', () => {
@@ -390,12 +425,21 @@ test('duplicates jobs without sharing identity or export history', () => {
     timestamp: 1,
     blob: new Blob(['png']),
   }];
+  source.proofApproval = {
+    ...source.proofApproval,
+    status: 'approved',
+    requestedAt: 1_700_000_000_000,
+    respondedAt: 1_700_000_100_000,
+    approverName: 'Taylor',
+  };
 
   const duplicate = duplicateStudioJob(source);
 
   assert.notEqual(duplicate.id, source.id);
   assert.equal(duplicate.metadata.name, 'Original copy');
   assert.deepEqual(duplicate.exports, []);
+  assert.equal(duplicate.proofApproval.status, 'not-requested');
+  assert.equal(duplicate.proofApproval.requestedAt, null);
   assert.equal(duplicate.sourceArtwork, source.sourceArtwork);
   assert.deepEqual(duplicate.productionProfile, source.productionProfile);
   assert.notEqual(duplicate.productionProfile, source.productionProfile);
@@ -448,6 +492,25 @@ test('round-trips a custom production profile snapshot through a portable job ar
     source.productionProfile.snapshot.defaults.packageOptions.selectedMockupIndices,
     [0, 4],
   );
+});
+
+test('round-trips proof approval state through a portable job archive', async () => {
+  const source = createStudioJob('Portable approval');
+  source.proofApproval = {
+    ...source.proofApproval,
+    status: 'changes-requested',
+    requestedAt: 1_700_000_000_000,
+    respondedAt: 1_700_000_100_000,
+    approverName: 'Taylor',
+    approverEmail: 'taylor@example.com',
+    notes: 'Move the design down half an inch.',
+  };
+
+  const archive = await exportPortableJob(source);
+  const imported = await importPortableJob(archive);
+
+  assert.deepEqual(imported.proofApproval, source.proofApproval);
+  assert.notEqual(imported.proofApproval, source.proofApproval);
 });
 
 test('migrates a malformed portable production profile to Standard DTG', async () => {

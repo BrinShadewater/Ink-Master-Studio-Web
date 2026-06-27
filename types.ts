@@ -154,6 +154,19 @@ export interface ProofBranding {
   footerNote: string;
 }
 
+export type ProofApprovalStatus = 'not-requested' | 'sent' | 'approved' | 'changes-requested';
+
+export interface ProofApprovalState {
+  status: ProofApprovalStatus;
+  requestedAt: number | null;
+  respondedAt: number | null;
+  approverName: string;
+  approverEmail: string;
+  notes: string;
+  shareUrl: string | null;
+  cloudSyncStatus: 'local-only' | 'not-configured' | 'ready';
+}
+
 export interface ProductionPackageOptions {
   namingPattern: string;
   includePrintMaster: boolean;
@@ -261,6 +274,7 @@ export interface StudioJob {
   preflightFindings: PreflightFinding[];
   acknowledgedPreflightRevision: number | null;
   proofBranding: ProofBranding;
+  proofApproval: ProofApprovalState;
   packageOptions: ProductionPackageOptions;
   appliedTemplate: AppliedShopTemplate | null;
   versions: Array<{

@@ -44,6 +44,8 @@ test('builds a production package with selected assets and manifest', async () =
   assert.ok(zip.file('production-summary.txt'));
   assert.equal(manifest.job.name, 'Package');
   assert.equal(manifest.printSpecification.widthInches, 12);
+  assert.equal(manifest.proofApproval.status, 'not-requested');
+  assert.equal(manifest.proofApproval.cloudSyncStatus, 'local-only');
   assert.match(manifest.placementSummary, /T-shirt front/);
   assert.match(manifest.placementSummary, /offset 0 in horizontal, 2 in from top/);
   assert.deepEqual(manifest.packageOptions.selectedMockups, [
@@ -127,6 +129,7 @@ test('includes profile name and revision in production summary', async () => {
   assert.match(summary, /Profile: Brother GTX queue/);
   assert.match(summary, /revision 1/);
   assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
+  assert.match(summary, /Proof approval: Not requested/);
 });
 
 test('includes applied template provenance in production package handoff', async () => {
@@ -192,7 +195,25 @@ test('creates proof metadata with placement and approval fields', () => {
   assert.match(descriptor.placement, /T-shirt front/);
   assert.match(descriptor.placement, /12×14 in/);
   assert.match(descriptor.placement, /offset 0 in horizontal, 2 in from top/);
+  assert.equal(descriptor.approvalStatus, 'Not requested');
+  assert.match(descriptor.approvalAudit, /local-only/);
   assert.match(descriptor.approvalText, /approve/i);
+});
+
+test('creates proof metadata with local approval state', () => {
+  const job = createStudioJob('Proof approval');
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    requestedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+
+  const descriptor = buildProofDescriptor(job, job.placements[job.activePlacementKey]);
+
+  assert.equal(descriptor.approvalStatus, 'Approved by Taylor');
+  assert.match(descriptor.approvalAudit, /2026-01-02T04:05:06\.000Z/);
 });
 
 test('creates proof metadata with profile provenance', () => {
