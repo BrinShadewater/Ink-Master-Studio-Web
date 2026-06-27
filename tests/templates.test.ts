@@ -9,6 +9,7 @@ import {
   describeTemplateChanges,
   exportTemplates,
   importTemplates,
+  mergeImportedTemplates,
   migrateTemplates,
 } from '../services/templateStorage';
 import { ItemType } from '../types';
@@ -92,6 +93,44 @@ test('round-trips templates through versioned JSON', () => {
   assert.equal(imported.length, 1);
   assert.equal(imported[0].name, 'Template');
   assert.equal(imported[0].schemaVersion, 1);
+});
+
+test('merges imported templates with replacement, renaming, and duplicate skipping', () => {
+  const existing = createTemplateFromJob(createStudioJob('Existing'), 'Daily DTG', '');
+  existing.id = 'template_existing';
+  const replacement = createTemplateFromJob(createStudioJob('Replacement'), 'Updated DTG', '');
+  replacement.id = existing.id;
+  const sameName = createTemplateFromJob(createStudioJob('Same name'), 'Daily DTG', '');
+  sameName.id = 'template_same_name';
+  const duplicateImport = createTemplateFromJob(createStudioJob('Duplicate'), 'Duplicate import', '');
+  duplicateImport.id = sameName.id;
+
+  const result = mergeImportedTemplates([existing], [replacement, sameName, duplicateImport]);
+
+  assert.equal(result.added, 1);
+  assert.equal(result.replaced, 1);
+  assert.equal(result.renamed, 1);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(result.templates.map((template) => template.id), ['template_existing', 'template_same_name']);
+  assert.equal(result.templates[0].name, 'Updated DTG');
+  assert.equal(result.templates[1].name, 'Daily DTG (Imported)');
+});
+
+test('renames imported replacements that collide with another existing template name', () => {
+  const replaced = createTemplateFromJob(createStudioJob('Replaced'), 'Daily DTG', '');
+  replaced.id = 'template_replaced';
+  const existing = createTemplateFromJob(createStudioJob('Existing'), 'Left chest', '');
+  existing.id = 'template_existing';
+  const replacement = createTemplateFromJob(createStudioJob('Replacement'), 'Left chest', '');
+  replacement.id = replaced.id;
+
+  const result = mergeImportedTemplates([replaced, existing], [replacement]);
+
+  assert.equal(result.replaced, 1);
+  assert.equal(result.renamed, 1);
+  assert.deepEqual(result.templates.map((template) => template.id), ['template_replaced', 'template_existing']);
+  assert.equal(result.templates[0].name, 'Left chest (Imported)');
+  assert.equal(result.templates[1].name, 'Left chest');
 });
 
 test('keeps templates independent from production profile snapshots', () => {

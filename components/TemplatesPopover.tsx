@@ -10,6 +10,7 @@ interface TemplatesPopoverProps {
   onDelete: (template: ShopTemplate) => void;
   onExport: () => void;
   onImport: (file: File) => void;
+  importMessage?: string | null;
 }
 
 export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
@@ -20,6 +21,7 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
   onDelete,
   onExport,
   onImport,
+  importMessage = null,
 }) => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -36,6 +38,11 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="New template name" className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
             <button type="button" disabled={!name.trim()} onClick={() => { onSave(name, 'Shop production template'); setName(''); }} className="rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-30">Save</button>
           </div>
+          {importMessage && (
+            <p className="mt-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-[10px] font-semibold text-indigo-200">
+              {importMessage}
+            </p>
+          )}
           <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
             {templates.map((template) => (
               <div key={template.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">

@@ -9,6 +9,14 @@ const createId = () => `template_${now()}_${Math.random().toString(36).slice(2, 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+export interface TemplateImportResult {
+  templates: ShopTemplate[];
+  added: number;
+  replaced: number;
+  renamed: number;
+  skipped: number;
+}
+
 export const createTemplateFromJob = (
   job: StudioJob,
   name: string,
@@ -182,6 +190,76 @@ export const importTemplates = (raw: string) => {
   } catch {
     return [];
   }
+};
+
+const nextImportedTemplateName = (name: string, usedNames: Set<string>) => {
+  if (!usedNames.has(name.toLowerCase())) return name;
+
+  let copy = 2;
+  let candidate = `${name} (Imported)`;
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${name} (Imported ${copy})`;
+    copy += 1;
+  }
+  return candidate;
+};
+
+export const mergeImportedTemplates = (
+  existing: ShopTemplate[],
+  imported: ShopTemplate[],
+): TemplateImportResult => {
+  const existingById = new Map(existing.map((template) => [template.id, template]));
+  const originalExistingNames = new Set(existing.map((template) => template.name.toLowerCase()));
+  const importedById = new Map<string, ShopTemplate>();
+  let skipped = 0;
+
+  for (const template of imported) {
+    if (importedById.has(template.id)) {
+      skipped += 1;
+      continue;
+    }
+    importedById.set(template.id, template);
+  }
+
+  const usedNames = new Set(existing.map((template) => template.name.toLowerCase()));
+  const mergedImports: ShopTemplate[] = [];
+  let added = 0;
+  let replaced = 0;
+  let renamed = 0;
+
+  for (const template of importedById.values()) {
+    const replacesExisting = existingById.has(template.id);
+    if (replacesExisting) {
+      replaced += 1;
+      usedNames.delete(existingById.get(template.id)!.name.toLowerCase());
+    } else {
+      added += 1;
+    }
+
+    const nextName = nextImportedTemplateName(
+      template.name,
+      replacesExisting ? usedNames : new Set([...usedNames, ...originalExistingNames]),
+    );
+    if (nextName !== template.name) renamed += 1;
+    usedNames.add(nextName.toLowerCase());
+    mergedImports.push({
+      ...template,
+      name: nextName,
+      updatedAt: now(),
+    });
+  }
+
+  const importedIds = new Set(mergedImports.map((template) => template.id));
+  return {
+    templates: [
+      ...mergedImports,
+      ...existing.filter((template) => !importedIds.has(template.id)),
+    ],
+    added,
+    replaced,
+    renamed,
+    skipped,
+  };
 };
 
 export const loadTemplates = () =>

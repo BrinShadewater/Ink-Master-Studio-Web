@@ -83,6 +83,7 @@ import {
   exportTemplates,
   importTemplates,
   loadTemplates,
+  mergeImportedTemplates,
   saveTemplates,
 } from './services/templateStorage';
 
@@ -136,6 +137,7 @@ const App: React.FC = () => {
   const [showJobs, setShowJobs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [shopTemplates, setShopTemplates] = useState<ShopTemplate[]>([]);
+  const [templateImportMessage, setTemplateImportMessage] = useState<string | null>(null);
   const [profileStore, setProfileStore] = useState(() => loadProfileStore());
   const [showProfiles, setShowProfiles] = useState(false);
   const [profileUpdateSource, setProfileUpdateSource] = useState<ProductionProfile | null>(null);
@@ -624,6 +626,7 @@ const App: React.FC = () => {
     if (!currentJob) return;
     const next = [createTemplateFromJob(currentJob, name, description), ...shopTemplates];
     setShopTemplates(next);
+    setTemplateImportMessage(null);
     saveTemplates(next);
   };
 
@@ -649,6 +652,7 @@ const App: React.FC = () => {
   const handleDeleteTemplate = (template: ShopTemplate) => {
     const next = shopTemplates.filter((candidate) => candidate.id !== template.id);
     setShopTemplates(next);
+    setTemplateImportMessage(null);
     saveTemplates(next);
   };
 
@@ -662,9 +666,11 @@ const App: React.FC = () => {
       setError('That template file is invalid or empty.');
       return;
     }
-    const next = [...imported, ...shopTemplates.filter((existing) => !imported.some((entry) => entry.id === existing.id))];
-    setShopTemplates(next);
-    saveTemplates(next);
+    const result = mergeImportedTemplates(shopTemplates, imported);
+    setShopTemplates(result.templates);
+    saveTemplates(result.templates);
+    setTemplateImportMessage(`Imported ${result.added} new, replaced ${result.replaced}, renamed ${result.renamed}, skipped ${result.skipped}.`);
+    setError(null);
   };
 
   const handleGenerateUnderbase = async (format: 'PNG' | 'SVG' | 'JPG') => {
@@ -811,6 +817,7 @@ const App: React.FC = () => {
             onDelete={handleDeleteTemplate}
             onExport={handleExportTemplates}
             onImport={(file) => void handleImportTemplates(file)}
+            importMessage={templateImportMessage}
           />
         )}
         versions={<VersionsPopover currentSettings={settings} currentThumbnail={processedResult?.previewUrl || processedResult?.url || null} onRestore={handleRestoreVersion} />}
