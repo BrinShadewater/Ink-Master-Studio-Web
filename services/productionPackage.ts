@@ -182,6 +182,7 @@ const summaryText = (
     `Print size: ${formatPrintSizeSummary(job.printSpecification.widthInches, job.printSpecification.heightInches)}`,
     `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
     `Proof approval: ${buildProofApprovalAuditLine(job)}`,
+    `Proof approval events: ${job.proofApproval.events.length}`,
     `Format: ${job.settings.format}`,
     `Palette: ${palette.join(', ') || 'Not analyzed'}`,
     `Recipe: ${job.selectedRecipeId ?? 'custom'}`,

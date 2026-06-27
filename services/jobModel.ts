@@ -17,6 +17,7 @@ import {
 import {
   AppliedProductionProfile,
   AppliedShopTemplate,
+  ProofApprovalEvent,
   ProofApprovalState,
   ProofApprovalStatus,
   ProductionPackageOptions,
@@ -177,6 +178,17 @@ const migrateProofApproval = (value: unknown): ProofApprovalState => {
     cloudSyncStatus: value.cloudSyncStatus === 'ready' || value.cloudSyncStatus === 'not-configured'
       ? value.cloudSyncStatus
       : 'local-only',
+    events: Array.isArray(value.events)
+      ? value.events.filter((entry): entry is ProofApprovalEvent => {
+          if (!isRecord(entry)) return false;
+          return typeof entry.id === 'string'
+            && typeof entry.timestamp === 'number'
+            && typeof entry.status === 'string'
+            && PROOF_APPROVAL_STATUSES.includes(entry.status as ProofApprovalStatus)
+            && typeof entry.actor === 'string'
+            && typeof entry.note === 'string';
+        }).map((entry) => ({ ...entry }))
+      : [],
   };
 };
 

@@ -95,6 +95,13 @@ test('migrates partial legacy job data into the current schema', () => {
       notes: 'Approved by email.',
       shareUrl: 'https://example.com/proof',
       cloudSyncStatus: 'ready',
+      events: [{
+        id: 'approval-1',
+        timestamp: 1_700_000_100_000,
+        status: 'approved',
+        actor: 'Taylor',
+        note: 'Approved by email.',
+      }],
     },
   });
 
@@ -109,6 +116,13 @@ test('migrates partial legacy job data into the current schema', () => {
   assert.equal(migrated.proofApproval.status, 'approved');
   assert.equal(migrated.proofApproval.approverName, 'Taylor');
   assert.equal(migrated.proofApproval.cloudSyncStatus, 'ready');
+  assert.deepEqual(migrated.proofApproval.events, [{
+    id: 'approval-1',
+    timestamp: 1_700_000_100_000,
+    status: 'approved',
+    actor: 'Taylor',
+    note: 'Approved by email.',
+  }]);
   assert.equal(migrated.schemaVersion, 1);
   assert.equal(migrated.productionProfile.snapshot.name, 'Standard DTG');
   assert.equal(migrated.productionProfile.snapshot.method, 'DTG');
@@ -132,6 +146,13 @@ test('drops malformed proof approval state during migration', () => {
       respondedAt: false,
       approverName: 123,
       cloudSyncStatus: 'public',
+      events: [{
+        id: 'bad',
+        timestamp: 'today',
+        status: 'approved',
+        actor: 'Taylor',
+        note: 'Nope',
+      }],
     },
   });
 
@@ -140,6 +161,7 @@ test('drops malformed proof approval state during migration', () => {
   assert.equal(migrated.proofApproval.respondedAt, null);
   assert.equal(migrated.proofApproval.approverName, '');
   assert.equal(migrated.proofApproval.cloudSyncStatus, 'local-only');
+  assert.deepEqual(migrated.proofApproval.events, []);
 });
 
 test('migrates valid applied template provenance and drops malformed records', () => {

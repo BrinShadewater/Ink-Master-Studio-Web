@@ -1,4 +1,4 @@
-import { ProofApprovalState, ProofApprovalStatus, StudioJob } from '../types';
+import { ProofApprovalEvent, ProofApprovalState, ProofApprovalStatus, StudioJob } from '../types';
 
 export interface CloudApprovalCapability {
   status: 'not-configured';
@@ -17,7 +17,35 @@ export const createProofApprovalState = (): ProofApprovalState => ({
   notes: '',
   shareUrl: null,
   cloudSyncStatus: 'local-only',
+  events: [],
 });
+
+const createProofApprovalEvent = (
+  status: ProofApprovalStatus,
+  timestamp: number,
+  sequence: number,
+  actor: string,
+  note: string,
+): ProofApprovalEvent => ({
+  id: `approval_${timestamp}_${sequence}_${status}`,
+  timestamp,
+  status,
+  actor,
+  note,
+});
+
+const approvalActor = (state: ProofApprovalState): string =>
+  state.approverName.trim() || state.approverEmail.trim() || 'Shop operator';
+
+const appendEvent = (
+  current: ProofApprovalState,
+  status: ProofApprovalStatus,
+  timestamp: number,
+  note: string,
+): ProofApprovalEvent[] => [
+  ...current.events,
+  createProofApprovalEvent(status, timestamp, current.events.length + 1, approvalActor(current), note),
+];
 
 export const getCloudApprovalCapability = (): CloudApprovalCapability => ({
   status: 'not-configured',
@@ -45,6 +73,7 @@ export const markProofSent = (
   respondedAt: null,
   shareUrl: null,
   cloudSyncStatus: 'local-only',
+  events: appendEvent(current, 'sent', timestamp, 'Proof exported or sent for customer review.'),
 });
 
 export const recordProofResponse = (
@@ -58,6 +87,14 @@ export const recordProofResponse = (
   requestedAt: current.requestedAt ?? timestamp,
   shareUrl: null,
   cloudSyncStatus: 'local-only',
+  events: appendEvent(
+    current,
+    status,
+    timestamp,
+    status === 'approved'
+      ? 'Customer approved this proof for production.'
+      : current.notes.trim() || 'Customer requested changes before production.',
+  ),
 });
 
 export const describeProofApprovalStatus = (state: ProofApprovalState): string => {
@@ -76,3 +113,17 @@ export const buildProofApprovalAuditLine = (job: StudioJob): string => {
   const channel = state.shareUrl ? ` · ${state.shareUrl}` : ' · local-only';
   return `${describeProofApprovalStatus(state)}${requested}${responded}${channel}`;
 };
+
+export const describeProofApprovalNextStep = (state: ProofApprovalState): string => {
+  if (state.status === 'approved') return 'Ready for production handoff.';
+  if (state.status === 'changes-requested') return 'Revise artwork or placement, then export a new proof.';
+  if (state.status === 'sent') return 'Waiting for customer response.';
+  return 'Export a proof, send it to the customer, then mark it sent.';
+};
+
+export const formatProofApprovalEvent = (event: ProofApprovalEvent): string =>
+  `${new Date(event.timestamp).toISOString()} · ${describeProofApprovalStatus({
+    ...createProofApprovalState(),
+    status: event.status,
+    approverName: event.actor,
+  })} · ${event.note}`;

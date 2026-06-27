@@ -130,6 +130,7 @@ test('includes profile name and revision in production summary', async () => {
   assert.match(summary, /revision 1/);
   assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
   assert.match(summary, /Proof approval: Not requested/);
+  assert.match(summary, /Proof approval events: 0/);
 });
 
 test('includes applied template provenance in production package handoff', async () => {
@@ -214,6 +215,7 @@ test('creates proof metadata with local approval state', () => {
 
   assert.equal(descriptor.approvalStatus, 'Approved by Taylor');
   assert.match(descriptor.approvalAudit, /2026-01-02T04:05:06\.000Z/);
+  assert.deepEqual(descriptor.approvalTimeline, []);
 });
 
 test('creates proof metadata with profile provenance', () => {

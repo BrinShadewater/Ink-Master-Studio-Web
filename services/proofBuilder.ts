@@ -4,7 +4,7 @@ import { PackageAsset } from './productionPackage';
 import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary } from './handoffDetails';
 import { resolveProductionMockupLabel } from './mockups';
-import { buildProofApprovalAuditLine, describeProofApprovalStatus } from './proofApproval';
+import { buildProofApprovalAuditLine, describeProofApprovalStatus, formatProofApprovalEvent } from './proofApproval';
 
 export const buildProofDescriptor = (
   job: StudioJob,
@@ -32,6 +32,7 @@ export const buildProofDescriptor = (
     },
     approvalStatus: describeProofApprovalStatus(job.proofApproval),
     approvalAudit: buildProofApprovalAuditLine(job),
+    approvalTimeline: job.proofApproval.events.map(formatProofApprovalEvent),
     approvalText: 'I approve the artwork, spelling, garment color, print size, and placement shown in this proof.',
   };
 };
@@ -124,6 +125,9 @@ export const generateCustomerProof = async (
   doc.text('Date', 336, 742);
   doc.setFontSize(7);
   doc.text(`Approval tracking: ${descriptor.approvalAudit}`, 36, 754, { maxWidth: 540 });
+  if (descriptor.approvalTimeline.length > 0) {
+    doc.text(`Latest activity: ${descriptor.approvalTimeline[descriptor.approvalTimeline.length - 1]}`, 36, 759, { maxWidth: 540 });
+  }
   doc.text(descriptor.approvalText, 36, 765, { maxWidth: 540 });
   doc.text(descriptor.branding.footerNote, 36, 782, { maxWidth: 540 });
 

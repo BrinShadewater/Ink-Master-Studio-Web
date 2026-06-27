@@ -1,6 +1,12 @@
 import React from 'react';
 import { ProofApprovalState, ProofBranding } from '../types';
-import { CloudApprovalCapability, describeProofApprovalStatus, updateProofApprovalState } from '../services/proofApproval';
+import {
+  CloudApprovalCapability,
+  describeProofApprovalNextStep,
+  describeProofApprovalStatus,
+  formatProofApprovalEvent,
+  updateProofApprovalState,
+} from '../services/proofApproval';
 
 interface CustomerProofBuilderProps {
   branding: ProofBranding;
@@ -24,6 +30,9 @@ const updateField = <K extends keyof ProofBranding>(
   key: K,
   value: ProofBranding[K],
 ): ProofBranding => ({ ...branding, [key]: value });
+
+const recentEvents = (approval: ProofApprovalState) =>
+  approval.events.slice(-3).reverse();
 
 export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   branding,
@@ -85,6 +94,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Local approval tracking</p>
           <p className="mt-1 text-xs font-semibold text-slate-200">{describeProofApprovalStatus(approval)}</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-indigo-200">{describeProofApprovalNextStep(approval)}</p>
         </div>
         <span className="rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
           {approval.cloudSyncStatus}
@@ -124,6 +134,22 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         <button type="button" onClick={() => onRecordProofResponse('changes-requested')} className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:border-amber-400">
           Request changes
         </button>
+      </div>
+      <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Approval timeline</p>
+        {recentEvents(approval).length > 0 ? (
+          <ul className="mt-2 space-y-1">
+            {recentEvents(approval).map((event) => (
+              <li key={event.id} className="text-[10px] leading-relaxed text-slate-400">
+                {formatProofApprovalEvent(event)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+            No approval activity yet. Export a proof and mark it sent when it leaves the shop.
+          </p>
+        )}
       </div>
       <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{cloudCapability.message}</p>
     </div>

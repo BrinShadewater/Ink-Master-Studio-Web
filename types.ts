@@ -156,6 +156,14 @@ export interface ProofBranding {
 
 export type ProofApprovalStatus = 'not-requested' | 'sent' | 'approved' | 'changes-requested';
 
+export interface ProofApprovalEvent {
+  id: string;
+  timestamp: number;
+  status: ProofApprovalStatus;
+  actor: string;
+  note: string;
+}
+
 export interface ProofApprovalState {
   status: ProofApprovalStatus;
   requestedAt: number | null;
@@ -165,6 +173,7 @@ export interface ProofApprovalState {
   notes: string;
   shareUrl: string | null;
   cloudSyncStatus: 'local-only' | 'not-configured' | 'ready';
+  events: ProofApprovalEvent[];
 }
 
 export interface ProductionPackageOptions {
