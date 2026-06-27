@@ -80,10 +80,12 @@ import { buildProofFilename, generateCustomerProof } from './services/proofBuild
 import {
   applyTemplateToJob,
   createTemplateFromJob,
+  duplicateTemplate,
   exportTemplates,
   importTemplates,
   loadTemplates,
   mergeImportedTemplates,
+  renameTemplate,
   saveTemplates,
 } from './services/templateStorage';
 
@@ -656,6 +658,23 @@ const App: React.FC = () => {
     saveTemplates(next);
   };
 
+  const handleDuplicateTemplate = (template: ShopTemplate) => {
+    const copy = duplicateTemplate(template, shopTemplates);
+    const next = [copy, ...shopTemplates];
+    setShopTemplates(next);
+    setTemplateImportMessage(`Duplicated ${template.name} as ${copy.name}.`);
+    saveTemplates(next);
+  };
+
+  const handleRenameTemplate = (template: ShopTemplate, name: string) => {
+    const renamed = renameTemplate(template, shopTemplates, name);
+    if (renamed === template) return;
+    const next = shopTemplates.map((candidate) => candidate.id === template.id ? renamed : candidate);
+    setShopTemplates(next);
+    setTemplateImportMessage(`Renamed template to ${renamed.name}.`);
+    saveTemplates(next);
+  };
+
   const handleExportTemplates = () => {
     downloadBlob(new Blob([exportTemplates(shopTemplates)], { type: 'application/json' }), 'inkmaster-shop-templates.json');
   };
@@ -815,6 +834,8 @@ const App: React.FC = () => {
             onApply={handleApplyTemplate}
             onSave={handleSaveTemplate}
             onDelete={handleDeleteTemplate}
+            onDuplicate={handleDuplicateTemplate}
+            onRename={handleRenameTemplate}
             onExport={handleExportTemplates}
             onImport={(file) => void handleImportTemplates(file)}
             importMessage={templateImportMessage}

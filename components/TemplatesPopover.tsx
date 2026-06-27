@@ -8,6 +8,8 @@ interface TemplatesPopoverProps {
   onApply: (template: ShopTemplate) => void;
   onSave: (name: string, description: string) => void;
   onDelete: (template: ShopTemplate) => void;
+  onDuplicate: (template: ShopTemplate) => void;
+  onRename: (template: ShopTemplate, name: string) => void;
   onExport: () => void;
   onImport: (file: File) => void;
   importMessage?: string | null;
@@ -19,6 +21,8 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
   onApply,
   onSave,
   onDelete,
+  onDuplicate,
+  onRename,
   onExport,
   onImport,
   importMessage = null,
@@ -26,10 +30,12 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [pendingApplyId, setPendingApplyId] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   return (
     <div className="relative">
-      <button type="button" aria-label="Templates" onClick={() => { setPendingApplyId(null); setOpen((value) => !value); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 text-xs font-semibold text-slate-300 hover:border-slate-700 hover:bg-slate-800 hover:text-white">
+      <button type="button" aria-label="Templates" onClick={() => { setPendingApplyId(null); setEditingTemplateId(null); setOpen((value) => !value); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 text-xs font-semibold text-slate-300 hover:border-slate-700 hover:bg-slate-800 hover:text-white">
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 5h16v5H4zM4 14h7v5H4zM15 14h5v5h-5z" /></svg>
         <span className="hidden md:inline">Templates</span>
       </button>
@@ -49,28 +55,64 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
               const changes = currentJob ? describeTemplateChanges(currentJob, template) : [];
               const requiresConfirmation = changes.length > 0;
               const isPendingApply = pendingApplyId === template.id;
+              const isEditing = editingTemplateId === template.id;
 
               return (
                 <div key={template.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">
                   <div className="flex items-start gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (requiresConfirmation && !isPendingApply) {
-                          setPendingApplyId(template.id);
-                          return;
-                        }
-                        onApply(template);
-                        setPendingApplyId(null);
-                        setOpen(false);
-                      }}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-xs font-bold text-white">{template.name}</span>
-                      <TemplateSummary template={template} />
-                    </button>
-                    <button type="button" aria-label={`Delete ${template.name}`} onClick={() => { setPendingApplyId(null); onDelete(template); }} className="px-2 text-xs text-rose-400">×</button>
+                    {isEditing ? (
+                      <div className="min-w-0 flex-1">
+                        <div className="flex gap-1">
+                          <input
+                            value={editingName}
+                            onChange={(event) => setEditingName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                onRename(template, editingName);
+                                setEditingTemplateId(null);
+                              }
+                              if (event.key === 'Escape') setEditingTemplateId(null);
+                            }}
+                            className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs font-bold text-white outline-none focus:border-indigo-500"
+                            autoFocus
+                          />
+                        </div>
+                        <TemplateSummary template={template} />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (requiresConfirmation && !isPendingApply) {
+                            setPendingApplyId(template.id);
+                            return;
+                          }
+                          onApply(template);
+                          setPendingApplyId(null);
+                          setOpen(false);
+                        }}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <span className="block truncate text-xs font-bold text-white">{template.name}</span>
+                        <TemplateSummary template={template} />
+                      </button>
+                    )}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <button type="button" onClick={() => { setPendingApplyId(null); setEditingTemplateId(template.id); setEditingName(template.name); }} className="text-[10px] font-semibold text-slate-400 hover:text-white">Rename</button>
+                      <button type="button" onClick={() => { setPendingApplyId(null); setEditingTemplateId(null); onDuplicate(template); }} className="text-[10px] font-semibold text-slate-400 hover:text-white">Duplicate</button>
+                      <button type="button" aria-label={`Delete ${template.name}`} onClick={() => { setPendingApplyId(null); setEditingTemplateId(null); onDelete(template); }} className="px-1 text-xs text-rose-400">×</button>
+                    </div>
                   </div>
+                  {isEditing && (
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" onClick={() => { onRename(template, editingName); setEditingTemplateId(null); }} disabled={!editingName.trim()} className="flex-1 rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white disabled:opacity-30">
+                        Save name
+                      </button>
+                      <button type="button" onClick={() => setEditingTemplateId(null)} className="flex-1 rounded-md border border-slate-700 px-2 py-1 text-[10px] font-bold text-slate-300">
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                   {currentJob && (
                     <TemplateChangeSummary changes={changes} isPendingApply={isPendingApply} />
                   )}

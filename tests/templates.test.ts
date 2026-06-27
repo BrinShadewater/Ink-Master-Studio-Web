@@ -7,10 +7,12 @@ import {
   createTemplateFromJob,
   describeTemplate,
   describeTemplateChanges,
+  duplicateTemplate,
   exportTemplates,
   importTemplates,
   mergeImportedTemplates,
   migrateTemplates,
+  renameTemplate,
 } from '../services/templateStorage';
 import { ItemType } from '../types';
 
@@ -131,6 +133,41 @@ test('renames imported replacements that collide with another existing template 
   assert.deepEqual(result.templates.map((template) => template.id), ['template_replaced', 'template_existing']);
   assert.equal(result.templates[0].name, 'Left chest (Imported)');
   assert.equal(result.templates[1].name, 'Left chest');
+});
+
+test('duplicates templates with isolated nested production settings and unique names', () => {
+  const source = createTemplateFromJob(createStudioJob('Source'), 'Daily DTG', '');
+  source.settings.colorReplacements = [{ sourceColor: '#ffffff', targetColor: '#f5f5f5', tolerance: 8 }];
+  source.packageOptions.selectedMockupIndices = [0, 2, 4];
+  const existingCopy = createTemplateFromJob(createStudioJob('Existing copy'), 'Daily DTG Copy', '');
+
+  const copy = duplicateTemplate(source, [source, existingCopy]);
+
+  assert.notEqual(copy.id, source.id);
+  assert.equal(copy.name, 'Daily DTG Copy (Copy)');
+  assert.deepEqual(copy.settings.colorReplacements, source.settings.colorReplacements);
+  assert.deepEqual(copy.packageOptions.selectedMockupIndices, [0, 2, 4]);
+
+  copy.settings.colorReplacements[0].targetColor = '#000000';
+  copy.packageOptions.selectedMockupIndices.push(6);
+
+  assert.equal(source.settings.colorReplacements[0].targetColor, '#f5f5f5');
+  assert.deepEqual(source.packageOptions.selectedMockupIndices, [0, 2, 4]);
+});
+
+test('renames templates while avoiding sibling name collisions', () => {
+  const daily = createTemplateFromJob(createStudioJob('Daily'), 'Daily DTG', '');
+  daily.id = 'template_daily';
+  const youth = createTemplateFromJob(createStudioJob('Youth'), 'Youth DTG', '');
+  youth.id = 'template_youth';
+
+  const unchanged = renameTemplate(daily, [daily, youth], '   ');
+  const renamed = renameTemplate(daily, [daily, youth], 'Youth DTG');
+
+  assert.equal(unchanged, daily);
+  assert.equal(renamed.id, daily.id);
+  assert.equal(renamed.name, 'Youth DTG (Renamed)');
+  assert.equal(youth.name, 'Youth DTG');
 });
 
 test('keeps templates independent from production profile snapshots', () => {

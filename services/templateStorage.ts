@@ -192,16 +192,63 @@ export const importTemplates = (raw: string) => {
   }
 };
 
-const nextImportedTemplateName = (name: string, usedNames: Set<string>) => {
+const nextTemplateName = (name: string, usedNames: Set<string>, suffix: string) => {
   if (!usedNames.has(name.toLowerCase())) return name;
 
   let copy = 2;
-  let candidate = `${name} (Imported)`;
+  let candidate = `${name} (${suffix})`;
   while (usedNames.has(candidate.toLowerCase())) {
-    candidate = `${name} (Imported ${copy})`;
+    candidate = `${name} (${suffix} ${copy})`;
     copy += 1;
   }
   return candidate;
+};
+
+export const duplicateTemplate = (
+  template: ShopTemplate,
+  existing: ShopTemplate[],
+  requestedName = `${template.name} Copy`,
+): ShopTemplate => {
+  const timestamp = now();
+  const trimmedName = requestedName.trim() || `${template.name} Copy`;
+  const usedNames = new Set(existing.map((entry) => entry.name.toLowerCase()));
+  return {
+    ...template,
+    id: createId(),
+    name: nextTemplateName(trimmedName, usedNames, 'Copy'),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    settings: {
+      ...template.settings,
+      colorReplacements: template.settings.colorReplacements.map((replacement) => ({ ...replacement })),
+    },
+    printSpecification: { ...template.printSpecification },
+    placement: { ...template.placement },
+    packageOptions: {
+      ...template.packageOptions,
+      selectedMockupIndices: [...template.packageOptions.selectedMockupIndices],
+    },
+    proofBranding: { ...template.proofBranding },
+  };
+};
+
+export const renameTemplate = (
+  template: ShopTemplate,
+  existing: ShopTemplate[],
+  requestedName: string,
+): ShopTemplate => {
+  const trimmedName = requestedName.trim();
+  if (!trimmedName || trimmedName === template.name) return template;
+  const usedNames = new Set(
+    existing
+      .filter((entry) => entry.id !== template.id)
+      .map((entry) => entry.name.toLowerCase()),
+  );
+  return {
+    ...template,
+    name: nextTemplateName(trimmedName, usedNames, 'Renamed'),
+    updatedAt: now(),
+  };
 };
 
 export const mergeImportedTemplates = (
@@ -236,9 +283,10 @@ export const mergeImportedTemplates = (
       added += 1;
     }
 
-    const nextName = nextImportedTemplateName(
+    const nextName = nextTemplateName(
       template.name,
       replacesExisting ? usedNames : new Set([...usedNames, ...originalExistingNames]),
+      'Imported',
     );
     if (nextName !== template.name) renamed += 1;
     usedNames.add(nextName.toLowerCase());
