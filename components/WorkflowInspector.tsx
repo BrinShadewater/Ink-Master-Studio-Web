@@ -13,6 +13,7 @@ import {
   PrintSpecification,
   ProofApprovalState,
   ProofBranding,
+  ProductionPackageOptions,
   ProductionProfile,
   ProcessingSettings,
   RecipeId,
@@ -71,6 +72,7 @@ interface WorkflowInspectorProps {
   jobMetadata: JobMetadata;
   appliedTemplateStatus: AppliedTemplateStatus;
   namingPattern: string;
+  packageOptions: ProductionPackageOptions;
   proofBranding: ProofBranding;
   proofApproval: ProofApprovalState;
   cloudApprovalCapability: CloudApprovalCapability;
@@ -92,6 +94,7 @@ interface WorkflowInspectorProps {
   onAcknowledgePreflight: (value: boolean) => void;
   onJobMetadataChange: (metadata: JobMetadata) => void;
   onNamingPatternChange: (pattern: string) => void;
+  onPackageOptionsChange: (options: ProductionPackageOptions) => void;
   onUpdateAppliedTemplate: () => void;
   onProofBrandingChange: (branding: ProofBranding) => void;
   onProofApprovalChange: (approval: ProofApprovalState) => void;
@@ -143,6 +146,22 @@ const Segmented: React.FC<{
   </div>
 );
 
+const PACKAGE_OPTION_CONTROLS: Array<{
+  key: keyof Pick<
+    ProductionPackageOptions,
+    'includePrintMaster' | 'includeProductionPdf' | 'includeMockups' | 'includeUnderbase' | 'includeSummary' | 'includeManifest'
+  >;
+  label: string;
+  note: string;
+}> = [
+  { key: 'includePrintMaster', label: 'Print master', note: 'Final processed artwork.' },
+  { key: 'includeProductionPdf', label: 'Spec PDF', note: 'Operator-facing print sheet.' },
+  { key: 'includeMockups', label: 'Mockups', note: 'Selected garment/product previews.' },
+  { key: 'includeUnderbase', label: 'Underbase', note: 'White layer for dark garments.' },
+  { key: 'includeSummary', label: 'Summary', note: 'Readable production notes.' },
+  { key: 'includeManifest', label: 'Manifest', note: 'Machine-readable job metadata.' },
+];
+
 export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const {
     stage,
@@ -167,6 +186,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     jobMetadata,
     appliedTemplateStatus,
     namingPattern,
+    packageOptions,
     proofBranding,
     proofApproval,
     cloudApprovalCapability,
@@ -188,6 +208,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onAcknowledgePreflight,
     onJobMetadataChange,
     onNamingPatternChange,
+    onPackageOptionsChange,
     onUpdateAppliedTemplate,
     onProofBrandingChange,
     onProofApprovalChange,
@@ -578,7 +599,31 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
             </Section>
 
             <Section title="Production handoff" description="Create the complete shop package or a customer approval proof.">
-              <div className="space-y-2">
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Package contents</p>
+                    <span className="text-[10px] font-semibold text-slate-500">Per-job</span>
+                  </div>
+                  <div className="grid gap-2">
+                    {PACKAGE_OPTION_CONTROLS.map((control) => (
+                      <div key={control.key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-slate-200">{control.label}</p>
+                          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">{control.note}</p>
+                        </div>
+                        <Toggle
+                          checked={packageOptions[control.key]}
+                          onChange={() => onPackageOptionsChange({
+                            ...packageOptions,
+                            [control.key]: !packageOptions[control.key],
+                          })}
+                          label={`Toggle ${control.label}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <button type="button" disabled={!packageReview?.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">
                   {packageReview?.exportAction.label ?? 'Production package not ready'}
                 </button>

@@ -77,6 +77,31 @@ test('blocks package export until artwork has been processed', () => {
   assert.equal(review.items.find((entry) => entry.id === 'print-master')?.status, 'missing');
 });
 
+test('reflects per-job package content toggles in the review', () => {
+  const job = createStudioJob('Minimal package');
+  job.packageOptions.includePrintMaster = false;
+  job.packageOptions.includeProductionPdf = false;
+  job.packageOptions.includeMockups = false;
+  job.packageOptions.includeUnderbase = false;
+  job.packageOptions.includeSummary = true;
+  job.packageOptions.includeManifest = true;
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.deepEqual(
+    review.items.map((entry) => [entry.id, entry.status]),
+    [
+      ['print-master', 'excluded'],
+      ['production-pdf', 'excluded'],
+      ['mockups', 'excluded'],
+      ['underbase', 'excluded'],
+      ['summary', 'ready'],
+      ['manifest', 'ready'],
+    ],
+  );
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'package-assets')?.status, 'ready');
+});
+
 test('requires warning acknowledgement before package export', () => {
   const job = createStudioJob('Warning package');
 

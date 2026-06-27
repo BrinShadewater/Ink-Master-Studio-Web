@@ -29,7 +29,7 @@ import {
   ProductionProfile,
   WorkspaceStage,
 } from './types';
-import { DEFAULT_PRINT_SPECIFICATION, DEFAULT_PROOF_BRANDING, DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_PACKAGE_OPTIONS, DEFAULT_PRINT_SPECIFICATION, DEFAULT_PROOF_BRANDING, DEFAULT_SETTINGS } from './constants';
 import {
   fileToBase64,
   compositeMockup,
@@ -1024,6 +1024,7 @@ const App: React.FC = () => {
               jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
               appliedTemplateStatus={appliedTemplateStatus}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
+              packageOptions={currentJob?.packageOptions ?? DEFAULT_PACKAGE_OPTIONS}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
               proofApproval={currentJob?.proofApproval ?? fallbackProofApproval}
               cloudApprovalCapability={cloudApprovalCapability}
@@ -1056,6 +1057,10 @@ const App: React.FC = () => {
               onNamingPatternChange={(namingPattern) => updateCurrentJob((job) => ({
                 ...job,
                 packageOptions: { ...job.packageOptions, namingPattern },
+              }))}
+              onPackageOptionsChange={(packageOptions) => updateCurrentJob((job) => ({
+                ...job,
+                packageOptions,
               }))}
               onUpdateAppliedTemplate={handleUpdateAppliedTemplate}
               onProofBrandingChange={(proofBranding) => updateCurrentJob((job) => ({
