@@ -51,7 +51,7 @@ const createPackageAssetManifest = (input: ProductionPackageInput): PackageManif
 
   if (options.includeMockups) {
     const mockups = input.mockups ?? [];
-    const selected = getSelectedProductionMockups(options.selectedMockupIndices);
+    const selected = getSelectedProductionMockups(options.selectedMockupIndices, job.settings.itemType);
     for (const mockup of selected) {
       const expectedFilename = `${mockup.slug}-mockup.png`;
       const includedAsset = mockups.find((asset) => asset.filename === expectedFilename);
@@ -116,7 +116,7 @@ export const createJobManifest = (
   appliedTemplateStatus?: AppliedTemplateStatus,
 ) => {
   const placement = job.placements[job.activePlacementKey];
-  const selectedMockups = getSelectedProductionMockups(job.packageOptions.selectedMockupIndices);
+  const selectedMockups = getSelectedProductionMockups(job.packageOptions.selectedMockupIndices, job.settings.itemType);
   return {
     format: 'inkmaster-production-package',
     schemaVersion: 1,

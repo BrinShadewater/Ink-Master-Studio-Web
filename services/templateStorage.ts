@@ -1,6 +1,6 @@
 import { createStudioJob, touchStudioJob } from './jobModel';
 import { placementVariantKey } from './placement';
-import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
+import { describeSelectedMockups, resolveMockupSelectionForItemType } from './mockups';
 import { AppliedTemplateStatus, ShopTemplate, StudioJob } from '../types';
 
 const STORAGE_KEY = 'inkmaster_shop_templates_v1';
@@ -84,7 +84,7 @@ export const describeTemplate = (template: ShopTemplate) => ({
   placement: `${template.placement.presetId} · ${template.placement.widthInches}×${template.placement.heightInches} in · ${template.placement.location}`,
   output: `${template.settings.format}${template.settings.preserveTransparency ? ' · transparent' : ''}`,
   namingPattern: template.packageOptions.namingPattern,
-  mockups: describeSelectedMockups(template.packageOptions.selectedMockupIndices),
+  mockups: describeSelectedMockups(template.packageOptions.selectedMockupIndices, template.itemType),
   packageContents: [
     template.packageOptions.includePrintMaster ? 'print master' : null,
     template.packageOptions.includeProductionPdf ? 'spec PDF' : null,
@@ -101,11 +101,12 @@ export const describeTemplateChanges = (
   template: ShopTemplate,
 ) => {
   const activePlacement = job.placements[job.activePlacementKey];
-  const jobMockups = normalizeMockupSelection(job.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).join(',');
-  const templateMockups = normalizeMockupSelection(template.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).join(',');
+  const productChanged = job.settings.itemType !== template.itemType;
+  const jobMockups = resolveMockupSelectionForItemType(job.packageOptions.selectedMockupIndices, job.settings.itemType).join(',');
+  const templateMockups = resolveMockupSelectionForItemType(template.packageOptions.selectedMockupIndices, template.itemType).join(',');
   return [
     job.selectedRecipeId !== template.recipeId ? 'recipe' : null,
-    job.settings.itemType !== template.itemType ? 'product' : null,
+    productChanged ? 'product' : null,
     job.settings.format !== template.settings.format || job.settings.preserveTransparency !== template.settings.preserveTransparency ? 'output' : null,
     job.printSpecification.widthInches !== template.printSpecification.widthInches
       || job.printSpecification.heightInches !== template.printSpecification.heightInches
@@ -128,7 +129,7 @@ export const describeTemplateChanges = (
       || job.packageOptions.includeManifest !== template.packageOptions.includeManifest
       ? 'package contents'
       : null,
-    jobMockups !== templateMockups ? 'mockup colors' : null,
+    !productChanged && jobMockups !== templateMockups ? 'mockup colors' : null,
     job.proofBranding.shopName !== template.proofBranding.shopName
       || job.proofBranding.contactLine !== template.proofBranding.contactLine
       || job.proofBranding.footerNote !== template.proofBranding.footerNote

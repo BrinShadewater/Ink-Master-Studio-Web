@@ -1,6 +1,6 @@
 import { getPreflightGate } from './preflight';
 import { resolveFilenamePattern } from './naming';
-import { describeSelectedMockups, normalizeMockupSelection, PRODUCTION_MOCKUPS } from './mockups';
+import { describeSelectedMockups, resolveMockupSelectionForItemType } from './mockups';
 import { formatPlacementSummary } from './handoffDetails';
 import { PreflightFinding, StudioJob } from '../types';
 import { ProfileUpdateStatus } from './productionProfiles';
@@ -51,8 +51,8 @@ export const buildProductionPackageReview = (
   profileStatus: ProfileUpdateStatus,
 ): ProductionPackageReview => {
   const options = job.packageOptions;
-  const selectedMockupIndices = normalizeMockupSelection(options.selectedMockupIndices, PRODUCTION_MOCKUPS.length);
-  const selectedMockupDescription = describeSelectedMockups(selectedMockupIndices);
+  const selectedMockupIndices = resolveMockupSelectionForItemType(options.selectedMockupIndices, job.settings.itemType);
+  const selectedMockupDescription = describeSelectedMockups(selectedMockupIndices, job.settings.itemType);
   const placement = job.placements[job.activePlacementKey];
   const placementSummary = placement ? formatPlacementSummary(placement) : 'No placement selected';
   const placementName = placementNameForJob(job);

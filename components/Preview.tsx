@@ -1,7 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
+import { ItemType, ProcessedResult, ProcessingSettings, WorkspaceStage } from '../types';
 import { compositeMockup, generatePrintPDF } from '../services/imageProcessing';
-import { normalizeMockupSelection, PRODUCTION_MOCKUPS } from '../services/mockups';
+import {
+  getProductionMockupEntries,
+  resolveMockupSelectionForItemType,
+} from '../services/mockups';
 
 interface PercentPlacement {
   x: number;
@@ -24,13 +27,12 @@ interface PreviewProps {
   workspaceStage?: WorkspaceStage;
   exportRequestToken?: number;
   mockupExportAllowed?: boolean;
+  mockupItemType: ItemType;
   selectedMockupIndices?: readonly number[];
   onSelectedMockupIndicesChange?: (indices: number[]) => void;
   productionPlacement?: PercentPlacement;
   onProductionPlacementChange?: (placement: PercentPlacement) => void;
 }
-
-const MOCKUPS = PRODUCTION_MOCKUPS;
 
 // Feature 4: Print Presets
 const PRINT_PRESETS = [
@@ -65,21 +67,25 @@ export const Preview: React.FC<PreviewProps> = ({
   workspaceStage = 'prepare',
   exportRequestToken = 0,
   mockupExportAllowed = true,
+  mockupItemType,
   selectedMockupIndices: controlledSelectedMockupIndices,
   onSelectedMockupIndicesChange,
   productionPlacement,
   onProductionPlacementChange,
 }) => {
-  const initialMockupSelection = normalizeMockupSelection(
+  const mockupEntries = getProductionMockupEntries(mockupItemType);
+  const visibleMockupIndices = mockupEntries.map((entry) => entry.index);
+  const firstMockupIndex = visibleMockupIndices[0] ?? 0;
+  const initialMockupSelection = resolveMockupSelectionForItemType(
     controlledSelectedMockupIndices ?? [6],
-    MOCKUPS.length,
+    mockupItemType,
   );
   const [viewMode, setViewMode] = useState<'ARTBOARD' | 'MOCKUP'>('ARTBOARD');
   const [bgMode, setBgMode] = useState<'CHECKER' | 'BLACK' | 'WHITE'>('CHECKER');
   const [selectedMockupIndices, setSelectedMockupIndices] = useState<Set<number>>(
     () => new Set(initialMockupSelection),
   );
-  const [previewMockupIndex, setPreviewMockupIndex] = useState(initialMockupSelection[0] ?? 6);
+  const [previewMockupIndex, setPreviewMockupIndex] = useState(initialMockupSelection[0] ?? firstMockupIndex);
   const [placement, setPlacement] = useState(DEFAULT_PLACEMENT);
   const [designSource, setDesignSource] = useState<'processed' | 'original'>('processed');
   const [mockupFormat, setMockupFormat] = useState<'PNG' | 'JPG'>('PNG');
@@ -109,24 +115,31 @@ export const Preview: React.FC<PreviewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const controlledMockupSelectionKey = controlledSelectedMockupIndices?.join(',') ?? '';
+  const getMockupByIndex = (index: number) =>
+    mockupEntries.find((entry) => entry.index === index)?.mockup ?? mockupEntries[0]?.mockup;
 
   useEffect(() => {
     if (!controlledSelectedMockupIndices) return;
 
-    const normalized = normalizeMockupSelection(controlledSelectedMockupIndices, MOCKUPS.length);
+    const normalized = resolveMockupSelectionForItemType(controlledSelectedMockupIndices, mockupItemType);
     setSelectedMockupIndices(new Set(normalized));
     setPreviewMockupIndex((current) => (
       normalized.length > 0 && !normalized.includes(current)
         ? normalized[0]
-        : current
+        : visibleMockupIndices.includes(current)
+          ? current
+          : firstMockupIndex
     ));
-  }, [controlledMockupSelectionKey]);
+    setCompareMockupIndex((current) => (
+      visibleMockupIndices.includes(current) ? current : firstMockupIndex
+    ));
+  }, [controlledMockupSelectionKey, mockupItemType, firstMockupIndex, visibleMockupIndices.join(',')]);
 
   const commitSelectedMockupIndices = useCallback((indices: Iterable<number>) => {
-    const normalized = normalizeMockupSelection(indices, MOCKUPS.length);
+    const normalized = resolveMockupSelectionForItemType(indices, mockupItemType);
     setSelectedMockupIndices(new Set(normalized));
     onSelectedMockupIndicesChange?.(normalized);
-  }, [onSelectedMockupIndicesChange]);
+  }, [mockupItemType, onSelectedMockupIndicesChange]);
   const dragState = useRef<DragState>({
     dragging: false,
     resizing: false,
@@ -289,7 +302,7 @@ export const Preview: React.FC<PreviewProps> = ({
   };
 
   const handleSelectAllMockups = () => {
-    commitSelectedMockupIndices(MOCKUPS.map((_, i) => i));
+    commitSelectedMockupIndices(visibleMockupIndices);
   };
 
   const handleClearMockups = () => {
@@ -310,7 +323,7 @@ export const Preview: React.FC<PreviewProps> = ({
     if (!mockupExportAllowed) return;
     const designUrl = getDesignUrl();
     if (!designUrl || selectedMockupIndices.size === 0) return;
-    const indices = normalizeMockupSelection(selectedMockupIndices, MOCKUPS.length);
+    const indices = resolveMockupSelectionForItemType(selectedMockupIndices, mockupItemType);
     if (indices.length === 0) return;
 
     setIsDownloading(true);
@@ -318,7 +331,8 @@ export const Preview: React.FC<PreviewProps> = ({
 
     try {
       if (indices.length === 1) {
-        const mockup = MOCKUPS[indices[0]];
+        const mockup = mockupEntries.find((entry) => entry.index === indices[0])?.mockup;
+        if (!mockup) return;
         const result = await compositeMockup(mockup.file, designUrl, placement, mockupFormat);
         downloadBlob(result.blob, `mockup-${mockup.name.toLowerCase().replace(/ /g, '-')}.${mockupFormat.toLowerCase()}`);
         setDownloadProgress(100);
@@ -329,7 +343,8 @@ export const Preview: React.FC<PreviewProps> = ({
           const zip = new JSZip();
 
           for (let i = 0; i < indices.length; i++) {
-            const mockup = MOCKUPS[indices[i]];
+            const mockup = mockupEntries.find((entry) => entry.index === indices[i])?.mockup;
+            if (!mockup) continue;
             const result = await compositeMockup(mockup.file, designUrl, placement, mockupFormat);
             const arrayBuffer = await result.blob.arrayBuffer();
             zip.file(`mockup-${mockup.name.toLowerCase().replace(/ /g, '-')}.${mockupFormat.toLowerCase()}`, arrayBuffer);
@@ -342,7 +357,8 @@ export const Preview: React.FC<PreviewProps> = ({
         } catch {
           // JSZip not available — fall back to sequential downloads
           for (let i = 0; i < indices.length; i++) {
-            const mockup = MOCKUPS[indices[i]];
+            const mockup = mockupEntries.find((entry) => entry.index === indices[i])?.mockup;
+            if (!mockup) continue;
             const result = await compositeMockup(mockup.file, designUrl, placement, mockupFormat);
             downloadBlob(result.blob, `mockup-${mockup.name.toLowerCase().replace(/ /g, '-')}.${mockupFormat.toLowerCase()}`);
             setDownloadProgress(Math.round(((i + 1) / indices.length) * 100));
@@ -369,7 +385,8 @@ export const Preview: React.FC<PreviewProps> = ({
     if (!mockupExportAllowed) return;
     const designUrl = getDesignUrl();
     if (!designUrl) return;
-    const mockup = MOCKUPS[idx];
+    const mockup = mockupEntries.find((entry) => entry.index === idx)?.mockup;
+    if (!mockup) return;
     try {
       const result = await compositeMockup(mockup.file, designUrl, placement, mockupFormat);
       downloadBlob(result.blob, `mockup-${mockup.name.toLowerCase().replace(/ /g, '-')}.${mockupFormat.toLowerCase()}`);
@@ -494,19 +511,19 @@ export const Preview: React.FC<PreviewProps> = ({
         <div className={`relative min-h-0 flex-1 overflow-hidden ${showMockup ? 'bg-slate-950' : getBgClass()}`}>
           {showMockup ? (
             <>
-              <img src={MOCKUPS[previewMockupIndex].file} alt={`${MOCKUPS[previewMockupIndex].name} shirt mockup`} className="absolute inset-0 h-full w-full object-contain" />
+              <img src={getMockupByIndex(previewMockupIndex)?.file} alt={`${getMockupByIndex(previewMockupIndex)?.name ?? 'Product'} mockup`} className="absolute inset-0 h-full w-full object-contain" />
               {designUrl && (
                 <div className="absolute" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%` }}>
                   <img src={designUrl} alt="Artwork placed on shirt" className="h-full w-full object-contain drop-shadow-lg" />
                 </div>
               )}
               <div className="absolute bottom-4 left-1/2 flex max-w-[95%] -translate-x-1/2 flex-wrap justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950/85 p-2 backdrop-blur sm:gap-1.5">
-                {MOCKUPS.map((mockup, index) => (
+                {mockupEntries.map(({ index, mockup }) => (
                   <button
                     type="button"
                     key={mockup.name}
                     onClick={() => handleSingleMockupSelection(index)}
-                    aria-label={`Preview ${mockup.name} shirt`}
+                    aria-label={`Preview ${mockup.name}`}
                     className={`h-5 w-5 rounded-full border-2 transition hover:scale-110 sm:h-6 sm:w-6 ${previewMockupIndex === index ? 'border-white ring-2 ring-indigo-400/40' : 'border-slate-600'}`}
                     style={{ backgroundColor: mockup.color }}
                   />
@@ -799,7 +816,7 @@ export const Preview: React.FC<PreviewProps> = ({
                     {[previewMockupIndex, compareMockupIndex].map((idx, panelIdx) => (
                     <div key={panelIdx} className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
                         <img 
-                            src={MOCKUPS[idx].file} 
+                            src={getMockupByIndex(idx)?.file}
                             className="absolute inset-0 w-full h-full object-contain"
                             onError={(e) => {
                                 const target = e.target as HTMLImageElement;
@@ -822,7 +839,7 @@ export const Preview: React.FC<PreviewProps> = ({
                         )}
                         {/* Color selector for this panel */}
                         <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1 z-10">
-                        {MOCKUPS.map((m, mIdx) => (
+                        {mockupEntries.map(({ index: mIdx, mockup: m }) => (
                             <button
                             key={m.name}
                             onClick={() => panelIdx === 0
@@ -837,7 +854,7 @@ export const Preview: React.FC<PreviewProps> = ({
                         ))}
                         </div>
                         <div className="absolute top-2 left-2 bg-slate-950/80 text-xs text-slate-300 px-2 py-1 rounded-full border border-slate-700">
-                        {MOCKUPS[idx].name}
+                        {getMockupByIndex(idx)?.name}
                         </div>
                     </div>
                     ))}
@@ -863,8 +880,8 @@ export const Preview: React.FC<PreviewProps> = ({
                 <div className="absolute inset-0 pointer-events-none opacity-10 border-l border-r border-indigo-500/50" style={{ left: '50%', right: '50%' }}></div>
 
                 <img
-                src={MOCKUPS[previewMockupIndex].file}
-                alt={MOCKUPS[previewMockupIndex].name}
+                src={getMockupByIndex(previewMockupIndex)?.file}
+                alt={getMockupByIndex(previewMockupIndex)?.name}
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                 draggable={false}
                 onError={(e) => {
@@ -931,7 +948,7 @@ export const Preview: React.FC<PreviewProps> = ({
                 )}
 
                 <div className="absolute bottom-4 left-4 bg-slate-950/80 backdrop-blur-md text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700 font-medium z-10">
-                {MOCKUPS[previewMockupIndex].name}
+                {getMockupByIndex(previewMockupIndex)?.name}
                 </div>
 
                 <button
@@ -970,7 +987,7 @@ export const Preview: React.FC<PreviewProps> = ({
                 </div>
               </div>
               <div className="grid grid-cols-11 gap-2">
-                {MOCKUPS.map((m, idx) => (
+                {mockupEntries.map(({ index: idx, mockup: m }) => (
                   <div key={m.name} className="flex flex-col items-center gap-1">
                     <button
                       onClick={() => toggleMockup(idx)}

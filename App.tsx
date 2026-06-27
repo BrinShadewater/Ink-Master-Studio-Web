@@ -72,9 +72,8 @@ import {
 } from './services/productionProfiles';
 import {
   describeSelectedMockups,
+  resolveMockupSelectionForItemType,
   getSelectedProductionMockups,
-  normalizeMockupSelection,
-  PRODUCTION_MOCKUPS,
 } from './services/mockups';
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
@@ -677,7 +676,7 @@ const App: React.FC = () => {
     if (!currentJob || !processedResult) return [];
     const placement = placementToMockupPercent(activePlacement, activeProductionProfile);
     const assets: PackageAsset[] = [];
-    for (const mockup of getSelectedProductionMockups(currentJob.packageOptions.selectedMockupIndices)) {
+    for (const mockup of getSelectedProductionMockups(currentJob.packageOptions.selectedMockupIndices, currentJob.settings.itemType)) {
       const result = await compositeMockup(mockup.file, processedResult.url, placement, 'PNG');
       assets.push({ filename: `${mockup.slug}-mockup.png`, blob: result.blob });
     }
@@ -999,8 +998,8 @@ const App: React.FC = () => {
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
               proofFilenames={proofFilenames}
-              selectedMockupCount={normalizeMockupSelection(currentJob?.packageOptions.selectedMockupIndices, PRODUCTION_MOCKUPS.length).length}
-              selectedMockupSummary={describeSelectedMockups(currentJob?.packageOptions.selectedMockupIndices)}
+              selectedMockupCount={resolveMockupSelectionForItemType(currentJob?.packageOptions.selectedMockupIndices, settings.itemType).length}
+              selectedMockupSummary={describeSelectedMockups(currentJob?.packageOptions.selectedMockupIndices, settings.itemType)}
               onStageChange={setStage}
               onApplyRecipe={handleApplyRecipe}
               onSettingsChange={handleSettingsChange}
@@ -1069,6 +1068,7 @@ const App: React.FC = () => {
                 workspaceStage={stage}
                 exportRequestToken={mockupExportToken}
                 mockupExportAllowed={preflightGate.canExport}
+                mockupItemType={settings.itemType}
                 selectedMockupIndices={currentJob?.packageOptions.selectedMockupIndices}
                 onSelectedMockupIndicesChange={(selectedMockupIndices) => updateCurrentJob((job) => ({
                   ...job,

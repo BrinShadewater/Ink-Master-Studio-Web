@@ -66,7 +66,7 @@ test('describes operator template production settings for review', () => {
   assert.equal(summary.printSize, '12×14 in DTG');
   assert.match(summary.placement, /full-front/);
   assert.match(summary.output, /PNG/);
-  assert.equal(summary.mockups, 'Charcoal, Heather, Black');
+  assert.equal(summary.mockups, 'Black hoodie, Heather hoodie');
   assert.match(summary.packageContents, /print master/);
   assert.match(summary.packageContents, /manifest/);
   assert.equal(summary.proofBranding, 'River City Prints');
