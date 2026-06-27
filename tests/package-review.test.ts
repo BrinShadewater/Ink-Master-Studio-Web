@@ -33,6 +33,8 @@ test('previews the final package filename and included production files', () => 
   assert.equal(review.packageFilename, 'river-street_alex-co_tshirt_full-front_v4_production.zip');
   assert.equal(review.canExport, true);
   assert.equal(review.gateStatus, 'ready');
+  assert.equal(review.exportAction.label, 'Download production package');
+  assert.equal(review.exportAction.disabledReason, null);
   assert.equal(review.handoffReadiness.status, 'attention');
   assert.match(review.handoffReadiness.summary, /operator review/);
   assert.equal(
@@ -67,6 +69,9 @@ test('blocks package export until artwork has been processed', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.exportAction.label, 'Production package not ready');
+  assert.match(review.exportAction.disabledReason ?? '', /Process the artwork/);
+  assert.match(review.exportAction.nextStep, /Artwork processed/);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /Process the artwork/);
   assert.equal(review.items.find((entry) => entry.id === 'print-master')?.status, 'missing');
@@ -80,6 +85,8 @@ test('requires warning acknowledgement before package export', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'warning-acknowledgement-required');
+  assert.match(review.exportAction.disabledReason ?? '', /require acknowledgement/);
+  assert.match(review.exportAction.nextStep, /Preflight gate/);
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'preflight')?.status, 'attention');
   assert.match(review.warnings.join(' '), /require acknowledgement/);
   assert.equal(acknowledged.canExport, true);
@@ -92,6 +99,7 @@ test('blocks package export for critical preflight findings', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
+  assert.match(review.exportAction.disabledReason ?? '', /critical preflight/);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /critical preflight/);
 });
@@ -108,6 +116,8 @@ test('blocks handoff when proof changes are requested', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
+  assert.match(review.exportAction.disabledReason ?? '', /proof changes/);
+  assert.match(review.exportAction.nextStep, /Customer proof/);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /requested proof changes/);
@@ -125,6 +135,8 @@ test('marks handoff ready when proof is approved and checks pass', () => {
   const review = buildProductionPackageReview(job, [], false, true, 'current');
 
   assert.equal(review.canExport, true);
+  assert.equal(review.exportAction.disabledReason, null);
+  assert.equal(review.exportAction.nextStep, 'Ready to download the production package.');
   assert.equal(review.handoffReadiness.status, 'ready');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'ready');
 });

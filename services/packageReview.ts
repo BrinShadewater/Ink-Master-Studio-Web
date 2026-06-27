@@ -30,6 +30,11 @@ export interface ProductionPackageReview {
   gateStatus: PackageReviewGateStatus;
   canExport: boolean;
   statusText: string;
+  exportAction: {
+    label: string;
+    disabledReason: string | null;
+    nextStep: string;
+  };
   blockingReasons: string[];
   warnings: string[];
   items: PackageReviewItem[];
@@ -62,6 +67,9 @@ const readinessCheck = (
   status: HandoffReadinessStatus,
   note: string,
 ): HandoffReadinessCheck => ({ id, label, status, note });
+
+const firstActionableCheck = (checks: HandoffReadinessCheck[]) =>
+  checks.find((check) => check.status === 'blocked') ?? checks.find((check) => check.status === 'attention') ?? null;
 
 export const buildProductionPackageReview = (
   job: StudioJob,
@@ -180,6 +188,10 @@ export const buildProductionPackageReview = (
     : handoffChecks.some((check) => check.status === 'attention')
       ? 'attention'
       : 'ready';
+  const nextCheck = firstActionableCheck(handoffChecks);
+  const disabledReason = !canExport
+    ? blockingReasons[0] ?? warnings[0] ?? nextCheck?.note ?? 'Resolve handoff readiness items before export.'
+    : null;
 
   return {
     packageFilename: `${baseFilename}_production.zip`,
@@ -191,6 +203,13 @@ export const buildProductionPackageReview = (
       : gateStatus === 'warning-acknowledgement-required'
         ? 'Acknowledge warnings before export.'
         : 'Production package is blocked.',
+    exportAction: {
+      label: canExport ? 'Download production package' : 'Production package not ready',
+      disabledReason,
+      nextStep: nextCheck
+        ? `${nextCheck.label}: ${nextCheck.note}`
+        : 'Ready to download the production package.',
+    },
     blockingReasons,
     warnings,
     handoffReadiness: {

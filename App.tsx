@@ -709,6 +709,10 @@ const App: React.FC = () => {
 
   const handleDownloadProductionPackage = async () => {
     if (!currentJob || !processedResult) return;
+    if (packageReview && !packageReview.canExport) {
+      setError(packageReview.exportAction.disabledReason ?? 'Resolve handoff readiness items before exporting the production package.');
+      return;
+    }
     if (!preflightGate.canExport) {
       setError(preflightGate.criticalCount > 0
         ? 'Production export is blocked until all critical preflight findings are resolved.'

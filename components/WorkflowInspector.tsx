@@ -579,7 +579,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
             <Section title="Production handoff" description="Create the complete shop package or a customer approval proof.">
               <div className="space-y-2">
-                <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Download production package</button>
+                <button type="button" disabled={!packageReview?.canExport} onClick={onDownloadProductionPackage} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">
+                  {packageReview?.exportAction.label ?? 'Production package not ready'}
+                </button>
+                {packageReview?.exportAction.disabledReason && (
+                  <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-200">
+                    {packageReview.exportAction.disabledReason}
+                  </p>
+                )}
+                {packageReview && (
+                  <p className="text-[10px] leading-relaxed text-slate-500">
+                    Next: {packageReview.exportAction.nextStep}
+                  </p>
+                )}
               </div>
             </Section>
 
