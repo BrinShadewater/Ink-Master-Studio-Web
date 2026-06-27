@@ -336,6 +336,16 @@ export interface ProcessedResult {
   height: number;
 }
 
+export type AiCleanupAvailability = 'checking' | 'available' | 'unavailable' | 'error';
+
+export interface AiCleanupStatus {
+  availability: AiCleanupAvailability;
+  message: string;
+  maxImageBytes: number | null;
+  dailyLimitPerOperator: number | null;
+  supportedActions: string[];
+}
+
 // Mockup types
 export interface MockupDefinition {
   name: string;

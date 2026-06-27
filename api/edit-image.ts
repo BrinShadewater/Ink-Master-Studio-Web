@@ -6,11 +6,29 @@ export const config = {
 
 const GEMINI_MODEL = "gemini-2.5-flash-image";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const DAILY_LIMIT_PER_OPERATOR = 25;
+const quotaByOperator = new Map<string, { day: string; count: number }>();
 
 const isValidMimeType = (mimeType: unknown) =>
   typeof mimeType === "string" && /^image\/(png|jpe?g|webp)$/i.test(mimeType);
 
 const getApproximateBytes = (base64: string) => Math.ceil((base64.length * 3) / 4);
+const getOperatorKey = (request: any) => {
+  const forwardedFor = request.headers?.["x-forwarded-for"];
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0].trim();
+  }
+  return request.socket?.remoteAddress ?? "unknown-operator";
+};
+const consumeQuota = (operatorKey: string) => {
+  const day = new Date().toISOString().slice(0, 10);
+  const current = quotaByOperator.get(operatorKey);
+  const next = current?.day === day
+    ? { day, count: current.count + 1 }
+    : { day, count: 1 };
+  quotaByOperator.set(operatorKey, next);
+  return next.count <= DAILY_LIMIT_PER_OPERATOR;
+};
 
 export default async function handler(request: any, response: any) {
   if (request.method !== "POST") {
@@ -32,6 +50,10 @@ export default async function handler(request: any, response: any) {
     getApproximateBytes(base64Image) > MAX_IMAGE_BYTES
   ) {
     return response.status(400).json({ error: "Invalid image request." });
+  }
+
+  if (!consumeQuota(getOperatorKey(request))) {
+    return response.status(429).json({ error: "Daily AI cleanup limit reached." });
   }
 
   const ai = new GoogleGenAI({ apiKey });

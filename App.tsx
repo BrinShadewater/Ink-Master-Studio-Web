@@ -16,6 +16,8 @@ import { AppliedProductionProfileContext } from './components/PreflightPanel';
 import {
   ArtworkAnalysis,
   ExportHistoryEntry,
+  AiCleanupStatus,
+  OutputFormat,
   ProcessingSettings,
   ProcessedResult,
   RecipeId,
@@ -77,6 +79,7 @@ import {
 import { buildProductionPackage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
+import { editImageWithGemini, getAiCleanupStatus } from './services/geminiService';
 import {
   applyTemplateToJob,
   createTemplateFromJob,
@@ -115,6 +118,25 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, rej
   reader.readAsDataURL(blob);
 });
 
+const dataUrlToImagePayload = (dataUrl: string) => {
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl);
+  if (!match) return null;
+  return {
+    mimeType: match[1],
+    base64: match[2],
+    approximateBytes: Math.ceil((match[2].length * 3) / 4),
+  };
+};
+
+const base64ToBlob = (base64: string, mimeType: string) => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+};
+
 const jobFilename = (job: StudioJob) =>
   `${job.metadata.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'inkmaster-job'}.inkmaster-job`;
 
@@ -145,6 +167,14 @@ const App: React.FC = () => {
   const [profileStore, setProfileStore] = useState(() => loadProfileStore());
   const [showProfiles, setShowProfiles] = useState(false);
   const [profileUpdateSource, setProfileUpdateSource] = useState<ProductionProfile | null>(null);
+  const [aiCleanupStatus, setAiCleanupStatus] = useState<AiCleanupStatus>({
+    availability: 'checking',
+    message: 'Checking AI cleanup availability…',
+    maxImageBytes: null,
+    dailyLimitPerOperator: null,
+    supportedActions: [],
+  });
+  const [isAiCleanupProcessing, setIsAiCleanupProcessing] = useState(false);
 
   const originalImage = appState.image;
   const settings = appState.settings;
@@ -273,6 +303,16 @@ const App: React.FC = () => {
   useEffect(() => {
     void refreshJobs();
     setShopTemplates(loadTemplates());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getAiCleanupStatus().then((status) => {
+      if (active) setAiCleanupStatus(status);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -472,6 +512,71 @@ const App: React.FC = () => {
     handleSettingsChange(nextSettings, true);
     updateCurrentJob((job) => ({ ...job, selectedRecipeId: recipeId }), false);
     setStage('prepare');
+  };
+
+  const handleAiEdgeCleanup = async () => {
+    if (!originalImage || !currentJob) return;
+    if (aiCleanupStatus.availability !== 'available') {
+      setError(aiCleanupStatus.message);
+      return;
+    }
+    const payload = dataUrlToImagePayload(originalImage);
+    if (!payload || !/^image\/(png|jpe?g|webp)$/i.test(payload.mimeType)) {
+      setError('AI cleanup supports PNG, JPG, and WebP artwork.');
+      return;
+    }
+    if (aiCleanupStatus.maxImageBytes !== null && payload.approximateBytes > aiCleanupStatus.maxImageBytes) {
+      setError('This artwork is larger than the configured AI cleanup limit.');
+      return;
+    }
+
+    setIsAiCleanupProcessing(true);
+    setError(null);
+    try {
+      const cleanedBase64 = await editImageWithGemini(
+        payload.base64,
+        'Production edge cleanup: remove leftover background haze and edge halos, preserve the main artwork exactly, keep transparent PNG alpha, do not add text, borders, mockups, shadows, or new design elements.',
+        payload.mimeType,
+      );
+      if (!cleanedBase64) {
+        setError('AI cleanup did not return usable artwork.');
+        return;
+      }
+      const cleanedDataUrl = `data:image/png;base64,${cleanedBase64}`;
+      const cleanedBlob = base64ToBlob(cleanedBase64, 'image/png');
+      const nextSettings = {
+        ...settings,
+        format: OutputFormat.PNG,
+        preserveTransparency: true,
+      };
+      const nextAnalysis = await analyzeArtwork(cleanedDataUrl);
+      const nextState = {
+        image: cleanedDataUrl,
+        settings: nextSettings,
+        hasUsedAi: true,
+      };
+
+      addToHistory(nextState);
+      setAnalysis(nextAnalysis);
+      setRecommendation(recommendRecipe(nextAnalysis));
+      setProcessedResult(null);
+      setCurrentJob((job) => job ? touchStudioJob({
+        ...job,
+        sourceArtwork: {
+          name: `${job.metadata.name || 'cleaned-artwork'}-ai-cleanup.png`,
+          type: 'image/png',
+          lastModified: Date.now(),
+          blob: cleanedBlob,
+        },
+        settings: nextSettings,
+        analysis: nextAnalysis,
+      }) : job);
+    } catch (cleanupError) {
+      console.error(cleanupError);
+      setError('AI cleanup could not finish. The original artwork was left unchanged.');
+    } finally {
+      setIsAiCleanupProcessing(false);
+    }
   };
 
   const handleReset = () => {
@@ -878,7 +983,10 @@ const App: React.FC = () => {
               palette={palette}
               exportHistory={exportHistory}
               hasProcessedResult={Boolean(processedResult)}
+              hasArtwork={Boolean(originalImage)}
               lowResolutionAcknowledged={lowResolutionAcknowledged}
+              aiCleanupStatus={aiCleanupStatus}
+              isAiCleanupProcessing={isAiCleanupProcessing}
               isEyedropperMode={isEyedropperMode}
               printSpecification={printSpecification}
               placement={activePlacement}
@@ -896,6 +1004,7 @@ const App: React.FC = () => {
               onStageChange={setStage}
               onApplyRecipe={handleApplyRecipe}
               onSettingsChange={handleSettingsChange}
+              onAiEdgeCleanup={() => void handleAiEdgeCleanup()}
               onToggleEyedropper={() => setIsEyedropperMode((value) => !value)}
               onGenerateUnderbase={handleGenerateUnderbase}
               onDownloadPrintFile={handleDownloadPrintFile}

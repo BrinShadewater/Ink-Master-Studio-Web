@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArtworkAnalysis,
+  AiCleanupStatus,
   EdgeBehavior,
   ExportHistoryEntry,
   AppliedTemplateStatus,
@@ -54,7 +55,10 @@ interface WorkflowInspectorProps {
   palette: string[];
   exportHistory: ExportHistoryEntry[];
   hasProcessedResult: boolean;
+  hasArtwork: boolean;
   lowResolutionAcknowledged: boolean;
+  aiCleanupStatus: AiCleanupStatus;
+  isAiCleanupProcessing: boolean;
   isEyedropperMode: boolean;
   printSpecification: PrintSpecification;
   placement: PlacementMeasurement;
@@ -72,6 +76,7 @@ interface WorkflowInspectorProps {
   onStageChange: (stage: WorkspaceStage) => void;
   onApplyRecipe: (recipeId: RecipeId, settings?: ProcessingSettings) => void;
   onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
+  onAiEdgeCleanup: () => void;
   onToggleEyedropper: () => void;
   onGenerateUnderbase: (format: 'PNG' | 'SVG' | 'JPG') => void;
   onDownloadPrintFile: () => void;
@@ -141,7 +146,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     palette,
     exportHistory,
     hasProcessedResult,
+    hasArtwork,
     lowResolutionAcknowledged,
+    aiCleanupStatus,
+    isAiCleanupProcessing,
     isEyedropperMode,
     printSpecification,
     placement,
@@ -159,6 +167,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onStageChange,
     onApplyRecipe,
     onSettingsChange,
+    onAiEdgeCleanup,
     onToggleEyedropper,
     onGenerateUnderbase,
     onDownloadPrintFile,
@@ -198,6 +207,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const aiCleanupAvailable = aiCleanupStatus.availability === 'available' && aiCleanupStatus.supportedActions.includes('edge-cleanup');
+  const aiCleanupBadgeClass = aiCleanupStatus.availability === 'available'
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    : aiCleanupStatus.availability === 'checking'
+      ? 'border-slate-700 bg-slate-950/50 text-slate-400'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+  const aiCleanupBadge = aiCleanupStatus.availability === 'available'
+    ? 'Available'
+    : aiCleanupStatus.availability === 'checking'
+      ? 'Checking'
+      : aiCleanupStatus.availability === 'error'
+        ? 'Status unknown'
+        : 'Not configured';
   const templateStatusLabel = appliedTemplateStatus.status === 'none'
     ? 'None applied'
     : appliedTemplateStatus.status === 'matches'
@@ -336,6 +358,25 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               {analysis?.edgeBackground.isUniform && (
                 <p className="mt-2 text-[10px] text-emerald-400">Solid {analysis.edgeBackground.tone} edge detected: {analysis.edgeBackground.color}</p>
               )}
+            </Section>
+
+            <Section title="AI cleanup" description="Optional server-side edge repair for leftover background haze and halos.">
+              <div className={`rounded-lg border px-3 py-2 text-[10px] font-semibold ${aiCleanupBadgeClass}`}>
+                {aiCleanupBadge}: <span className="font-medium">{aiCleanupStatus.message}</span>
+              </div>
+              <ul className="mt-3 space-y-1 text-[10px] leading-relaxed text-slate-500">
+                <li>• Fixed action only: edge cleanup with transparent PNG output.</li>
+                <li>• Operator reviews the result before production export.</li>
+                {aiCleanupStatus.dailyLimitPerOperator !== null && <li>• Suggested daily limit: {aiCleanupStatus.dailyLimitPerOperator} cleanup requests per operator.</li>}
+              </ul>
+              <button
+                type="button"
+                disabled={!hasArtwork || !aiCleanupAvailable || isAiCleanupProcessing}
+                onClick={onAiEdgeCleanup}
+                className="mt-3 w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2.5 text-xs font-black text-indigo-100 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:border-slate-800 disabled:bg-slate-950/50 disabled:text-slate-600"
+              >
+                {isAiCleanupProcessing ? 'Cleaning edges…' : 'Clean edge halo with AI'}
+              </button>
             </Section>
 
             <Section title="Garment treatment" description="Choose where the design needs to remain readable.">
