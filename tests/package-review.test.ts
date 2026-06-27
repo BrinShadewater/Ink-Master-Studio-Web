@@ -33,6 +33,12 @@ test('previews the final package filename and included production files', () => 
   assert.equal(review.packageFilename, 'river-street_alex-co_tshirt_full-front_v4_production.zip');
   assert.equal(review.canExport, true);
   assert.equal(review.gateStatus, 'ready');
+  assert.equal(review.handoffReadiness.status, 'attention');
+  assert.match(review.handoffReadiness.summary, /operator review/);
+  assert.equal(
+    review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status,
+    'attention',
+  );
   assert.deepEqual(
     review.items.map((entry) => [entry.id, entry.status, entry.filename]),
     [
@@ -61,6 +67,7 @@ test('blocks package export until artwork has been processed', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /Process the artwork/);
   assert.equal(review.items.find((entry) => entry.id === 'print-master')?.status, 'missing');
 });
@@ -73,6 +80,7 @@ test('requires warning acknowledgement before package export', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'warning-acknowledgement-required');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'preflight')?.status, 'attention');
   assert.match(review.warnings.join(' '), /require acknowledgement/);
   assert.equal(acknowledged.canExport, true);
 });
@@ -84,7 +92,41 @@ test('blocks package export for critical preflight findings', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /critical preflight/);
+});
+
+test('blocks handoff when proof changes are requested', () => {
+  const job = createStudioJob('Proof changes package');
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'changes-requested',
+    notes: 'Move artwork down.',
+  };
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.canExport, false);
+  assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.handoffReadiness.status, 'blocked');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
+  assert.match(review.blockingReasons.join(' '), /requested proof changes/);
+});
+
+test('marks handoff ready when proof is approved and checks pass', () => {
+  const job = createStudioJob('Approved package');
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.canExport, true);
+  assert.equal(review.handoffReadiness.status, 'ready');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'ready');
 });
 
 test('surfaces profile snapshot provenance when source profile changed', () => {
@@ -95,5 +137,6 @@ test('surfaces profile snapshot provenance when source profile changed', () => {
   assert.equal(review.profile.name, 'Standard DTG');
   assert.equal(review.profile.revision, 1);
   assert.equal(review.profile.status, 'update-available');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'profile')?.status, 'attention');
   assert.match(review.warnings.join(' '), /newer revision/);
 });

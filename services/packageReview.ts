@@ -7,6 +7,14 @@ import { ProfileUpdateStatus } from './productionProfiles';
 
 export type PackageReviewItemStatus = 'ready' | 'missing' | 'excluded';
 export type PackageReviewGateStatus = 'ready' | 'warning-acknowledgement-required' | 'blocked';
+export type HandoffReadinessStatus = 'ready' | 'attention' | 'blocked';
+
+export interface HandoffReadinessCheck {
+  id: 'artwork' | 'preflight' | 'package-assets' | 'profile' | 'template' | 'proof';
+  label: string;
+  status: HandoffReadinessStatus;
+  note: string;
+}
 
 export interface PackageReviewItem {
   id: 'print-master' | 'production-pdf' | 'mockups' | 'underbase' | 'summary' | 'manifest';
@@ -25,6 +33,11 @@ export interface ProductionPackageReview {
   blockingReasons: string[];
   warnings: string[];
   items: PackageReviewItem[];
+  handoffReadiness: {
+    status: HandoffReadinessStatus;
+    summary: string;
+    checks: HandoffReadinessCheck[];
+  };
   profile: {
     name: string;
     revision: number;
@@ -43,6 +56,13 @@ const item = (
   note: string,
 ): PackageReviewItem => ({ id, label, filename, status, note });
 
+const readinessCheck = (
+  id: HandoffReadinessCheck['id'],
+  label: string,
+  status: HandoffReadinessStatus,
+  note: string,
+): HandoffReadinessCheck => ({ id, label, status, note });
+
 export const buildProductionPackageReview = (
   job: StudioJob,
   findings: PreflightFinding[],
@@ -58,6 +78,7 @@ export const buildProductionPackageReview = (
   const placementName = placementNameForJob(job);
   const baseFilename = resolveFilenamePattern(options.namingPattern, job, placementName);
   const gate = getPreflightGate(findings, preflightAcknowledged);
+  const proofStatus = job.proofApproval.status;
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
 
@@ -80,6 +101,13 @@ export const buildProductionPackageReview = (
   if (options.includeMockups && selectedMockupIndices.length === 0) {
     warnings.push('Mockups are enabled, but no mockup colors are selected.');
   }
+  if (proofStatus === 'changes-requested') {
+    blockingReasons.push('Customer requested proof changes before production handoff.');
+  } else if (proofStatus === 'sent') {
+    warnings.push('Customer proof is sent and awaiting response.');
+  } else if (proofStatus === 'not-requested') {
+    warnings.push('Customer proof has not been requested yet.');
+  }
 
   const gateStatus: PackageReviewGateStatus = blockingReasons.length > 0
     ? 'blocked'
@@ -87,6 +115,71 @@ export const buildProductionPackageReview = (
       ? 'warning-acknowledgement-required'
       : 'ready';
   const canExport = gate.canExport && hasProcessedResult && blockingReasons.length === 0;
+  const handoffChecks: HandoffReadinessCheck[] = [
+    readinessCheck(
+      'artwork',
+      'Artwork processed',
+      hasProcessedResult ? 'ready' : 'blocked',
+      hasProcessedResult ? 'Processed artwork is available for export.' : 'Process the artwork before production handoff.',
+    ),
+    readinessCheck(
+      'preflight',
+      'Preflight gate',
+      gate.criticalCount > 0
+        ? 'blocked'
+        : gate.requiresAcknowledgement && !preflightAcknowledged
+          ? 'attention'
+          : 'ready',
+      gate.criticalCount > 0
+        ? `${gate.criticalCount} critical issue${gate.criticalCount === 1 ? '' : 's'} must be resolved.`
+        : gate.requiresAcknowledgement && !preflightAcknowledged
+          ? `${gate.warningCount} warning${gate.warningCount === 1 ? '' : 's'} need acknowledgement.`
+          : 'No blocking preflight issues.',
+    ),
+    readinessCheck(
+      'package-assets',
+      'Package assets',
+      options.includeMockups && selectedMockupIndices.length === 0 ? 'attention' : 'ready',
+      options.includeMockups && selectedMockupIndices.length === 0
+        ? 'Mockups are enabled but no colors are selected.'
+        : 'Requested package assets are configured.',
+    ),
+    readinessCheck(
+      'profile',
+      'Production profile',
+      profileStatus === 'current' ? 'ready' : 'attention',
+      profileStatus === 'current'
+        ? `${job.productionProfile.snapshot.name} revision ${job.productionProfile.profileRevision} is current.`
+        : `Profile source is ${profileStatus.replace('-', ' ')}; using the job snapshot.`,
+    ),
+    readinessCheck(
+      'template',
+      'Operator template',
+      'ready',
+      job.appliedTemplate ? `Template ${job.appliedTemplate.name} is recorded on this job.` : 'No operator template applied.',
+    ),
+    readinessCheck(
+      'proof',
+      'Customer proof',
+      proofStatus === 'changes-requested'
+        ? 'blocked'
+        : proofStatus === 'approved'
+          ? 'ready'
+          : 'attention',
+      proofStatus === 'approved'
+        ? 'Customer proof is approved.'
+        : proofStatus === 'changes-requested'
+          ? 'Customer requested changes before production.'
+          : proofStatus === 'sent'
+            ? 'Proof is sent and awaiting customer response.'
+            : 'Proof has not been requested yet.',
+    ),
+  ];
+  const handoffStatus: HandoffReadinessStatus = handoffChecks.some((check) => check.status === 'blocked')
+    ? 'blocked'
+    : handoffChecks.some((check) => check.status === 'attention')
+      ? 'attention'
+      : 'ready';
 
   return {
     packageFilename: `${baseFilename}_production.zip`,
@@ -100,6 +193,15 @@ export const buildProductionPackageReview = (
         : 'Production package is blocked.',
     blockingReasons,
     warnings,
+    handoffReadiness: {
+      status: handoffStatus,
+      summary: handoffStatus === 'ready'
+        ? 'Production handoff is ready.'
+        : handoffStatus === 'attention'
+          ? 'Production handoff is possible after operator review.'
+          : 'Production handoff is blocked.',
+      checks: handoffChecks,
+    },
     profile: {
       name: job.productionProfile.snapshot.name,
       revision: job.productionProfile.profileRevision,
