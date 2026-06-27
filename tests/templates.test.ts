@@ -42,6 +42,14 @@ test('applies production settings without replacing job identity or notes', () =
   assert.equal(applied.metadata.name, 'Target');
   assert.equal(applied.metadata.notes, 'Target note');
   assert.equal(applied.settings.itemType, ItemType.HOODIE);
+  assert.deepEqual(applied.appliedTemplate && {
+    id: applied.appliedTemplate.id,
+    name: applied.appliedTemplate.name,
+  }, {
+    id: template.id,
+    name: 'Template',
+  });
+  assert.equal(typeof applied.appliedTemplate?.appliedAt, 'number');
 });
 
 test('describes operator template production settings for review', () => {

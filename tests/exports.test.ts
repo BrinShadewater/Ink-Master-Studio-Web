@@ -129,6 +129,30 @@ test('includes profile name and revision in production summary', async () => {
   assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
 });
 
+test('includes applied template provenance in production package handoff', async () => {
+  const job = createStudioJob('Template package');
+  job.appliedTemplate = {
+    id: 'template_daily_dtg',
+    name: 'Daily DTG',
+    appliedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+  };
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.deepEqual(manifest.appliedTemplate, {
+    id: 'template_daily_dtg',
+    name: 'Daily DTG',
+    appliedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+  });
+  assert.match(summary, /Template: Daily DTG · applied 2026-01-02T03:04:05\.000Z/);
+});
+
 test('creates proof metadata with placement and approval fields', () => {
   const job = createStudioJob('Proof job');
   job.metadata.customerName = 'Taylor';

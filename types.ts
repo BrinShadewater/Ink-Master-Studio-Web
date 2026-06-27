@@ -217,6 +217,12 @@ export interface AppliedProductionProfile {
   snapshot: ProductionProfile;
 }
 
+export interface AppliedShopTemplate {
+  id: string;
+  name: string;
+  appliedAt: number;
+}
+
 export interface ProfileValidationError {
   field: string;
   message: string;
@@ -250,6 +256,7 @@ export interface StudioJob {
   acknowledgedPreflightRevision: number | null;
   proofBranding: ProofBranding;
   packageOptions: ProductionPackageOptions;
+  appliedTemplate: AppliedShopTemplate | null;
   versions: Array<{
     id: string;
     name: string;

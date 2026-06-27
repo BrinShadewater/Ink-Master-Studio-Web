@@ -104,6 +104,33 @@ test('migrates partial legacy job data into the current schema', () => {
     migrated.productionProfile.profileRevision,
     migrated.productionProfile.snapshot.revision,
   );
+  assert.equal(migrated.appliedTemplate, null);
+});
+
+test('migrates valid applied template provenance and drops malformed records', () => {
+  const valid = migrateStudioJob({
+    ...createStudioJob('Template provenance'),
+    appliedTemplate: {
+      id: 'template_daily',
+      name: 'Daily DTG',
+      appliedAt: 1_700_000_000_000,
+    },
+  });
+  const malformed = migrateStudioJob({
+    ...createStudioJob('Malformed template provenance'),
+    appliedTemplate: {
+      id: '',
+      name: 'Daily DTG',
+      appliedAt: 'yesterday',
+    },
+  });
+
+  assert.deepEqual(valid.appliedTemplate, {
+    id: 'template_daily',
+    name: 'Daily DTG',
+    appliedAt: 1_700_000_000_000,
+  });
+  assert.equal(malformed.appliedTemplate, null);
 });
 
 test('migrates identical legacy jobs with deterministic isolated production profiles', () => {

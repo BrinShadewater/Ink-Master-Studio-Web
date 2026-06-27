@@ -16,6 +16,7 @@ import {
 } from './productionProfiles';
 import {
   AppliedProductionProfile,
+  AppliedShopTemplate,
   ProductionPackageOptions,
   ProductionProfile,
   StudioJob,
@@ -120,6 +121,7 @@ export const createStudioJob = (
     acknowledgedPreflightRevision: null,
     proofBranding: { ...DEFAULT_PROOF_BRANDING },
     packageOptions: packageOptionsFromProfile(profile),
+    appliedTemplate: null,
     versions: [],
     exports: [],
   };
@@ -127,6 +129,24 @@ export const createStudioJob = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const migrateAppliedTemplate = (value: unknown): AppliedShopTemplate | null => {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || !value.id.trim()
+    || typeof value.name !== 'string'
+    || !value.name.trim()
+    || typeof value.appliedAt !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    appliedAt: value.appliedAt,
+  };
+};
 
 export const migrateStudioJob = (value: unknown): StudioJob => {
   const source = isRecord(value) ? value : {};
@@ -196,6 +216,7 @@ export const migrateStudioJob = (value: unknown): StudioJob => {
         ? packageOptions.selectedMockupIndices.filter((index): index is number => Number.isInteger(index))
         : base.packageOptions.selectedMockupIndices,
     },
+    appliedTemplate: migrateAppliedTemplate(source.appliedTemplate),
     versions: Array.isArray(source.versions) ? source.versions as StudioJob['versions'] : [],
     exports: Array.isArray(source.exports)
       ? source.exports.filter((entry) => isRecord(entry) && entry.blob instanceof Blob) as unknown as StudioJob['exports']

@@ -865,6 +865,7 @@ const App: React.FC = () => {
               preflightAcknowledged={preflightAcknowledged}
               packageReview={packageReview}
               jobMetadata={currentJob?.metadata ?? { name: 'Untitled job', customerName: '', orderNumber: '', notes: '', tags: [] }}
+              appliedTemplate={currentJob?.appliedTemplate ?? null}
               namingPattern={currentJob?.packageOptions.namingPattern ?? ''}
               proofBranding={currentJob?.proofBranding ?? DEFAULT_PROOF_BRANDING}
               proofFilenames={proofFilenames}

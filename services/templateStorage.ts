@@ -66,6 +66,11 @@ export const applyTemplateToJob = (job: StudioJob, template: ShopTemplate): Stud
       selectedMockupIndices: [...template.packageOptions.selectedMockupIndices],
     },
     proofBranding: { ...template.proofBranding },
+    appliedTemplate: {
+      id: template.id,
+      name: template.name,
+      appliedAt: now(),
+    },
   });
 };
 
