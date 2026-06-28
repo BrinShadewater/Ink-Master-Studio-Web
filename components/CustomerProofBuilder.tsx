@@ -5,6 +5,7 @@ import {
   describeProofApprovalNextStep,
   describeProofApprovalStatus,
   formatProofApprovalEvent,
+  ProofFreshnessSummary,
   summarizeProofApproval,
   updateProofApprovalState,
 } from '../services/proofApproval';
@@ -12,11 +13,7 @@ import {
 interface CustomerProofBuilderProps {
   branding: ProofBranding;
   approval: ProofApprovalState;
-  proofFreshness?: {
-    stale: boolean;
-    latestProofLabel: string | null;
-    message: string;
-  };
+  proofFreshness?: ProofFreshnessSummary | null;
   cloudCapability: CloudApprovalCapability;
   printFilename: string;
   emailFilename: string;
@@ -65,6 +62,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   onDownloadProof,
 }) => {
   const summary = summarizeProofApproval(approval);
+  const approvalBlockedByStaleProof = proofFreshness?.stale === true;
 
   return (
   <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
@@ -176,13 +174,24 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         <button type="button" disabled={!cloudCapability.supportsShareLinks} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-500 opacity-70">
           Share approval link
         </button>
-        <button type="button" onClick={() => onRecordProofResponse('approved')} className="rounded-lg border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-200 hover:border-emerald-400">
-          Record approval
+        <button
+          type="button"
+          disabled={approvalBlockedByStaleProof}
+          title={approvalBlockedByStaleProof ? 'Export a fresh proof before recording customer approval.' : undefined}
+          onClick={() => onRecordProofResponse('approved')}
+          className="rounded-lg border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-200 hover:border-emerald-400 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+        >
+          {approvalBlockedByStaleProof ? 'Re-export proof first' : 'Record approval'}
         </button>
         <button type="button" onClick={() => onRecordProofResponse('changes-requested')} className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:border-amber-400">
           Request changes
         </button>
       </div>
+      {approvalBlockedByStaleProof && (
+        <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-200">
+          Approval is locked because the job changed after the latest proof export. Export a fresh customer proof before recording approval.
+        </p>
+      )}
       <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Approval timeline</p>
         {recentEvents(approval).length > 0 ? (

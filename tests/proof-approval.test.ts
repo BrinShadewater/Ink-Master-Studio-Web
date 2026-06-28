@@ -8,12 +8,14 @@ import {
   describeProofApprovalNextStep,
   formatProofApprovalEvent,
   getCloudApprovalCapability,
+  getLatestProofFreshness,
   markProofExported,
   markProofSent,
   recordProofResponse,
   summarizeProofApproval,
   updateProofApprovalState,
 } from '../services/proofApproval';
+import { ExportHistoryEntry } from '../types';
 
 test('creates local-only proof approval state by default', () => {
   const approval = createProofApprovalState();
@@ -155,4 +157,47 @@ test('summarizes proof approval state for operator review', () => {
   assert.equal(approved.tone, 'ready');
   assert.equal(approved.headline, 'Proof approved for production');
   assert.match(approved.responseLabel ?? '', /Approved 2026-01-02T04:05:06\.000Z/);
+});
+
+test('compares latest proof export against the current job revision', () => {
+  const latestProof: ExportHistoryEntry = {
+    id: 'proof-2',
+    filename: 'job-proof-email.pdf',
+    format: 'PDF',
+    timestamp: 2,
+    blob: new Blob(['proof-2']),
+    url: 'blob:proof-2',
+    metadata: {
+      kind: 'customer-proof',
+      proofQuality: 'email',
+      jobRevision: 4,
+    },
+  };
+  const olderProof: ExportHistoryEntry = {
+    ...latestProof,
+    id: 'proof-1',
+    filename: 'job-proof-print.pdf',
+    timestamp: 1,
+    url: 'blob:proof-1',
+    metadata: {
+      kind: 'customer-proof',
+      proofQuality: 'print',
+      jobRevision: 3,
+    },
+  };
+
+  const current = getLatestProofFreshness([latestProof, olderProof], 4);
+  assert.equal(current?.stale, false);
+  assert.match(current?.message ?? '', /current job revision 4/i);
+  assert.match(current?.latestProofLabel ?? '', /email-friendly/);
+
+  const stale = getLatestProofFreshness([latestProof, olderProof], 5);
+  assert.equal(stale?.stale, true);
+  assert.match(stale?.message ?? '', /proof revision 4/i);
+
+  const legacy = getLatestProofFreshness([{ ...latestProof, metadata: { kind: 'customer-proof' } }], 5);
+  assert.equal(legacy?.stale, false);
+  assert.match(legacy?.message ?? '', /could not compare/i);
+
+  assert.equal(getLatestProofFreshness([], 5), null);
 });

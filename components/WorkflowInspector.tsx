@@ -30,7 +30,7 @@ import { getPreflightGate } from '../services/preflight';
 import { getRecipe, RECIPES } from '../services/recipes';
 import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
-import { CloudApprovalCapability } from '../services/proofApproval';
+import { CloudApprovalCapability, getLatestProofFreshness } from '../services/proofApproval';
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
@@ -59,46 +59,6 @@ const exportReadinessClassName = (status: NonNullable<ExportHistoryEntry['metada
     case 'blocked': return 'text-rose-300';
     default: return 'text-slate-500';
   }
-};
-
-const proofQualityLabel = (quality: NonNullable<ExportHistoryEntry['metadata']>['proofQuality']) =>
-  quality === 'print' ? 'print-ready proof' : 'email-friendly proof';
-
-const getLatestProofFreshness = (
-  exportHistory: ExportHistoryEntry[],
-  currentJobRevision: number | null,
-) => {
-  const latestProof = exportHistory.find((entry) => entry.metadata?.kind === 'customer-proof');
-  if (!latestProof?.metadata) return null;
-
-  const proofRevision = latestProof.metadata.jobRevision;
-  const quality = latestProof.metadata.proofQuality;
-  const latestProofLabel = quality
-    ? `Latest proof export: ${proofQualityLabel(quality)}`
-    : 'Latest proof export recorded.';
-  const canCompare = typeof proofRevision === 'number' && typeof currentJobRevision === 'number';
-
-  if (!canCompare) {
-    return {
-      stale: false,
-      latestProofLabel,
-      message: 'Ink Master could not compare this proof against the current job revision.',
-    };
-  }
-
-  if (proofRevision !== currentJobRevision) {
-    return {
-      stale: true,
-      latestProofLabel,
-      message: `Current job revision ${currentJobRevision} has changed since proof revision ${proofRevision}. Export a fresh proof before approval.`,
-    };
-  }
-
-  return {
-    stale: false,
-    latestProofLabel,
-    message: `Latest proof was exported from current job revision ${currentJobRevision}.`,
-  };
 };
 
 const STORAGE_KEY = 'inkmaster_presets';

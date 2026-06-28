@@ -1,4 +1,4 @@
-import { ProofApprovalEvent, ProofApprovalState, ProofApprovalStatus, StudioJob } from '../types';
+import { ExportHistoryEntry, ProofApprovalEvent, ProofApprovalState, ProofApprovalStatus, StudioJob } from '../types';
 
 export interface CloudApprovalCapability {
   status: 'not-configured';
@@ -16,6 +16,12 @@ export interface ProofApprovalSummary {
   responseLabel: string | null;
   eventCount: number;
   approverLabel: string;
+}
+
+export interface ProofFreshnessSummary {
+  stale: boolean;
+  latestProofLabel: string | null;
+  message: string;
 }
 
 export const CLOUD_APPROVAL_MESSAGE = 'Cloud proof sharing is not configured. Export local proofs for now.';
@@ -228,3 +234,43 @@ export const formatProofApprovalEvent = (event: ProofApprovalEvent): string =>
     status: event.status,
     approverName: event.actor,
   })} · ${event.note}`;
+
+const proofQualityLabel = (quality: NonNullable<ExportHistoryEntry['metadata']>['proofQuality']) =>
+  quality === 'print' ? 'print-ready proof' : 'email-friendly proof';
+
+export const getLatestProofFreshness = (
+  exportHistory: ExportHistoryEntry[],
+  currentJobRevision: number | null,
+): ProofFreshnessSummary | null => {
+  const latestProof = exportHistory.find((entry) => entry.metadata?.kind === 'customer-proof');
+  if (!latestProof?.metadata) return null;
+
+  const proofRevision = latestProof.metadata.jobRevision;
+  const quality = latestProof.metadata.proofQuality;
+  const latestProofLabel = quality
+    ? `Latest proof export: ${proofQualityLabel(quality)}`
+    : 'Latest proof export recorded.';
+  const canCompare = typeof proofRevision === 'number' && typeof currentJobRevision === 'number';
+
+  if (!canCompare) {
+    return {
+      stale: false,
+      latestProofLabel,
+      message: 'Ink Master could not compare this proof against the current job revision.',
+    };
+  }
+
+  if (proofRevision !== currentJobRevision) {
+    return {
+      stale: true,
+      latestProofLabel,
+      message: `Current job revision ${currentJobRevision} has changed since proof revision ${proofRevision}. Export a fresh proof before approval.`,
+    };
+  }
+
+  return {
+    stale: false,
+    latestProofLabel,
+    message: `Latest proof was exported from current job revision ${currentJobRevision}.`,
+  };
+};
