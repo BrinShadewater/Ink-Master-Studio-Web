@@ -61,6 +61,46 @@ const exportReadinessClassName = (status: NonNullable<ExportHistoryEntry['metada
   }
 };
 
+const proofQualityLabel = (quality: NonNullable<ExportHistoryEntry['metadata']>['proofQuality']) =>
+  quality === 'print' ? 'print-ready proof' : 'email-friendly proof';
+
+const getLatestProofFreshness = (
+  exportHistory: ExportHistoryEntry[],
+  currentJobRevision: number | null,
+) => {
+  const latestProof = exportHistory.find((entry) => entry.metadata?.kind === 'customer-proof');
+  if (!latestProof?.metadata) return null;
+
+  const proofRevision = latestProof.metadata.jobRevision;
+  const quality = latestProof.metadata.proofQuality;
+  const latestProofLabel = quality
+    ? `Latest proof export: ${proofQualityLabel(quality)}`
+    : 'Latest proof export recorded.';
+  const canCompare = typeof proofRevision === 'number' && typeof currentJobRevision === 'number';
+
+  if (!canCompare) {
+    return {
+      stale: false,
+      latestProofLabel,
+      message: 'Ink Master could not compare this proof against the current job revision.',
+    };
+  }
+
+  if (proofRevision !== currentJobRevision) {
+    return {
+      stale: true,
+      latestProofLabel,
+      message: `Current job revision ${currentJobRevision} has changed since proof revision ${proofRevision}. Export a fresh proof before approval.`,
+    };
+  }
+
+  return {
+    stale: false,
+    latestProofLabel,
+    message: `Latest proof was exported from current job revision ${currentJobRevision}.`,
+  };
+};
+
 const STORAGE_KEY = 'inkmaster_presets';
 
 const PRODUCTS: Array<{ id: ItemType; label: string; icon: string; note: string }> = [
@@ -266,6 +306,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
   const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
   const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
   const togglePackageOption = <K extends keyof ProductionPackageOptions>(
@@ -732,6 +773,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
             <CustomerProofBuilder
               branding={proofBranding}
               approval={proofApproval}
+              proofFreshness={proofFreshness}
               cloudCapability={cloudApprovalCapability}
               printFilename={proofFilenames.print}
               emailFilename={proofFilenames.email}

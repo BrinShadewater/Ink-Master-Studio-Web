@@ -12,6 +12,11 @@ import {
 interface CustomerProofBuilderProps {
   branding: ProofBranding;
   approval: ProofApprovalState;
+  proofFreshness?: {
+    stale: boolean;
+    latestProofLabel: string | null;
+    message: string;
+  };
   cloudCapability: CloudApprovalCapability;
   printFilename: string;
   emailFilename: string;
@@ -45,6 +50,7 @@ const toneClasses = {
 export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   branding,
   approval,
+  proofFreshness,
   cloudCapability,
   printFilename,
   emailFilename,
@@ -129,6 +135,17 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         <div className="mt-2 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
           {summary.sentLabel && <p className="text-[10px] leading-relaxed text-slate-500">{summary.sentLabel}</p>}
           {summary.responseLabel && <p className="text-[10px] leading-relaxed text-slate-500">{summary.responseLabel}</p>}
+        </div>
+      )}
+      {proofFreshness && (
+        <div className={`mt-2 rounded-lg border px-3 py-2 ${proofFreshness.stale ? 'border-amber-500/40 bg-amber-950/25' : 'border-emerald-500/30 bg-emerald-950/20'}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${proofFreshness.stale ? 'text-amber-300' : 'text-emerald-300'}`}>
+            {proofFreshness.stale ? 'Proof needs re-export' : 'Proof matches current job'}
+          </p>
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{proofFreshness.message}</p>
+          {proofFreshness.latestProofLabel && (
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{proofFreshness.latestProofLabel}</p>
+          )}
         </div>
       )}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
