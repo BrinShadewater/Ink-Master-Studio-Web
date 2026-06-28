@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { ExportHistoryEntry } from '../types';
 
 interface ExportHistoryProps {
@@ -11,6 +11,16 @@ const getTimeString = (ts: number) => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   return `${Math.floor(diff / 3600000)}h ago`;
 };
+
+const getAbsoluteTimeString = (ts: number) => (
+  new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(ts))
+);
 
 const getFormatColor = (fmt: string) => {
   switch (fmt) {
@@ -44,6 +54,15 @@ const getReadinessColor = (status: NonNullable<ExportHistoryEntry['metadata']>['
   }
 };
 
+const getReadinessTextColor = (status: NonNullable<ExportHistoryEntry['metadata']>['readinessStatus']) => {
+  switch (status) {
+    case 'ready': return 'text-emerald-300';
+    case 'attention': return 'text-amber-300';
+    case 'blocked': return 'text-rose-300';
+    default: return 'text-slate-400';
+  }
+};
+
 const getDetailLines = (entry: ExportHistoryEntry) => {
   const metadata = entry.metadata;
   if (!metadata) return [];
@@ -60,11 +79,21 @@ const getDetailLines = (entry: ExportHistoryEntry) => {
 };
 
 export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
+  const selectedEntry = useMemo(
+    () => entries.find((entry) => entry.id === expandedEntryId) ?? null,
+    [entries, expandedEntryId],
+  );
+
   const downloadAgain = (entry: ExportHistoryEntry) => {
     const a = document.createElement('a');
     a.href = entry.url;
     a.download = entry.filename;
     a.click();
+  };
+
+  const toggleDetails = (entry: ExportHistoryEntry) => {
+    setExpandedEntryId((current) => current === entry.id ? null : entry.id);
   };
 
   return (
@@ -80,6 +109,7 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
           {entries.map((entry) => {
             const detailLines = getDetailLines(entry);
+            const isExpanded = selectedEntry?.id === entry.id;
 
             return (
               <div key={entry.id} className="rounded-lg border border-slate-800 bg-slate-800/30 p-2">
@@ -109,11 +139,72 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   </button>
                 </div>
+                <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-800 pt-2">
+                  <span className="text-[10px] text-slate-600">{getAbsoluteTimeString(entry.timestamp)}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleDetails(entry)}
+                    className="rounded border border-slate-700 px-2 py-1 text-[10px] font-bold text-slate-400 transition-colors hover:border-indigo-500 hover:text-indigo-300"
+                    aria-expanded={isExpanded}
+                  >
+                    {isExpanded ? 'Hide details' : 'Details'}
+                  </button>
+                </div>
                 {detailLines.length > 0 && (
                   <div className="mt-2 space-y-1 border-t border-slate-800 pt-2">
                     {detailLines.slice(0, 4).map((line) => (
                       <p key={line} className="text-[10px] leading-snug text-slate-500">{line}</p>
                     ))}
+                  </div>
+                )}
+                {isExpanded && (
+                  <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/50 p-2">
+                    <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Saved export record</p>
+                    <dl className="mt-2 space-y-1 text-[10px] leading-snug">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-600">Created</dt>
+                        <dd className="text-right text-slate-400">{getAbsoluteTimeString(entry.timestamp)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-600">Type</dt>
+                        <dd className="text-right text-slate-400">{getKindLabel(entry)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-600">File</dt>
+                        <dd className="max-w-[150px] truncate text-right text-slate-400" title={entry.filename}>{entry.filename}</dd>
+                      </div>
+                      {entry.metadata?.readinessStatus && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Readiness</dt>
+                          <dd className={`text-right font-bold uppercase ${getReadinessTextColor(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</dd>
+                        </div>
+                      )}
+                      {entry.metadata?.preflightSummary && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Preflight</dt>
+                          <dd className="text-right text-slate-400">{entry.metadata.preflightSummary}</dd>
+                        </div>
+                      )}
+                      {entry.metadata?.proofApprovalStatus && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Proof</dt>
+                          <dd className="text-right capitalize text-slate-400">{entry.metadata.proofApprovalStatus.replace(/-/g, ' ')}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {entry.metadata?.packageContents && entry.metadata.packageContents.length > 0 && (
+                      <div className="mt-2 border-t border-slate-800 pt-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Package contents</p>
+                        <ul className="mt-1 space-y-0.5">
+                          {entry.metadata.packageContents.map((item) => (
+                            <li key={item} className="flex gap-1.5 text-[10px] text-slate-400">
+                              <span className="text-emerald-400">✓</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
