@@ -5,6 +5,7 @@ import {
   describeProofApprovalNextStep,
   describeProofApprovalStatus,
   formatProofApprovalEvent,
+  summarizeProofApproval,
   updateProofApprovalState,
 } from '../services/proofApproval';
 
@@ -34,6 +35,13 @@ const updateField = <K extends keyof ProofBranding>(
 const recentEvents = (approval: ProofApprovalState) =>
   approval.events.slice(-3).reverse();
 
+const toneClasses = {
+  neutral: 'border-slate-700 bg-slate-900/70 text-slate-300',
+  attention: 'border-amber-500/40 bg-amber-950/30 text-amber-200',
+  ready: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200',
+  blocked: 'border-rose-500/40 bg-rose-950/30 text-rose-200',
+};
+
 export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   branding,
   approval,
@@ -49,7 +57,10 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   onMarkProofSent,
   onRecordProofResponse,
   onDownloadProof,
-}) => (
+}) => {
+  const summary = summarizeProofApproval(approval);
+
+  return (
   <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
     <div className="mb-3">
       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Customer proof builder</p>
@@ -93,13 +104,33 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Local approval tracking</p>
-          <p className="mt-1 text-xs font-semibold text-slate-200">{describeProofApprovalStatus(approval)}</p>
-          <p className="mt-1 text-[10px] leading-relaxed text-indigo-200">{describeProofApprovalNextStep(approval)}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-200">{summary.headline}</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-indigo-200">{summary.nextStep}</p>
         </div>
-        <span className="rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-          {approval.cloudSyncStatus}
+        <span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${toneClasses[summary.tone]}`}>
+          {summary.status.replace(/-/g, ' ')}
         </span>
       </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Proof status</p>
+          <p className="mt-1 text-[11px] font-semibold text-slate-300">{summary.label}</p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Approver</p>
+          <p className="mt-1 truncate text-[11px] font-semibold text-slate-300" title={summary.approverLabel}>{summary.approverLabel}</p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Audit entries</p>
+          <p className="mt-1 text-[11px] font-semibold text-slate-300">{summary.eventCount}</p>
+        </div>
+      </div>
+      {(summary.sentLabel || summary.responseLabel) && (
+        <div className="mt-2 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+          {summary.sentLabel && <p className="text-[10px] leading-relaxed text-slate-500">{summary.sentLabel}</p>}
+          {summary.responseLabel && <p className="text-[10px] leading-relaxed text-slate-500">{summary.responseLabel}</p>}
+        </div>
+      )}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <input
           value={approval.approverName}
@@ -152,6 +183,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         )}
       </div>
       <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{cloudCapability.message}</p>
+      <p className="mt-1 text-[10px] leading-relaxed text-slate-600">Sync mode: {approval.cloudSyncStatus}</p>
     </div>
 
     <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
@@ -184,4 +216,5 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
       </button>
     </div>
   </section>
-);
+  );
+};

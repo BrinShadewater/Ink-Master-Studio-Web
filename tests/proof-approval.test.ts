@@ -10,6 +10,7 @@ import {
   getCloudApprovalCapability,
   markProofSent,
   recordProofResponse,
+  summarizeProofApproval,
   updateProofApprovalState,
 } from '../services/proofApproval';
 
@@ -93,4 +94,32 @@ test('describes approval next steps and formats timeline events', () => {
     describeProofApprovalNextStep(recordProofResponse(sent, 'changes-requested', Date.UTC(2026, 0, 2, 4, 5, 6))),
     'Revise artwork or placement, then export a new proof.',
   );
+});
+
+test('summarizes proof approval state for operator review', () => {
+  const notRequested = summarizeProofApproval(createProofApprovalState());
+  assert.equal(notRequested.tone, 'neutral');
+  assert.equal(notRequested.headline, 'Proof has not been sent');
+  assert.equal(notRequested.sentLabel, null);
+
+  const sent = summarizeProofApproval(
+    updateProofApprovalState(
+      markProofSent(createProofApprovalState(), Date.UTC(2026, 0, 2, 3, 4, 5)),
+      { approverEmail: 'buyer@example.com' },
+    ),
+  );
+  assert.equal(sent.tone, 'attention');
+  assert.match(sent.sentLabel ?? '', /2026-01-02T03:04:05\.000Z/);
+  assert.equal(sent.approverLabel, 'buyer@example.com');
+
+  const approved = summarizeProofApproval(
+    recordProofResponse(
+      updateProofApprovalState(markProofSent(createProofApprovalState()), { approverName: 'Taylor' }),
+      'approved',
+      Date.UTC(2026, 0, 2, 4, 5, 6),
+    ),
+  );
+  assert.equal(approved.tone, 'ready');
+  assert.equal(approved.headline, 'Proof approved for production');
+  assert.match(approved.responseLabel ?? '', /Approved 2026-01-02T04:05:06\.000Z/);
 });

@@ -6,6 +6,18 @@ export interface CloudApprovalCapability {
   supportsShareLinks: false;
 }
 
+export interface ProofApprovalSummary {
+  status: ProofApprovalStatus;
+  label: string;
+  tone: 'neutral' | 'attention' | 'ready' | 'blocked';
+  headline: string;
+  nextStep: string;
+  sentLabel: string | null;
+  responseLabel: string | null;
+  eventCount: number;
+  approverLabel: string;
+}
+
 export const CLOUD_APPROVAL_MESSAGE = 'Cloud proof sharing is not configured. Export local proofs for now.';
 
 export const createProofApprovalState = (): ProofApprovalState => ({
@@ -119,6 +131,69 @@ export const describeProofApprovalNextStep = (state: ProofApprovalState): string
   if (state.status === 'changes-requested') return 'Revise artwork or placement, then export a new proof.';
   if (state.status === 'sent') return 'Waiting for customer response.';
   return 'Export a proof, send it to the customer, then mark it sent.';
+};
+
+const formatProofTimestamp = (timestamp: number | null, prefix: string): string | null =>
+  timestamp ? `${prefix} ${new Date(timestamp).toISOString()}` : null;
+
+export const summarizeProofApproval = (state: ProofApprovalState): ProofApprovalSummary => {
+  const approver = state.approverName.trim() || state.approverEmail.trim();
+  const label = describeProofApprovalStatus(state);
+  const nextStep = describeProofApprovalNextStep(state);
+
+  if (state.status === 'approved') {
+    return {
+      status: state.status,
+      label,
+      tone: 'ready',
+      headline: 'Proof approved for production',
+      nextStep,
+      sentLabel: formatProofTimestamp(state.requestedAt, 'Sent'),
+      responseLabel: formatProofTimestamp(state.respondedAt, 'Approved'),
+      eventCount: state.events.length,
+      approverLabel: approver || 'Approver not named',
+    };
+  }
+
+  if (state.status === 'changes-requested') {
+    return {
+      status: state.status,
+      label,
+      tone: 'blocked',
+      headline: 'Customer requested proof changes',
+      nextStep,
+      sentLabel: formatProofTimestamp(state.requestedAt, 'Sent'),
+      responseLabel: formatProofTimestamp(state.respondedAt, 'Changes requested'),
+      eventCount: state.events.length,
+      approverLabel: approver || 'Approver not named',
+    };
+  }
+
+  if (state.status === 'sent') {
+    return {
+      status: state.status,
+      label,
+      tone: 'attention',
+      headline: 'Proof is waiting on customer response',
+      nextStep,
+      sentLabel: formatProofTimestamp(state.requestedAt, 'Sent'),
+      responseLabel: null,
+      eventCount: state.events.length,
+      approverLabel: approver || 'Approver not named',
+    };
+  }
+
+  return {
+    status: state.status,
+    label,
+    tone: 'neutral',
+    headline: 'Proof has not been sent',
+    nextStep,
+    sentLabel: null,
+    responseLabel: null,
+    eventCount: state.events.length,
+    approverLabel: approver || 'Approver not named',
+  };
 };
 
 export const formatProofApprovalEvent = (event: ProofApprovalEvent): string =>
