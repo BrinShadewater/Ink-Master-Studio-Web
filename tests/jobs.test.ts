@@ -551,6 +551,7 @@ test('round-trips production export metadata through a portable job archive', as
       preflightSummary: '4 pass · 0 warning · 0 critical',
       proofApprovalStatus: 'approved',
       placementSummary: 'full-front placement · T-shirt front',
+      jobRevision: source.revision,
     },
   }];
 

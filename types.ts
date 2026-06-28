@@ -270,6 +270,7 @@ export interface StoredJobExport {
     preflightSummary?: string;
     proofApprovalStatus?: ProofApprovalStatus;
     placementSummary?: string;
+    jobRevision?: number;
   };
 }
 

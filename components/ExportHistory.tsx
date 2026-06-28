@@ -3,6 +3,9 @@ import { ExportHistoryEntry } from '../types';
 
 interface ExportHistoryProps {
   entries: ExportHistoryEntry[];
+  currentJobRevision?: number | null;
+  canRegenerateProductionPackage?: boolean;
+  onRegenerateProductionPackage?: (entry: ExportHistoryEntry) => void;
 }
 
 const getTimeString = (ts: number) => {
@@ -78,7 +81,12 @@ const getDetailLines = (entry: ExportHistoryEntry) => {
   ].filter((line): line is string => Boolean(line));
 };
 
-export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
+export const ExportHistory: React.FC<ExportHistoryProps> = ({
+  entries,
+  currentJobRevision = null,
+  canRegenerateProductionPackage = false,
+  onRegenerateProductionPackage,
+}) => {
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
   const selectedEntry = useMemo(
     () => entries.find((entry) => entry.id === expandedEntryId) ?? null,
@@ -110,6 +118,10 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
           {entries.map((entry) => {
             const detailLines = getDetailLines(entry);
             const isExpanded = selectedEntry?.id === entry.id;
+            const isProductionPackage = entry.metadata?.kind === 'production-package';
+            const hasRevisionChanged = typeof entry.metadata?.jobRevision === 'number'
+              && typeof currentJobRevision === 'number'
+              && entry.metadata.jobRevision !== currentJobRevision;
 
             return (
               <div key={entry.id} className="rounded-lg border border-slate-800 bg-slate-800/30 p-2">
@@ -203,6 +215,21 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({ entries }) => {
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    {isProductionPackage && onRegenerateProductionPackage && (
+                      <div className="mt-2 border-t border-slate-800 pt-2">
+                        {hasRevisionChanged && (
+                          <p className="mb-1 text-[10px] leading-snug text-amber-300">Current job changed since this package. Regenerate uses the latest settings.</p>
+                        )}
+                        <button
+                          type="button"
+                          disabled={!canRegenerateProductionPackage}
+                          onClick={() => onRegenerateProductionPackage(entry)}
+                          className="w-full rounded border border-emerald-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+                        >
+                          Regenerate package
+                        </button>
                       </div>
                     )}
                   </div>

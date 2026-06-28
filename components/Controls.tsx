@@ -18,6 +18,9 @@ interface ControlsProps {
   onGenerateUnderbase: (format: 'PNG' | 'SVG' | 'JPG') => void;
   hasProcessedResult: boolean;
   exportHistory: ExportHistoryEntry[];
+  currentJobRevision?: number | null;
+  canRegenerateProductionPackage?: boolean;
+  onRegenerateProductionPackage?: (entry: ExportHistoryEntry) => void;
   isEyedropperMode: boolean;
   onToggleEyedropper: () => void;
 }
@@ -33,6 +36,9 @@ export const Controls: React.FC<ControlsProps> = ({
   onGenerateUnderbase,
   hasProcessedResult,
   exportHistory,
+  currentJobRevision = null,
+  canRegenerateProductionPackage = false,
+  onRegenerateProductionPackage,
   isEyedropperMode,
   onToggleEyedropper,
 }) => {
@@ -661,7 +667,12 @@ export const Controls: React.FC<ControlsProps> = ({
 
       {/* Feature 10: Export History */}
       <Suspense fallback={<div className="h-20" />}>
-        <ExportHistory entries={exportHistory} />
+        <ExportHistory
+          entries={exportHistory}
+          currentJobRevision={currentJobRevision}
+          canRegenerateProductionPackage={canRegenerateProductionPackage}
+          onRegenerateProductionPackage={onRegenerateProductionPackage}
+        />
       </Suspense>
     </div>
   );

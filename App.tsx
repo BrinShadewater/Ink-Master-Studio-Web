@@ -465,6 +465,7 @@ const App: React.FC = () => {
       preflightSummary: `${preflightFindings.filter((finding) => finding.severity === 'pass').length} pass · ${gate.warningCount} warning · ${gate.criticalCount} critical`,
       proofApprovalStatus: job.proofApproval.status,
       placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
+      jobRevision: job.revision,
     };
   };
 
@@ -774,6 +775,11 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRegenerateProductionPackage = async (entry: ExportHistoryEntry) => {
+    if (entry.metadata?.kind !== 'production-package') return;
+    await handleDownloadProductionPackage();
+  };
+
   const handleDownloadProof = async (quality: 'print' | 'email') => {
     if (!currentJob || !processedResult) return;
     if (!preflightGate.canExport) {
@@ -799,6 +805,7 @@ const App: React.FC = () => {
           kind: 'customer-proof',
           proofApprovalStatus: currentJob.proofApproval.status,
           placementSummary: formatPlacementSummary(activePlacement),
+          jobRevision: currentJob.revision,
         },
       });
     } catch (proofError) {
@@ -896,7 +903,7 @@ const App: React.FC = () => {
       const result = await generateUnderbase(processedResult.url, format);
       const filename = `underbase_${settings.itemType.toLowerCase()}.${format.toLowerCase()}`;
       downloadBlob(result.blob, filename);
-      addToExportHistory({ filename, format, timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'underbase', placementSummary: formatPlacementSummary(activePlacement) } });
+      addToExportHistory({ filename, format, timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'underbase', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
     } catch {
       setError('The white underbase could not be generated.');
     }
@@ -906,7 +913,7 @@ const App: React.FC = () => {
     if (!processedResult) return;
     const filename = `inkmaster_${selectedRecipeId ?? 'custom'}_${settings.itemType.toLowerCase()}.${settings.format.toLowerCase()}`;
     downloadBlob(processedResult.blob, filename);
-    addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement) } });
+    addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
   };
 
   const handleDownloadPdf = async () => {
@@ -915,7 +922,7 @@ const App: React.FC = () => {
       const result = await generatePrintPDF(processedResult.url, settings.itemType);
       const filename = `inkmaster_production_${settings.itemType.toLowerCase()}.pdf`;
       downloadBlob(result.blob, filename);
-      addToExportHistory({ filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'production-pdf', placementSummary: formatPlacementSummary(activePlacement) } });
+      addToExportHistory({ filename, format: 'PDF', timestamp: Date.now(), url: URL.createObjectURL(result.blob), blob: result.blob, metadata: { kind: 'production-pdf', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
     } catch {
       setError('The production PDF could not be generated.');
     }
@@ -1053,6 +1060,7 @@ const App: React.FC = () => {
               settings={settings}
               palette={palette}
               exportHistory={exportHistory}
+              currentJobRevision={currentJob?.revision ?? null}
               hasProcessedResult={Boolean(processedResult)}
               hasArtwork={Boolean(originalImage)}
               lowResolutionAcknowledged={lowResolutionAcknowledged}
@@ -1115,6 +1123,7 @@ const App: React.FC = () => {
               onMarkProofSent={handleMarkProofSent}
               onRecordProofResponse={handleRecordProofResponse}
               onDownloadProductionPackage={() => void handleDownloadProductionPackage()}
+              onRegenerateProductionPackage={(entry) => void handleRegenerateProductionPackage(entry)}
               onDownloadProof={(quality) => void handleDownloadProof(quality)}
             />
           </AppliedProductionProfileContext.Provider>
@@ -1148,6 +1157,7 @@ const App: React.FC = () => {
                   metadata: {
                     kind: 'mockup-set',
                     placementSummary: activePlacement ? formatPlacementSummary(activePlacement) : 'No placement selected',
+                    jobRevision: currentJob?.revision,
                   },
                 })}
                 isEyedropperMode={isEyedropperMode}

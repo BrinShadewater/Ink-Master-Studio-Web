@@ -79,6 +79,7 @@ interface WorkflowInspectorProps {
   settings: ProcessingSettings;
   palette: string[];
   exportHistory: ExportHistoryEntry[];
+  currentJobRevision: number | null;
   hasProcessedResult: boolean;
   hasArtwork: boolean;
   lowResolutionAcknowledged: boolean;
@@ -123,6 +124,7 @@ interface WorkflowInspectorProps {
   onMarkProofSent: () => void;
   onRecordProofResponse: (status: 'approved' | 'changes-requested') => void;
   onDownloadProductionPackage: () => void;
+  onRegenerateProductionPackage: (entry: ExportHistoryEntry) => void;
   onDownloadProof: (quality: 'print' | 'email') => void;
 }
 
@@ -193,6 +195,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     settings,
     palette,
     exportHistory,
+    currentJobRevision,
     hasProcessedResult,
     hasArtwork,
     lowResolutionAcknowledged,
@@ -237,6 +240,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     onMarkProofSent,
     onRecordProofResponse,
     onDownloadProductionPackage,
+    onRegenerateProductionPackage,
     onDownloadProof,
   } = props;
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -751,25 +755,47 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
             {exportHistory.length > 0 && (
               <Section title="Recent exports">
                 <div className="space-y-2">
-                  {exportHistory.slice(0, 3).map((entry) => (
-                    <a key={entry.id} href={entry.url} download={entry.filename} className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs hover:border-indigo-500">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-slate-300">{exportKindLabel(entry)}</span>
-                        <span className="text-indigo-300">Again</span>
-                      </div>
-                      <p className="mt-1 truncate text-[10px] text-slate-500">{entry.filename}</p>
-                      {(entry.metadata?.readinessStatus || entry.metadata?.placementSummary) && (
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-                          {entry.metadata.readinessStatus && (
-                            <span className={`font-bold uppercase ${exportReadinessClassName(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</span>
-                          )}
-                          {entry.metadata.placementSummary && (
-                            <span className="truncate text-slate-500">{entry.metadata.placementSummary}</span>
-                          )}
+                  {exportHistory.slice(0, 3).map((entry) => {
+                    const isProductionPackage = entry.metadata?.kind === 'production-package';
+                    const hasRevisionChanged = typeof entry.metadata?.jobRevision === 'number'
+                      && typeof currentJobRevision === 'number'
+                      && entry.metadata.jobRevision !== currentJobRevision;
+
+                    return (
+                      <div key={entry.id} className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-300">{exportKindLabel(entry)}</span>
+                          <a href={entry.url} download={entry.filename} className="text-indigo-300 hover:text-indigo-200">Again</a>
                         </div>
-                      )}
-                    </a>
-                  ))}
+                        <p className="mt-1 truncate text-[10px] text-slate-500">{entry.filename}</p>
+                        {(entry.metadata?.readinessStatus || entry.metadata?.placementSummary) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                            {entry.metadata.readinessStatus && (
+                              <span className={`font-bold uppercase ${exportReadinessClassName(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</span>
+                            )}
+                            {entry.metadata.placementSummary && (
+                              <span className="truncate text-slate-500">{entry.metadata.placementSummary}</span>
+                            )}
+                          </div>
+                        )}
+                        {isProductionPackage && (
+                          <div className="mt-2 border-t border-slate-800 pt-2">
+                            {hasRevisionChanged && (
+                              <p className="mb-1 text-[10px] leading-snug text-amber-300">Current job changed since this package. Regenerate uses the latest settings.</p>
+                            )}
+                            <button
+                              type="button"
+                              disabled={!hasProcessedResult || !packageReview?.canExport}
+                              onClick={() => onRegenerateProductionPackage(entry)}
+                              className="w-full rounded border border-emerald-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-300 hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+                            >
+                              Regenerate package
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </Section>
             )}

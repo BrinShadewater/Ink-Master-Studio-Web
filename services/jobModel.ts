@@ -226,6 +226,9 @@ const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | un
       ? value.proofApprovalStatus as ProofApprovalStatus
       : undefined,
     placementSummary: typeof value.placementSummary === 'string' ? value.placementSummary : undefined,
+    jobRevision: typeof value.jobRevision === 'number' && Number.isFinite(value.jobRevision) && value.jobRevision >= 0
+      ? value.jobRevision
+      : undefined,
   };
 };
 
