@@ -550,6 +550,7 @@ test('round-trips production export metadata through a portable job archive', as
       packageContents: ['Print master', 'Job manifest'],
       preflightSummary: '4 pass · 0 warning · 0 critical',
       proofApprovalStatus: 'approved',
+      proofQuality: 'print',
       placementSummary: 'full-front placement · T-shirt front',
       jobRevision: source.revision,
     },

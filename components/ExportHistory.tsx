@@ -73,6 +73,7 @@ const getDetailLines = (entry: ExportHistoryEntry) => {
   return [
     metadata.readinessSummary,
     metadata.preflightSummary ? `Preflight: ${metadata.preflightSummary}` : null,
+    metadata.proofQuality ? `Proof export: ${metadata.proofQuality === 'print' ? 'print-ready PDF' : 'email-friendly PDF'}` : null,
     metadata.placementSummary,
     metadata.proofApprovalStatus ? `Proof: ${metadata.proofApprovalStatus.replace(/-/g, ' ')}` : null,
     metadata.packageContents && metadata.packageContents.length > 0
@@ -201,6 +202,12 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
                         <div className="flex justify-between gap-3">
                           <dt className="text-slate-600">Proof</dt>
                           <dd className="text-right capitalize text-slate-400">{entry.metadata.proofApprovalStatus.replace(/-/g, ' ')}</dd>
+                        </div>
+                      )}
+                      {entry.metadata?.proofQuality && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Proof export</dt>
+                          <dd className="text-right text-slate-400">{entry.metadata.proofQuality === 'print' ? 'Print-ready PDF' : 'Email-friendly PDF'}</dd>
                         </div>
                       )}
                     </dl>

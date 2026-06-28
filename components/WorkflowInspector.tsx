@@ -768,10 +768,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                           <a href={entry.url} download={entry.filename} className="text-indigo-300 hover:text-indigo-200">Again</a>
                         </div>
                         <p className="mt-1 truncate text-[10px] text-slate-500">{entry.filename}</p>
-                        {(entry.metadata?.readinessStatus || entry.metadata?.placementSummary) && (
+                        {(entry.metadata?.readinessStatus || entry.metadata?.proofQuality || entry.metadata?.placementSummary) && (
                           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
                             {entry.metadata.readinessStatus && (
                               <span className={`font-bold uppercase ${exportReadinessClassName(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</span>
+                            )}
+                            {entry.metadata.proofQuality && (
+                              <span className="font-bold uppercase text-sky-300">{entry.metadata.proofQuality === 'print' ? 'print proof' : 'email proof'}</span>
                             )}
                             {entry.metadata.placementSummary && (
                               <span className="truncate text-slate-500">{entry.metadata.placementSummary}</span>

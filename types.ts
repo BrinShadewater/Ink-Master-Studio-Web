@@ -269,6 +269,7 @@ export interface StoredJobExport {
     packageContents?: string[];
     preflightSummary?: string;
     proofApprovalStatus?: ProofApprovalStatus;
+    proofQuality?: 'print' | 'email';
     placementSummary?: string;
     jobRevision?: number;
   };

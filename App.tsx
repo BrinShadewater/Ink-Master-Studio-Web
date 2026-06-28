@@ -804,6 +804,7 @@ const App: React.FC = () => {
         metadata: {
           kind: 'customer-proof',
           proofApprovalStatus: currentJob.proofApproval.status,
+          proofQuality: quality,
           placementSummary: formatPlacementSummary(activePlacement),
           jobRevision: currentJob.revision,
         },

@@ -208,6 +208,11 @@ const READINESS_STATUSES: Array<NonNullable<StoredJobExport['metadata']>['readin
   'blocked',
 ];
 
+const PROOF_QUALITIES: Array<NonNullable<StoredJobExport['metadata']>['proofQuality']> = [
+  'print',
+  'email',
+];
+
 const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | undefined => {
   if (!isRecord(value) || typeof value.kind !== 'string' || !EXPORT_KINDS.includes(value.kind as NonNullable<StoredJobExport['metadata']>['kind'])) {
     return undefined;
@@ -224,6 +229,9 @@ const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | un
     preflightSummary: typeof value.preflightSummary === 'string' ? value.preflightSummary : undefined,
     proofApprovalStatus: typeof value.proofApprovalStatus === 'string' && PROOF_APPROVAL_STATUSES.includes(value.proofApprovalStatus as ProofApprovalStatus)
       ? value.proofApprovalStatus as ProofApprovalStatus
+      : undefined,
+    proofQuality: typeof value.proofQuality === 'string' && PROOF_QUALITIES.includes(value.proofQuality as NonNullable<StoredJobExport['metadata']>['proofQuality'])
+      ? value.proofQuality as NonNullable<StoredJobExport['metadata']>['proofQuality']
       : undefined,
     placementSummary: typeof value.placementSummary === 'string' ? value.placementSummary : undefined,
     jobRevision: typeof value.jobRevision === 'number' && Number.isFinite(value.jobRevision) && value.jobRevision >= 0
