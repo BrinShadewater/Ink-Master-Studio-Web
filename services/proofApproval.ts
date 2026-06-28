@@ -88,6 +88,32 @@ export const markProofSent = (
   events: appendEvent(current, 'sent', timestamp, 'Proof exported or sent for customer review.'),
 });
 
+export const markProofExported = (
+  current: ProofApprovalState,
+  quality: 'print' | 'email',
+  timestamp = Date.now(),
+): ProofApprovalState => {
+  if (current.status === 'approved') return current;
+
+  const note = quality === 'print'
+    ? 'Print-ready proof PDF exported for customer review.'
+    : 'Email-friendly proof PDF exported for customer review.';
+  const lastEvent = current.events[current.events.length - 1];
+  if (current.status === 'sent' && lastEvent?.status === 'sent' && lastEvent.note === note) {
+    return current;
+  }
+
+  return {
+    ...current,
+    status: 'sent',
+    requestedAt: current.status === 'sent' && current.requestedAt ? current.requestedAt : timestamp,
+    respondedAt: null,
+    shareUrl: null,
+    cloudSyncStatus: 'local-only',
+    events: appendEvent(current, 'sent', timestamp, note),
+  };
+};
+
 export const recordProofResponse = (
   current: ProofApprovalState,
   status: Extract<ProofApprovalStatus, 'approved' | 'changes-requested'>,

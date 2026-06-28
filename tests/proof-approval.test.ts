@@ -8,6 +8,7 @@ import {
   describeProofApprovalNextStep,
   formatProofApprovalEvent,
   getCloudApprovalCapability,
+  markProofExported,
   markProofSent,
   recordProofResponse,
   summarizeProofApproval,
@@ -36,6 +37,38 @@ test('marks a proof as sent without creating a share URL', () => {
   assert.equal(approval.events.length, 1);
   assert.equal(approval.events[0].status, 'sent');
   assert.match(approval.events[0].note, /sent/i);
+});
+
+test('marks proof export activity without duplicate consecutive export events', () => {
+  const exported = markProofExported(createProofApprovalState(), 'email', 1_700_000_000_000);
+  const duplicate = markProofExported(exported, 'email', 1_700_000_100_000);
+  const printExport = markProofExported(duplicate, 'print', 1_700_000_200_000);
+
+  assert.equal(exported.status, 'sent');
+  assert.equal(exported.requestedAt, 1_700_000_000_000);
+  assert.equal(exported.respondedAt, null);
+  assert.equal(exported.events.length, 1);
+  assert.match(exported.events[0].note, /Email-friendly/);
+  assert.equal(duplicate.events.length, 1);
+  assert.equal(printExport.events.length, 2);
+  assert.match(printExport.events[1].note, /Print-ready/);
+});
+
+test('proof export reopens changes-requested proofs but preserves approved proofs', () => {
+  const changes = recordProofResponse(
+    markProofSent(createProofApprovalState(), 1_700_000_000_000),
+    'changes-requested',
+    1_700_000_100_000,
+  );
+  const revised = markProofExported(changes, 'email', 1_700_000_200_000);
+  const approved = recordProofResponse(markProofSent(createProofApprovalState()), 'approved', 1_700_000_300_000);
+  const stillApproved = markProofExported(approved, 'print', 1_700_000_400_000);
+
+  assert.equal(revised.status, 'sent');
+  assert.equal(revised.requestedAt, 1_700_000_200_000);
+  assert.equal(revised.respondedAt, null);
+  assert.equal(stillApproved.status, 'approved');
+  assert.equal(stillApproved.events.length, approved.events.length);
 });
 
 test('records approved and changes-requested responses locally', () => {

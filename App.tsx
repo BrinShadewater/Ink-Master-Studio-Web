@@ -84,6 +84,7 @@ import { formatPlacementSummary } from './services/handoffDetails';
 import {
   createProofApprovalState,
   getCloudApprovalCapability,
+  markProofExported,
   markProofSent,
   recordProofResponse,
 } from './services/proofApproval';
@@ -795,15 +796,21 @@ const App: React.FC = () => {
         quality,
       );
       downloadBlob(result.blob, result.filename);
+      const proofExportedAt = Date.now();
+      const nextProofApproval = markProofExported(currentJob.proofApproval, quality, proofExportedAt);
+      updateCurrentJob((job) => ({
+        ...job,
+        proofApproval: markProofExported(job.proofApproval, quality, proofExportedAt),
+      }));
       addToExportHistory({
         filename: result.filename,
         format: 'PDF',
-        timestamp: Date.now(),
+        timestamp: proofExportedAt,
         url: URL.createObjectURL(result.blob),
         blob: result.blob,
         metadata: {
           kind: 'customer-proof',
-          proofApprovalStatus: currentJob.proofApproval.status,
+          proofApprovalStatus: nextProofApproval.status,
           proofQuality: quality,
           placementSummary: formatPlacementSummary(activePlacement),
           jobRevision: currentJob.revision,
