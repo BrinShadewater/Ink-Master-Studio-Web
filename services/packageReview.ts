@@ -4,6 +4,7 @@ import { describeSelectedMockups, resolveMockupSelectionForItemType } from './mo
 import { formatPlacementSummary } from './handoffDetails';
 import { PreflightFinding, StudioJob } from '../types';
 import { ProfileUpdateStatus } from './productionProfiles';
+import { getLatestProofFreshness } from './proofApproval';
 
 export type PackageReviewItemStatus = 'ready' | 'missing' | 'excluded';
 export type PackageReviewGateStatus = 'ready' | 'warning-acknowledgement-required' | 'blocked';
@@ -87,6 +88,7 @@ export const buildProductionPackageReview = (
   const baseFilename = resolveFilenamePattern(options.namingPattern, job, placementName);
   const gate = getPreflightGate(findings, preflightAcknowledged);
   const proofStatus = job.proofApproval.status;
+  const proofFreshness = getLatestProofFreshness(job.exports, job.revision);
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
 
@@ -111,8 +113,12 @@ export const buildProductionPackageReview = (
   }
   if (proofStatus === 'changes-requested') {
     blockingReasons.push('Customer requested proof changes before production handoff.');
+  } else if (proofStatus === 'approved' && proofFreshness?.stale) {
+    blockingReasons.push('Approved customer proof no longer matches the current job revision.');
   } else if (proofStatus === 'sent') {
-    warnings.push('Customer proof is sent and awaiting response.');
+    warnings.push(proofFreshness?.stale
+      ? 'Customer proof is stale because the job changed after the latest proof export.'
+      : 'Customer proof is sent and awaiting response.');
   } else if (proofStatus === 'not-requested') {
     warnings.push('Customer proof has not been requested yet.');
   }
@@ -171,15 +177,21 @@ export const buildProductionPackageReview = (
       'Customer proof',
       proofStatus === 'changes-requested'
         ? 'blocked'
+        : proofStatus === 'approved' && proofFreshness?.stale
+          ? 'blocked'
         : proofStatus === 'approved'
           ? 'ready'
           : 'attention',
       proofStatus === 'approved'
-        ? 'Customer proof is approved.'
+        ? proofFreshness?.stale
+          ? 'Approved proof is stale. Export a fresh proof and record approval again.'
+          : 'Customer proof is approved.'
         : proofStatus === 'changes-requested'
           ? 'Customer requested changes before production.'
           : proofStatus === 'sent'
-            ? 'Proof is sent and awaiting customer response.'
+            ? proofFreshness?.stale
+              ? 'Latest sent proof is stale because the job changed after export.'
+              : 'Proof is sent and awaiting customer response.'
             : 'Proof has not been requested yet.',
     ),
   ];

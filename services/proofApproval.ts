@@ -238,8 +238,12 @@ export const formatProofApprovalEvent = (event: ProofApprovalEvent): string =>
 const proofQualityLabel = (quality: NonNullable<ExportHistoryEntry['metadata']>['proofQuality']) =>
   quality === 'print' ? 'print-ready proof' : 'email-friendly proof';
 
+type ProofFreshnessExportRecord = {
+  metadata?: ExportHistoryEntry['metadata'];
+};
+
 export const getLatestProofFreshness = (
-  exportHistory: ExportHistoryEntry[],
+  exportHistory: ProofFreshnessExportRecord[],
   currentJobRevision: number | null,
 ): ProofFreshnessSummary | null => {
   const latestProof = exportHistory.find((entry) => entry.metadata?.kind === 'customer-proof');

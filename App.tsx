@@ -443,7 +443,7 @@ const App: React.FC = () => {
         blob: storedEntry.blob,
         metadata: storedEntry.metadata,
       }, ...job.exports].slice(0, 20),
-    }));
+    }), false);
   };
 
   const packageExportMetadata = (job: StudioJob): StoredJobExport['metadata'] => {
@@ -553,17 +553,17 @@ const App: React.FC = () => {
   const handleProofApprovalChange = (proofApproval: ProofApprovalState) => updateCurrentJob((job) => ({
     ...job,
     proofApproval,
-  }));
+  }), false);
 
   const handleMarkProofSent = () => updateCurrentJob((job) => ({
     ...job,
     proofApproval: markProofSent(job.proofApproval),
-  }));
+  }), false);
 
   const handleRecordProofResponse = (status: 'approved' | 'changes-requested') => updateCurrentJob((job) => ({
     ...job,
     proofApproval: recordProofResponse(job.proofApproval, status),
-  }));
+  }), false);
 
   const handleAiEdgeCleanup = async () => {
     if (!originalImage || !currentJob) return;
@@ -801,7 +801,7 @@ const App: React.FC = () => {
       updateCurrentJob((job) => ({
         ...job,
         proofApproval: markProofExported(job.proofApproval, quality, proofExportedAt),
-      }));
+      }), false);
       addToExportHistory({
         filename: result.filename,
         format: 'PDF',

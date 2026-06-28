@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createStudioJob } from '../services/jobModel';
 import { buildProductionPackageReview } from '../services/packageReview';
-import { PreflightFinding } from '../types';
+import { PreflightFinding, StoredJobExport } from '../types';
 
 const warning: PreflightFinding = {
   id: 'background',
@@ -20,6 +20,19 @@ const critical: PreflightFinding = {
   message: 'The requested print is too large.',
   action: 'Reduce print size.',
 };
+
+const proofExport = (jobRevision: number): StoredJobExport => ({
+  id: `proof-${jobRevision}`,
+  filename: `proof-v${jobRevision}.pdf`,
+  format: 'PDF',
+  timestamp: Date.UTC(2026, 0, 2, 3, 4, 5),
+  blob: new Blob([`proof-${jobRevision}`]),
+  metadata: {
+    kind: 'customer-proof',
+    proofQuality: 'email',
+    jobRevision,
+  },
+});
 
 test('previews the final package filename and included production files', () => {
   const job = createStudioJob('River / Street');
@@ -176,6 +189,47 @@ test('marks handoff ready when proof is approved and checks pass', () => {
   assert.equal(review.exportAction.nextStep, 'Ready to download the production package.');
   assert.equal(review.handoffReadiness.status, 'ready');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'ready');
+});
+
+test('blocks package handoff when approved proof is stale', () => {
+  const job = createStudioJob('Stale approved package');
+  job.revision = 7;
+  job.exports = [proofExport(6)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.canExport, false);
+  assert.equal(review.gateStatus, 'blocked');
+  assert.match(review.exportAction.disabledReason ?? '', /no longer matches/i);
+  assert.match(review.exportAction.nextStep, /Customer proof/);
+  assert.equal(review.handoffReadiness.status, 'blocked');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
+  assert.match(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.note ?? '', /stale/i);
+});
+
+test('warns but does not block package handoff when sent proof is stale', () => {
+  const job = createStudioJob('Stale sent package');
+  job.revision = 7;
+  job.exports = [proofExport(6)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'sent',
+    requestedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+  };
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.canExport, true);
+  assert.equal(review.gateStatus, 'ready');
+  assert.equal(review.handoffReadiness.status, 'attention');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'attention');
+  assert.match(review.warnings.join(' '), /stale/i);
 });
 
 test('surfaces profile snapshot provenance when source profile changed', () => {
