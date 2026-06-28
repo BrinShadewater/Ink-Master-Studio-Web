@@ -1139,7 +1139,17 @@ const App: React.FC = () => {
                 processedResult={processedResult}
                 settings={settings}
                 isProcessing={isProcessing}
-                onExported={(blob, filename) => addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(blob), blob })}
+                onExported={(blob, filename) => addToExportHistory({
+                  filename,
+                  format: settings.format,
+                  timestamp: Date.now(),
+                  url: URL.createObjectURL(blob),
+                  blob,
+                  metadata: {
+                    kind: 'mockup-set',
+                    placementSummary: activePlacement ? formatPlacementSummary(activePlacement) : 'No placement selected',
+                  },
+                })}
                 isEyedropperMode={isEyedropperMode}
                 onEyedropperPick={(color) => {
                   setIsEyedropperMode(false);

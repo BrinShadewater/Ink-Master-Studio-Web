@@ -40,6 +40,27 @@ const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'export', label: 'Export', short: 'Download files' },
 ];
 
+const exportKindLabel = (entry: ExportHistoryEntry) => {
+  switch (entry.metadata?.kind) {
+    case 'production-package': return 'Production package';
+    case 'customer-proof': return 'Customer proof';
+    case 'print-master': return 'Print master';
+    case 'production-pdf': return 'Production PDF';
+    case 'mockup-set': return 'Mockup set';
+    case 'underbase': return 'White underbase';
+    default: return 'Export';
+  }
+};
+
+const exportReadinessClassName = (status: NonNullable<ExportHistoryEntry['metadata']>['readinessStatus']) => {
+  switch (status) {
+    case 'ready': return 'text-emerald-300';
+    case 'attention': return 'text-amber-300';
+    case 'blocked': return 'text-rose-300';
+    default: return 'text-slate-500';
+  }
+};
+
 const STORAGE_KEY = 'inkmaster_presets';
 
 const PRODUCTS: Array<{ id: ItemType; label: string; icon: string; note: string }> = [
@@ -729,7 +750,27 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
             {exportHistory.length > 0 && (
               <Section title="Recent exports">
-                <div className="space-y-2">{exportHistory.slice(0, 3).map((entry) => <a key={entry.id} href={entry.url} download={entry.filename} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-300 hover:border-indigo-500"><span className="truncate">{entry.filename}</span><span className="text-indigo-300">Again</span></a>)}</div>
+                <div className="space-y-2">
+                  {exportHistory.slice(0, 3).map((entry) => (
+                    <a key={entry.id} href={entry.url} download={entry.filename} className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs hover:border-indigo-500">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-300">{exportKindLabel(entry)}</span>
+                        <span className="text-indigo-300">Again</span>
+                      </div>
+                      <p className="mt-1 truncate text-[10px] text-slate-500">{entry.filename}</p>
+                      {(entry.metadata?.readinessStatus || entry.metadata?.placementSummary) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                          {entry.metadata.readinessStatus && (
+                            <span className={`font-bold uppercase ${exportReadinessClassName(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</span>
+                          )}
+                          {entry.metadata.placementSummary && (
+                            <span className="truncate text-slate-500">{entry.metadata.placementSummary}</span>
+                          )}
+                        </div>
+                      )}
+                    </a>
+                  ))}
+                </div>
               </Section>
             )}
 
