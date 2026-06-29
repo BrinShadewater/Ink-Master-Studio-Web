@@ -22,6 +22,12 @@ export interface ProofFreshnessSummary {
   stale: boolean;
   latestProofLabel: string | null;
   message: string;
+  comparable: boolean;
+  currentJobRevision: number | null;
+  latestProofRevision: number | null;
+  latestProofQuality: 'print' | 'email' | null;
+  latestProofFilename: string | null;
+  latestProofExportedAt: number | null;
 }
 
 export const CLOUD_APPROVAL_MESSAGE = 'Cloud proof sharing is not configured. Export local proofs for now.';
@@ -239,6 +245,8 @@ const proofQualityLabel = (quality: NonNullable<ExportHistoryEntry['metadata']>[
   quality === 'print' ? 'print-ready proof' : 'email-friendly proof';
 
 type ProofFreshnessExportRecord = {
+  filename?: string;
+  timestamp?: number;
   metadata?: ExportHistoryEntry['metadata'];
 };
 
@@ -261,6 +269,12 @@ export const getLatestProofFreshness = (
       stale: false,
       latestProofLabel,
       message: 'Ink Master could not compare this proof against the current job revision.',
+      comparable: false,
+      currentJobRevision,
+      latestProofRevision: typeof proofRevision === 'number' ? proofRevision : null,
+      latestProofQuality: quality ?? null,
+      latestProofFilename: latestProof.filename ?? null,
+      latestProofExportedAt: typeof latestProof.timestamp === 'number' ? latestProof.timestamp : null,
     };
   }
 
@@ -269,6 +283,12 @@ export const getLatestProofFreshness = (
       stale: true,
       latestProofLabel,
       message: `Current job revision ${currentJobRevision} has changed since proof revision ${proofRevision}. Export a fresh proof before approval.`,
+      comparable: true,
+      currentJobRevision,
+      latestProofRevision: proofRevision,
+      latestProofQuality: quality ?? null,
+      latestProofFilename: latestProof.filename ?? null,
+      latestProofExportedAt: typeof latestProof.timestamp === 'number' ? latestProof.timestamp : null,
     };
   }
 
@@ -276,5 +296,11 @@ export const getLatestProofFreshness = (
     stale: false,
     latestProofLabel,
     message: `Latest proof was exported from current job revision ${currentJobRevision}.`,
+    comparable: true,
+    currentJobRevision,
+    latestProofRevision: proofRevision,
+    latestProofQuality: quality ?? null,
+    latestProofFilename: latestProof.filename ?? null,
+    latestProofExportedAt: typeof latestProof.timestamp === 'number' ? latestProof.timestamp : null,
   };
 };

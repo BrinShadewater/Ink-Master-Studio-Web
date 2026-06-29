@@ -3,7 +3,7 @@ import { resolveFilenamePattern } from './naming';
 import { formatPlacementSummary, formatPrintSizeSummary } from './handoffDetails';
 import { getSelectedProductionMockups } from './mockups';
 import { AppliedTemplateStatus, StudioJob } from '../types';
-import { buildProofApprovalAuditLine } from './proofApproval';
+import { buildProofApprovalAuditLine, getLatestProofFreshness, ProofFreshnessSummary } from './proofApproval';
 
 export interface PackageAsset {
   filename: string;
@@ -110,6 +110,41 @@ const appliedTemplateSummary = (job: StudioJob, status?: AppliedTemplateStatus) 
   return applied;
 };
 
+const proofFreshnessStatus = (freshness: ProofFreshnessSummary | null): 'matches-current-job' | 'stale' | 'not-comparable' | 'not-exported' => {
+  if (!freshness) return 'not-exported';
+  if (!freshness.comparable) return 'not-comparable';
+  return freshness.stale ? 'stale' : 'matches-current-job';
+};
+
+const proofAuditManifest = (job: StudioJob, freshness: ProofFreshnessSummary | null) => ({
+  approvalStatus: job.proofApproval.status,
+  approvalAudit: buildProofApprovalAuditLine(job),
+  approvalEventCount: job.proofApproval.events.length,
+  currentJobRevision: job.revision,
+  latestProofRevision: freshness?.latestProofRevision ?? null,
+  latestProofQuality: freshness?.latestProofQuality ?? null,
+  latestProofFilename: freshness?.latestProofFilename ?? null,
+  latestProofExportedAt: freshness?.latestProofExportedAt ? new Date(freshness.latestProofExportedAt).toISOString() : null,
+  freshnessStatus: proofFreshnessStatus(freshness),
+  matchesCurrentJob: freshness?.comparable ? !freshness.stale : null,
+  message: freshness?.message ?? 'No customer proof export recorded for this job.',
+});
+
+const proofAuditSummary = (audit: ReturnType<typeof proofAuditManifest>) => {
+  const latest = audit.latestProofFilename
+    ? `${audit.latestProofFilename}${audit.latestProofQuality ? ` (${audit.latestProofQuality})` : ''}`
+    : 'None';
+  const revision = audit.latestProofRevision === null
+    ? `current job revision ${audit.currentJobRevision}; proof revision unknown`
+    : `current job revision ${audit.currentJobRevision}; proof revision ${audit.latestProofRevision}`;
+  return [
+    `Proof freshness: ${audit.freshnessStatus}`,
+    `Latest proof export: ${latest}`,
+    `Proof revision check: ${revision}`,
+    `Proof freshness note: ${audit.message}`,
+  ];
+};
+
 export const createJobManifest = (
   job: StudioJob,
   palette: string[],
@@ -118,6 +153,7 @@ export const createJobManifest = (
 ) => {
   const placement = job.placements[job.activePlacementKey];
   const selectedMockups = getSelectedProductionMockups(job.packageOptions.selectedMockupIndices, job.settings.itemType);
+  const proofFreshness = getLatestProofFreshness(job.exports, job.revision);
   return {
     format: 'inkmaster-production-package',
     schemaVersion: 1,
@@ -156,6 +192,7 @@ export const createJobManifest = (
     palette,
     preflightFindings: job.preflightFindings,
     proofApproval: job.proofApproval,
+    proofAudit: proofAuditManifest(job, proofFreshness),
   };
 };
 
@@ -166,6 +203,7 @@ const summaryText = (
   appliedTemplateStatus?: AppliedTemplateStatus,
 ) => {
   const placement = job.placements[job.activePlacementKey];
+  const proofAudit = proofAuditManifest(job, getLatestProofFreshness(job.exports, job.revision));
   const includedAssets = packageAssets
     .filter((asset) => asset.status === 'included')
     .map((asset) => asset.label ? `${asset.filename} (${asset.label})` : asset.filename);
@@ -183,6 +221,7 @@ const summaryText = (
     `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
     `Proof approval: ${buildProofApprovalAuditLine(job)}`,
     `Proof approval events: ${job.proofApproval.events.length}`,
+    ...proofAuditSummary(proofAudit),
     `Format: ${job.settings.format}`,
     `Palette: ${palette.join(', ') || 'Not analyzed'}`,
     `Recipe: ${job.selectedRecipeId ?? 'custom'}`,

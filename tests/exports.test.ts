@@ -7,6 +7,20 @@ import { resolveFilenamePattern } from '../services/naming';
 import { buildProductionPackage } from '../services/productionPackage';
 import { buildProofDescriptor, buildProofFilename, buildProofMockupCaption, generateCustomerProof } from '../services/proofBuilder';
 import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
+import { StoredJobExport } from '../types';
+
+const proofExport = (jobRevision: number, timestamp = Date.UTC(2026, 0, 2, 3, 4, 5)): StoredJobExport => ({
+  id: `proof-${jobRevision}`,
+  filename: `proof-v${jobRevision}.pdf`,
+  format: 'PDF',
+  timestamp,
+  blob: new Blob([`proof-${jobRevision}`]),
+  metadata: {
+    kind: 'customer-proof',
+    proofQuality: 'email',
+    jobRevision,
+  },
+});
 
 test('resolves and sanitizes production filename tokens', () => {
   const job = createStudioJob('River / Street');
@@ -46,6 +60,8 @@ test('builds a production package with selected assets and manifest', async () =
   assert.equal(manifest.printSpecification.widthInches, 12);
   assert.equal(manifest.proofApproval.status, 'not-requested');
   assert.equal(manifest.proofApproval.cloudSyncStatus, 'local-only');
+  assert.equal(manifest.proofAudit.freshnessStatus, 'not-exported');
+  assert.equal(manifest.proofAudit.matchesCurrentJob, null);
   assert.match(manifest.placementSummary, /T-shirt front/);
   assert.match(manifest.placementSummary, /offset 0 in horizontal, 2 in from top/);
   assert.deepEqual(manifest.packageOptions.selectedMockups, [
@@ -131,6 +147,73 @@ test('includes profile name and revision in production summary', async () => {
   assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
   assert.match(summary, /Proof approval: Not requested/);
   assert.match(summary, /Proof approval events: 0/);
+  assert.match(summary, /Proof freshness: not-exported/);
+});
+
+test('includes proof freshness audit in production package handoff', async () => {
+  const job = createStudioJob('Proof audit package');
+  job.revision = 5;
+  job.exports = [proofExport(5)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    requestedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.deepEqual(manifest.proofAudit, {
+    approvalStatus: 'approved',
+    approvalAudit: 'Approved by Taylor · sent 2026-01-02T03:04:05.000Z · response 2026-01-02T04:05:06.000Z · local-only',
+    approvalEventCount: 0,
+    currentJobRevision: 5,
+    latestProofRevision: 5,
+    latestProofQuality: 'email',
+    latestProofFilename: 'proof-v5.pdf',
+    latestProofExportedAt: '2026-01-02T03:04:05.000Z',
+    freshnessStatus: 'matches-current-job',
+    matchesCurrentJob: true,
+    message: 'Latest proof was exported from current job revision 5.',
+  });
+  assert.match(summary, /Proof freshness: matches-current-job/);
+  assert.match(summary, /Latest proof export: proof-v5\.pdf \(email\)/);
+  assert.match(summary, /Proof revision check: current job revision 5; proof revision 5/);
+});
+
+test('marks stale proof audit in production package handoff', async () => {
+  const job = createStudioJob('Stale proof audit package');
+  job.revision = 8;
+  job.exports = [proofExport(7)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+
+  const result = await buildProductionPackage({
+    job,
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+  const summary = await zip.file('production-summary.txt')!.async('string');
+
+  assert.equal(manifest.proofAudit.freshnessStatus, 'stale');
+  assert.equal(manifest.proofAudit.matchesCurrentJob, false);
+  assert.equal(manifest.proofAudit.currentJobRevision, 8);
+  assert.equal(manifest.proofAudit.latestProofRevision, 7);
+  assert.match(manifest.proofAudit.message, /changed since proof revision 7/);
+  assert.match(summary, /Proof freshness: stale/);
+  assert.match(summary, /Proof revision check: current job revision 8; proof revision 7/);
 });
 
 test('includes applied template provenance in production package handoff', async () => {
