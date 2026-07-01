@@ -52,35 +52,53 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
   };
 
   return (
-    <div
-      onDrop={handleDrop}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      className="border-2 border-dashed border-slate-700 rounded-xl p-16 text-center hover:border-indigo-500 hover:bg-slate-900/50 transition-all cursor-pointer group bg-slate-900/20"
-    >
-      <input
-        type="file"
-        id="fileInput"
-        className="hidden"
-        accept=".jpg,.jpeg,.png,.svg,.webp"
-        onChange={handleFileInput}
-      />
-      <label htmlFor="fileInput" className="cursor-pointer block">
-        <div className="mb-6 transform group-hover:scale-110 transition-transform duration-300">
-            <svg className="w-16 h-16 mx-auto text-slate-600 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
+    <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/75 shadow-2xl shadow-black/30">
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        className="group cursor-pointer border-2 border-dashed border-slate-700 bg-slate-900/20 p-8 text-center transition-all hover:border-indigo-500 hover:bg-slate-900/50 sm:p-12"
+      >
+        <input
+          type="file"
+          id="fileInput"
+          className="hidden"
+          accept=".jpg,.jpeg,.png,.svg,.webp"
+          onChange={handleFileInput}
+        />
+        <label htmlFor="fileInput" className="block cursor-pointer">
+          <div className="mb-6 transform transition-transform duration-300 group-hover:scale-110">
+              <svg className="mx-auto h-16 w-16 text-slate-600 transition-colors group-hover:text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+          </div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.25em] text-indigo-300">Start a local production job</p>
+          <h3 className="mb-2 text-2xl font-black text-slate-100">Drop DTG/DTF artwork here</h3>
+          <p className="mb-6 text-sm text-slate-500">
+            JPG, PNG, or WebP up to {MAX_FILE_SIZE_MB}MB · safe SVG up to {MAX_SVG_SIZE_MB}MB
+          </p>
+          <div className="inline-block rounded-lg bg-slate-800 px-8 py-3 text-sm font-semibold text-slate-200 shadow-lg transition-all group-hover:bg-indigo-600 group-hover:text-white">
+            Select artwork
+          </div>
+        </label>
+      </div>
+
+      <div className="grid gap-px bg-slate-800 text-left sm:grid-cols-3">
+        <div className="bg-slate-950/95 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">1 · Save</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Creates a named local-first job with the source artwork attached.</p>
         </div>
-        <h3 className="text-xl font-bold text-slate-200 mb-2">Drop artwork here</h3>
-        <p className="text-slate-500 text-sm mb-6">
-          JPG, PNG, SVG up to {MAX_FILE_SIZE_MB}MB
-        </p>
-        <div className="px-8 py-3 bg-slate-800 text-slate-200 rounded-lg inline-block group-hover:bg-indigo-600 group-hover:text-white transition-all text-sm font-semibold shadow-lg">
-          Or Select File
+        <div className="bg-slate-950/95 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">2 · Preflight</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Analyzes artwork, recommends a print recipe, and checks production risk.</p>
         </div>
-      </label>
-    </div>
+        <div className="bg-slate-950/95 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">3 · Package</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Guides proof approval and the final print-shop handoff package.</p>
+        </div>
+      </div>
+    </section>
   );
 };

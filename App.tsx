@@ -1202,9 +1202,24 @@ const App: React.FC = () => {
                     }))
                   : undefined}
               />
+            ) : originalImage ? (
+              <div className="flex h-full items-center justify-center p-6 text-center">
+                <div className="w-full max-w-md">
+                  <div className="mx-auto flex max-h-[46dvh] min-h-48 items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-inner shadow-black/30">
+                    <img src={originalImage} alt="Uploaded source artwork" className="max-h-[40dvh] max-w-full object-contain" />
+                  </div>
+                  <div className="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">Artwork loaded</p>
+                    <h2 className="mt-1 text-sm font-black text-white">{currentJob?.sourceArtwork?.name ?? currentJob?.metadata.name ?? 'Source artwork'} is ready for setup.</h2>
+                    <p className="mt-2 text-xs leading-relaxed text-indigo-100/70">
+                      Choose a print goal on the left, apply a recipe, then build the first production preview.
+                    </p>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="flex h-full items-center justify-center text-center text-slate-600">
-                <div><div className="text-4xl">◫</div><p className="mt-2 text-xs">Preview will appear here</p></div>
+                <div><div className="text-4xl">◫</div><p className="mt-2 text-xs">Upload artwork to start a production job</p></div>
               </div>
             )}
           </div>
