@@ -32,6 +32,7 @@ import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
 import { CloudApprovalCapability, getLatestProofFreshness } from '../services/proofApproval';
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
+import { buildProductionWorkflowPath, ProductionWorkflowStepStatus } from '../services/workflowPath';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -59,6 +60,22 @@ const exportReadinessClassName = (status: NonNullable<ExportHistoryEntry['metada
     case 'blocked': return 'text-rose-300';
     default: return 'text-slate-500';
   }
+};
+
+const workflowStatusClass: Record<ProductionWorkflowStepStatus, string> = {
+  done: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+  current: 'border-indigo-500/40 bg-indigo-500/10 text-indigo-200',
+  review: 'border-amber-500/35 bg-amber-500/10 text-amber-200',
+  blocked: 'border-rose-500/35 bg-rose-500/10 text-rose-200',
+  pending: 'border-slate-800 bg-slate-950/50 text-slate-500',
+};
+
+const workflowStatusLabel: Record<ProductionWorkflowStepStatus, string> = {
+  done: 'Done',
+  current: 'Now',
+  review: 'Review',
+  blocked: 'Blocked',
+  pending: 'Pending',
 };
 
 const STORAGE_KEY = 'inkmaster_presets';
@@ -267,6 +284,15 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
   const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
+  const workflowPath = buildProductionWorkflowPath({
+    hasArtwork,
+    hasProcessedResult,
+    preflightFindings,
+    preflightAcknowledged,
+    proofApprovalStatus: proofApproval.status,
+    proofFreshness,
+    packageReview,
+  });
   const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
   const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
   const togglePackageOption = <K extends keyof ProductionPackageOptions>(
@@ -350,6 +376,24 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
           </button>
         ))}
       </nav>
+
+      <section className="flex-none border-b border-slate-800 bg-slate-950/60 px-3 py-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Production path</p>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">DTG/DTF</span>
+        </div>
+        <div className="grid grid-cols-5 gap-1 lg:grid-cols-1 lg:gap-1.5">
+          {workflowPath.map((step) => (
+            <div key={step.id} className={`rounded-lg border px-2 py-1.5 ${workflowStatusClass[step.status]}`} title={step.note}>
+              <div className="flex items-center justify-between gap-1">
+                <span className="truncate text-[10px] font-black">{step.label}</span>
+                <span className="rounded-full border border-current px-1.5 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[step.status]}</span>
+              </div>
+              <p className="mt-1 hidden text-[9px] leading-snug opacity-80 lg:block">{step.note}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
         {stage === 'goal' && (
