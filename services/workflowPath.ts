@@ -30,6 +30,17 @@ const workflowStep = (
   note: string,
 ): ProductionWorkflowStep => ({ id, label, status, note });
 
+export const getProductionWorkflowFocus = (
+  path: ProductionWorkflowStep[],
+): ProductionWorkflowStep | null => (
+  path.find((step) => step.status === 'blocked')
+  ?? path.find((step) => step.status === 'review')
+  ?? path.find((step) => step.status === 'current')
+  ?? path.find((step) => step.status === 'pending')
+  ?? path.at(-1)
+  ?? null
+);
+
 export const buildProductionWorkflowPath = ({
   hasArtwork,
   hasProcessedResult,
@@ -45,9 +56,7 @@ export const buildProductionWorkflowPath = ({
 
   const jobStatus: ProductionWorkflowStepStatus = hasProcessedResult
     ? 'done'
-    : hasArtwork
-      ? 'current'
-      : 'pending';
+    : 'current';
   const preflightStatus: ProductionWorkflowStepStatus = !hasProcessedResult
     ? 'pending'
     : gate.criticalCount > 0

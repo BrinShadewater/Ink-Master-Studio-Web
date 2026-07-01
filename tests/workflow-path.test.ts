@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildProductionPackageReview } from '../services/packageReview';
-import { buildProductionWorkflowPath } from '../services/workflowPath';
+import { buildProductionWorkflowPath, getProductionWorkflowFocus } from '../services/workflowPath';
 import { createStudioJob } from '../services/jobModel';
 import { PreflightFinding, StoredJobExport } from '../types';
 
@@ -35,6 +35,27 @@ const proofExport = (jobRevision: number): StoredJobExport => ({
   },
 });
 
+test('workflow path starts at job intake before artwork is added', () => {
+  const path = buildProductionWorkflowPath({
+    hasArtwork: false,
+    hasProcessedResult: false,
+    preflightFindings: [],
+    preflightAcknowledged: false,
+    proofApprovalStatus: 'not-requested',
+    proofFreshness: null,
+    packageReview: null,
+  });
+
+  assert.deepEqual(path.map((step) => [step.id, step.status]), [
+    ['job', 'current'],
+    ['preflight', 'pending'],
+    ['placement', 'pending'],
+    ['proof', 'pending'],
+    ['package', 'pending'],
+  ]);
+  assert.equal(getProductionWorkflowFocus(path)?.id, 'job');
+});
+
 test('workflow path starts at job processing when artwork is unprocessed', () => {
   const path = buildProductionWorkflowPath({
     hasArtwork: true,
@@ -53,6 +74,20 @@ test('workflow path starts at job processing when artwork is unprocessed', () =>
     ['proof', 'pending'],
     ['package', 'pending'],
   ]);
+});
+
+test('workflow path focuses the first operator blocker', () => {
+  const path = buildProductionWorkflowPath({
+    hasArtwork: true,
+    hasProcessedResult: true,
+    preflightFindings: [warning, criticalPlacement],
+    preflightAcknowledged: false,
+    proofApprovalStatus: 'not-requested',
+    proofFreshness: null,
+    packageReview: null,
+  });
+
+  assert.equal(getProductionWorkflowFocus(path)?.id, 'preflight');
 });
 
 test('workflow path highlights preflight and placement blockers', () => {

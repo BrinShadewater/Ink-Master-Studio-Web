@@ -32,7 +32,7 @@ import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
 import { CloudApprovalCapability, getLatestProofFreshness } from '../services/proofApproval';
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
-import { buildProductionWorkflowPath, ProductionWorkflowStepStatus } from '../services/workflowPath';
+import { buildProductionWorkflowPath, getProductionWorkflowFocus, ProductionWorkflowStepStatus } from '../services/workflowPath';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -293,6 +293,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     proofFreshness,
     packageReview,
   });
+  const workflowFocus = getProductionWorkflowFocus(workflowPath);
   const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
   const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
   const togglePackageOption = <K extends keyof ProductionPackageOptions>(
@@ -382,9 +383,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Production path</p>
           <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">DTG/DTF</span>
         </div>
-        <div className="grid grid-cols-5 gap-1 lg:grid-cols-1 lg:gap-1.5">
+        {workflowFocus && (
+          <div className={`mb-2 rounded-lg border px-3 py-2 ${workflowStatusClass[workflowFocus.status]}`}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[11px] font-black">Next: {workflowFocus.label}</p>
+              <span className="flex-none rounded-full border border-current px-2 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[workflowFocus.status]}</span>
+            </div>
+            <p className="mt-1 text-[10px] leading-snug opacity-80">{workflowFocus.note}</p>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-1">
           {workflowPath.map((step) => (
-            <div key={step.id} className={`rounded-lg border px-2 py-1.5 ${workflowStatusClass[step.status]}`} title={step.note}>
+            <div key={step.id} className={`rounded-lg border px-2 py-1.5 ${workflowStatusClass[step.status]} ${step.id === 'package' ? 'col-span-2 sm:col-span-1' : ''}`} title={step.note}>
               <div className="flex items-center justify-between gap-1">
                 <span className="truncate text-[10px] font-black">{step.label}</span>
                 <span className="rounded-full border border-current px-1.5 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[step.status]}</span>
