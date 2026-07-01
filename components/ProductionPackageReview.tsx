@@ -29,6 +29,12 @@ const readinessLabel: Record<string, string> = {
   blocked: 'Blocked',
 };
 
+const nextActionClass: Record<string, string> = {
+  ready: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200',
+  review: 'border-amber-500/40 bg-amber-950/30 text-amber-200',
+  blocked: 'border-rose-500/40 bg-rose-950/30 text-rose-200',
+};
+
 export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = ({ review }) => (
   <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
     <div className="flex items-start justify-between gap-3">
@@ -42,6 +48,19 @@ export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = (
       <span className={`flex-none rounded-full px-2 py-1 text-[10px] font-black ${review.canExport ? 'bg-emerald-500/20 text-emerald-200' : review.gateStatus === 'blocked' ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'}`}>
         {review.canExport ? 'READY' : review.gateStatus === 'blocked' ? 'BLOCKED' : 'ACK NEEDED'}
       </span>
+    </div>
+
+    <div className={`mt-3 rounded-lg border px-3 py-2 ${nextActionClass[review.nextAction.priority]}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Next action</p>
+          <p className="mt-1 text-sm font-black text-white">{review.nextAction.label}</p>
+          <p className="mt-1 text-[11px] leading-relaxed opacity-90">{review.nextAction.instruction}</p>
+        </div>
+        <span className="flex-none rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-90">
+          {review.nextAction.target}
+        </span>
+      </div>
     </div>
 
     <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">

@@ -48,6 +48,13 @@ test('previews the final package filename and included production files', () => 
   assert.equal(review.gateStatus, 'ready');
   assert.equal(review.exportAction.label, 'Download production package');
   assert.equal(review.exportAction.disabledReason, null);
+  assert.deepEqual(review.nextAction, {
+    id: 'export-proof',
+    label: 'Export proof',
+    priority: 'review',
+    target: 'Customer proof',
+    instruction: 'Export a customer proof and send it for approval before final handoff.',
+  });
   assert.equal(review.handoffReadiness.status, 'attention');
   assert.match(review.handoffReadiness.summary, /operator review/);
   assert.equal(
@@ -85,6 +92,9 @@ test('blocks package export until artwork has been processed', () => {
   assert.equal(review.exportAction.label, 'Production package not ready');
   assert.match(review.exportAction.disabledReason ?? '', /Process the artwork/);
   assert.match(review.exportAction.nextStep, /Artwork processed/);
+  assert.equal(review.nextAction.id, 'process-artwork');
+  assert.equal(review.nextAction.priority, 'blocked');
+  assert.match(review.nextAction.instruction, /Run the artwork treatment/);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /Process the artwork/);
   assert.equal(review.items.find((entry) => entry.id === 'print-master')?.status, 'missing');
@@ -137,6 +147,8 @@ test('requires warning acknowledgement before package export', () => {
   assert.equal(review.gateStatus, 'warning-acknowledgement-required');
   assert.match(review.exportAction.disabledReason ?? '', /require acknowledgement/);
   assert.match(review.exportAction.nextStep, /Preflight gate/);
+  assert.equal(review.nextAction.id, 'acknowledge-preflight');
+  assert.equal(review.nextAction.priority, 'review');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'preflight')?.status, 'attention');
   assert.match(review.warnings.join(' '), /require acknowledgement/);
   assert.equal(acknowledged.canExport, true);
@@ -150,6 +162,8 @@ test('blocks package export for critical preflight findings', () => {
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
   assert.match(review.exportAction.disabledReason ?? '', /critical preflight/);
+  assert.equal(review.nextAction.id, 'resolve-critical-preflight');
+  assert.equal(review.nextAction.priority, 'blocked');
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /critical preflight/);
 });
@@ -168,6 +182,9 @@ test('blocks handoff when proof changes are requested', () => {
   assert.equal(review.gateStatus, 'blocked');
   assert.match(review.exportAction.disabledReason ?? '', /proof changes/);
   assert.match(review.exportAction.nextStep, /Customer proof/);
+  assert.equal(review.nextAction.id, 're-export-proof');
+  assert.equal(review.nextAction.priority, 'blocked');
+  assert.match(review.nextAction.instruction, /Customer requested changes/);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
   assert.match(review.blockingReasons.join(' '), /requested proof changes/);
@@ -187,6 +204,13 @@ test('marks handoff ready when proof is approved and checks pass', () => {
   assert.equal(review.canExport, true);
   assert.equal(review.exportAction.disabledReason, null);
   assert.equal(review.exportAction.nextStep, 'Ready to download the production package.');
+  assert.deepEqual(review.nextAction, {
+    id: 'download-package',
+    label: 'Download package',
+    priority: 'ready',
+    target: 'Production package',
+    instruction: 'Proof and handoff checks are ready. Download the production package.',
+  });
   assert.equal(review.handoffReadiness.status, 'ready');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'ready');
 });
@@ -208,6 +232,9 @@ test('blocks package handoff when approved proof is stale', () => {
   assert.equal(review.gateStatus, 'blocked');
   assert.match(review.exportAction.disabledReason ?? '', /no longer matches/i);
   assert.match(review.exportAction.nextStep, /Customer proof/);
+  assert.equal(review.nextAction.id, 're-export-proof');
+  assert.equal(review.nextAction.priority, 'blocked');
+  assert.match(review.nextAction.instruction, /approved proof is stale/i);
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
   assert.match(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.note ?? '', /stale/i);
@@ -227,6 +254,8 @@ test('warns but does not block package handoff when sent proof is stale', () => 
 
   assert.equal(review.canExport, true);
   assert.equal(review.gateStatus, 'ready');
+  assert.equal(review.nextAction.id, 're-export-proof');
+  assert.equal(review.nextAction.priority, 'review');
   assert.equal(review.handoffReadiness.status, 'attention');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'attention');
   assert.match(review.warnings.join(' '), /stale/i);
@@ -242,4 +271,22 @@ test('surfaces profile snapshot provenance when source profile changed', () => {
   assert.equal(review.profile.status, 'update-available');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'profile')?.status, 'attention');
   assert.match(review.warnings.join(' '), /newer revision/);
+});
+
+test('guides operator to wait for approval when proof is sent and current', () => {
+  const job = createStudioJob('Sent proof package');
+  job.revision = 6;
+  job.exports = [proofExport(6)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'sent',
+    requestedAt: Date.UTC(2026, 0, 2, 3, 4, 5),
+  };
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.canExport, true);
+  assert.equal(review.nextAction.id, 'wait-for-approval');
+  assert.equal(review.nextAction.priority, 'review');
+  assert.match(review.nextAction.instruction, /Record approval/);
 });

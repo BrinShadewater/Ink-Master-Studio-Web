@@ -9,6 +9,17 @@ import { getLatestProofFreshness } from './proofApproval';
 export type PackageReviewItemStatus = 'ready' | 'missing' | 'excluded';
 export type PackageReviewGateStatus = 'ready' | 'warning-acknowledgement-required' | 'blocked';
 export type HandoffReadinessStatus = 'ready' | 'attention' | 'blocked';
+export type OperatorNextActionId =
+  | 'process-artwork'
+  | 'resolve-critical-preflight'
+  | 'acknowledge-preflight'
+  | 'select-mockups'
+  | 'export-proof'
+  | 're-export-proof'
+  | 'wait-for-approval'
+  | 'record-approval'
+  | 'download-package';
+export type OperatorNextActionPriority = 'ready' | 'review' | 'blocked';
 
 export interface HandoffReadinessCheck {
   id: 'artwork' | 'preflight' | 'package-assets' | 'profile' | 'template' | 'proof';
@@ -35,6 +46,13 @@ export interface ProductionPackageReview {
     label: string;
     disabledReason: string | null;
     nextStep: string;
+  };
+  nextAction: {
+    id: OperatorNextActionId;
+    label: string;
+    priority: OperatorNextActionPriority;
+    target: string;
+    instruction: string;
   };
   blockingReasons: string[];
   warnings: string[];
@@ -71,6 +89,14 @@ const readinessCheck = (
 
 const firstActionableCheck = (checks: HandoffReadinessCheck[]) =>
   checks.find((check) => check.status === 'blocked') ?? checks.find((check) => check.status === 'attention') ?? null;
+
+const nextAction = (
+  id: OperatorNextActionId,
+  label: string,
+  priority: OperatorNextActionPriority,
+  target: string,
+  instruction: string,
+): ProductionPackageReview['nextAction'] => ({ id, label, priority, target, instruction });
 
 export const buildProductionPackageReview = (
   job: StudioJob,
@@ -201,6 +227,98 @@ export const buildProductionPackageReview = (
       ? 'attention'
       : 'ready';
   const nextCheck = firstActionableCheck(handoffChecks);
+  const operatorNextAction = (() => {
+    if (!hasProcessedResult) {
+      return nextAction(
+        'process-artwork',
+        'Process artwork',
+        'blocked',
+        'Prepare',
+        'Run the artwork treatment before building proofs or production files.',
+      );
+    }
+    if (gate.criticalCount > 0) {
+      return nextAction(
+        'resolve-critical-preflight',
+        'Resolve preflight blockers',
+        'blocked',
+        'Preflight',
+        `${gate.criticalCount} critical preflight issue${gate.criticalCount === 1 ? '' : 's'} must be fixed before export.`,
+      );
+    }
+    if (proofStatus === 'changes-requested') {
+      return nextAction(
+        're-export-proof',
+        'Revise and re-export proof',
+        'blocked',
+        'Customer proof',
+        'Customer requested changes. Update the job, export a fresh proof, and send it again.',
+      );
+    }
+    if (proofStatus === 'approved' && proofFreshness?.stale) {
+      return nextAction(
+        're-export-proof',
+        'Re-export proof',
+        'blocked',
+        'Customer proof',
+        'The approved proof is stale. Export a fresh proof and record approval again before handoff.',
+      );
+    }
+    if (gate.requiresAcknowledgement && !preflightAcknowledged) {
+      return nextAction(
+        'acknowledge-preflight',
+        'Acknowledge warnings',
+        'review',
+        'Preflight',
+        `${gate.warningCount} preflight warning${gate.warningCount === 1 ? '' : 's'} need operator acknowledgement.`,
+      );
+    }
+    if (options.includeMockups && selectedMockupIndices.length === 0) {
+      return nextAction(
+        'select-mockups',
+        'Select mockups',
+        'review',
+        'Package contents',
+        'Choose at least one mockup color or turn mockups off for this package.',
+      );
+    }
+    if (proofStatus === 'not-requested') {
+      return nextAction(
+        'export-proof',
+        'Export proof',
+        'review',
+        'Customer proof',
+        'Export a customer proof and send it for approval before final handoff.',
+      );
+    }
+    if (proofStatus === 'sent') {
+      return nextAction(
+        proofFreshness?.stale ? 're-export-proof' : 'wait-for-approval',
+        proofFreshness?.stale ? 'Re-export proof' : 'Wait for approval',
+        'review',
+        'Customer proof',
+        proofFreshness?.stale
+          ? 'The sent proof is stale. Export a fresh proof before recording approval.'
+          : 'The proof has been sent. Record approval or requested changes when the customer responds.',
+      );
+    }
+    if (proofStatus === 'approved') {
+      return nextAction(
+        'download-package',
+        'Download package',
+        'ready',
+        'Production package',
+        'Proof and handoff checks are ready. Download the production package.',
+      );
+    }
+    return nextAction(
+      'record-approval',
+      'Review proof status',
+      'review',
+      'Customer proof',
+      'Review the proof state before production handoff.',
+    );
+  })();
   const disabledReason = !canExport
     ? blockingReasons[0] ?? warnings[0] ?? nextCheck?.note ?? 'Resolve handoff readiness items before export.'
     : null;
@@ -222,6 +340,7 @@ export const buildProductionPackageReview = (
         ? `${nextCheck.label}: ${nextCheck.note}`
         : 'Ready to download the production package.',
     },
+    nextAction: operatorNextAction,
     blockingReasons,
     warnings,
     handoffReadiness: {
