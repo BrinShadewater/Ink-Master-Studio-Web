@@ -33,6 +33,7 @@ import { ProductionPackageReview as ProductionPackageReviewModel } from '../serv
 import { CloudApprovalCapability, getLatestProofFreshness } from '../services/proofApproval';
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 import { buildProductionWorkflowPath, getProductionWorkflowFocus, ProductionWorkflowStepStatus } from '../services/workflowPath';
+import { formatPlacementSummary, formatPrintSizeSummary } from '../services/handoffDetails';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -283,6 +284,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   const finishMode = settings.grain >= 20 ? 'distressed' : settings.edgeBehavior === EdgeBehavior.SOFT ? 'soft' : 'clean';
   const changes = useMemo(() => recommendation?.proposedChanges ?? [], [recommendation]);
   const preflightGate = getPreflightGate(preflightFindings, preflightAcknowledged);
+  const productionCheckStatus = preflightGate.criticalCount > 0
+    ? 'Blocked'
+    : preflightGate.requiresAcknowledgement && !preflightAcknowledged
+      ? 'Review'
+      : 'Ready';
+  const productionCheckClass = preflightGate.criticalCount > 0
+    ? 'border-rose-500/35 bg-rose-500/10 text-rose-100'
+    : preflightGate.requiresAcknowledgement && !preflightAcknowledged
+      ? 'border-amber-500/35 bg-amber-500/10 text-amber-100'
+      : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
+  const printSizeSummary = formatPrintSizeSummary(printSpecification.widthInches, printSpecification.heightInches);
+  const placementSummary = formatPlacementSummary(placement);
   const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
   const workflowPath = buildProductionWorkflowPath({
     hasArtwork,
@@ -490,8 +503,40 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Prepare</p>
               <h2 className="mt-1 text-xl font-black text-white">Make the artwork print-friendly.</h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-500">Only the decisions that affect this artwork are shown here.</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">Start with the production checks, then adjust only the artwork treatment that affects this job.</p>
             </div>
+
+            <section className={`rounded-xl border p-4 shadow-lg shadow-black/10 ${productionCheckClass}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-75">Production checks first</p>
+                  <h3 className="mt-1 text-base font-black text-white">{productionCheckStatus}</h3>
+                </div>
+                <span className="rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-80">
+                  {preflightGate.warningCount} warning · {preflightGate.criticalCount} critical
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-[10px] leading-relaxed sm:grid-cols-3">
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Print size</p>
+                  <p className="mt-1 text-slate-100">{printSizeSummary} · {printSpecification.targetDpi} DPI target</p>
+                </div>
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Placement</p>
+                  <p className="mt-1 text-slate-100">{placementSummary}</p>
+                </div>
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Next check</p>
+                  <p className="mt-1 text-slate-100">
+                    {preflightGate.criticalCount > 0
+                      ? 'Fix critical preflight issues before export.'
+                      : preflightGate.requiresAcknowledgement && !preflightAcknowledged
+                        ? 'Review and acknowledge warnings before export.'
+                        : 'Treatment controls below can be adjusted safely.'}
+                  </p>
+                </div>
+              </div>
+            </section>
 
             <Section title="Background" description="Remove a solid border color while protecting the artwork inside it.">
               <Segmented
