@@ -409,16 +409,31 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
         {stage === 'goal' && (
           <div className="space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">What are you making?</p>
-              <h2 className="mt-1 text-xl font-black text-white">Choose the result, not the machinery.</h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-500">Ink Master will set up the technical details. You can refine everything later.</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Production setup</p>
+              <h2 className="mt-1 text-xl font-black text-white">Choose the print recipe for this job.</h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">This sets the first treatment, output format, garment preview, and preflight assumptions. You can refine everything before export.</p>
+            </div>
+
+            <div className="grid gap-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[10px] leading-relaxed text-slate-400 sm:grid-cols-3">
+              <div>
+                <p className="font-black uppercase tracking-widest text-emerald-300">1 · Pick recipe</p>
+                <p className="mt-1">Start from a production-safe treatment instead of raw sliders.</p>
+              </div>
+              <div>
+                <p className="font-black uppercase tracking-widest text-indigo-300">2 · Prep artwork</p>
+                <p className="mt-1">Review background, garment, finish, and effective DPI.</p>
+              </div>
+              <div>
+                <p className="font-black uppercase tracking-widest text-amber-300">3 · Export proof</p>
+                <p className="mt-1">Move into placement, proof approval, and package handoff.</p>
+              </div>
             </div>
 
             {recommendation && (
               <section className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-4 shadow-lg shadow-indigo-950/20">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">Recommended</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">Recommended production recipe</p>
                     <h3 className="mt-1 text-base font-black text-white">{getRecipe(recommendation.recipeId).name}</h3>
                   </div>
                   <span className="rounded-full bg-indigo-500/15 px-2 py-1 text-[10px] font-bold text-indigo-200">{Math.round(recommendation.confidence * 100)}% match</span>
@@ -427,11 +442,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   {recommendation.reasons.map((reason) => <li key={reason} className="flex gap-2 text-xs leading-relaxed text-slate-300"><span className="text-indigo-400">•</span>{reason}</li>)}
                 </ul>
                 <details className="mt-3 text-xs text-slate-400">
-                  <summary className="cursor-pointer font-semibold text-indigo-300">What will change?</summary>
+                  <summary className="cursor-pointer font-semibold text-indigo-300">What this recipe will change</summary>
                   <ul className="mt-2 space-y-1 pl-3">{changes.map((change) => <li key={change}>— {change}</li>)}</ul>
                 </details>
                 <button type="button" onClick={() => onApplyRecipe(recommendation.recipeId)} className="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-500">
-                  Apply recommended setup
+                  Apply recipe and open prep
                 </button>
               </section>
             )}
@@ -446,7 +461,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 >
                   <span className="text-lg text-indigo-300">{recipe.icon}</span>
                   <span className="mt-2 block text-xs font-black text-slate-100">{recipe.name}</span>
-                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">{recipe.outcome}</span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">{recipe.description}</span>
+                  <span className="mt-2 block rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">{recipe.outcome}</span>
                 </button>
               ))}
             </div>
