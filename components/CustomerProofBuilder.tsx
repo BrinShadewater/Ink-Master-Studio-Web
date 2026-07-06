@@ -44,6 +44,12 @@ const toneClasses = {
   blocked: 'border-rose-500/40 bg-rose-950/30 text-rose-200',
 };
 
+const workflowStepClasses = {
+  ready: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200',
+  current: 'border-indigo-500/40 bg-indigo-950/30 text-indigo-200',
+  blocked: 'border-slate-700 bg-slate-950/50 text-slate-500',
+};
+
 export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   branding,
   approval,
@@ -63,6 +69,16 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
 }) => {
   const summary = summarizeProofApproval(approval);
   const approvalBlockedByStaleProof = proofFreshness?.stale === true;
+  const proofExportReady = hasProcessedResult && canExport;
+  const proofSent = approval.requestedAt !== null || approval.status === 'sent' || approval.status === 'approved' || approval.status === 'changes-requested';
+  const canMarkProofSent = proofExportReady;
+  const canRecordResponse = proofSent && !approvalBlockedByStaleProof;
+  const markSentTitle = canMarkProofSent ? undefined : 'Export-ready artwork is required before marking a proof as sent.';
+  const responseTitle = approvalBlockedByStaleProof
+    ? 'Export a fresh proof before recording customer approval.'
+    : proofSent
+      ? undefined
+      : 'Mark the proof sent before recording the customer response.';
 
   return (
   <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
@@ -72,6 +88,27 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
       <p className="mt-1 text-xs leading-relaxed text-slate-500">
         The proof includes customer/job details, placement, profile revision, selected mockups, notes, and approval fields.
       </p>
+    </div>
+
+    <div className="mb-3 grid gap-2 sm:grid-cols-3">
+      <div className={`rounded-lg border px-3 py-2 ${proofExportReady ? workflowStepClasses.ready : workflowStepClasses.current}`}>
+        <p className="text-[9px] font-black uppercase tracking-widest">1 · Export proof</p>
+        <p className="mt-1 text-[10px] leading-relaxed opacity-80">
+          {proofExportReady ? 'Print and email proof files are ready.' : 'Process artwork and clear preflight first.'}
+        </p>
+      </div>
+      <div className={`rounded-lg border px-3 py-2 ${proofSent ? workflowStepClasses.ready : proofExportReady ? workflowStepClasses.current : workflowStepClasses.blocked}`}>
+        <p className="text-[9px] font-black uppercase tracking-widest">2 · Mark sent</p>
+        <p className="mt-1 text-[10px] leading-relaxed opacity-80">
+          {proofSent ? 'A sent proof is recorded locally.' : 'Record when the proof leaves the shop.'}
+        </p>
+      </div>
+      <div className={`rounded-lg border px-3 py-2 ${summary.status === 'approved' ? workflowStepClasses.ready : canRecordResponse ? workflowStepClasses.current : workflowStepClasses.blocked}`}>
+        <p className="text-[9px] font-black uppercase tracking-widest">3 · Customer response</p>
+        <p className="mt-1 text-[10px] leading-relaxed opacity-80">
+          {summary.status === 'approved' ? 'Approved for package handoff.' : canRecordResponse ? 'Record approval or requested changes.' : 'Wait for a current sent proof.'}
+        </p>
+      </div>
     </div>
 
     <div className="space-y-2">
@@ -168,7 +205,13 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
       />
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <button type="button" onClick={onMarkProofSent} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-indigo-500">
+        <button
+          type="button"
+          disabled={!canMarkProofSent}
+          title={markSentTitle}
+          onClick={onMarkProofSent}
+          className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+        >
           Mark proof sent
         </button>
         <button type="button" disabled={!cloudCapability.supportsShareLinks} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-500 opacity-70">
@@ -176,17 +219,28 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         </button>
         <button
           type="button"
-          disabled={approvalBlockedByStaleProof}
-          title={approvalBlockedByStaleProof ? 'Export a fresh proof before recording customer approval.' : undefined}
+          disabled={!canRecordResponse}
+          title={responseTitle}
           onClick={() => onRecordProofResponse('approved')}
           className="rounded-lg border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-200 hover:border-emerald-400 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
         >
-          {approvalBlockedByStaleProof ? 'Re-export proof first' : 'Record approval'}
+          {approvalBlockedByStaleProof ? 'Re-export proof first' : proofSent ? 'Record approval' : 'Mark sent first'}
         </button>
-        <button type="button" onClick={() => onRecordProofResponse('changes-requested')} className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:border-amber-400">
+        <button
+          type="button"
+          disabled={!canRecordResponse}
+          title={responseTitle}
+          onClick={() => onRecordProofResponse('changes-requested')}
+          className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:border-amber-400 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+        >
           Request changes
         </button>
       </div>
+      {!proofSent && (
+        <p className="mt-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-[10px] font-semibold leading-relaxed text-indigo-200">
+          Export the proof, send it to the customer, then mark it sent before recording approval or change requests.
+        </p>
+      )}
       {approvalBlockedByStaleProof && (
         <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-200">
           Approval is locked because the job changed after the latest proof export. Export a fresh customer proof before recording approval.
