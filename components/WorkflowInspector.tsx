@@ -296,6 +296,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
       : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
   const printSizeSummary = formatPrintSizeSummary(printSpecification.widthInches, printSpecification.heightInches);
   const placementSummary = formatPlacementSummary(placement);
+  const selectedProduct = PRODUCTS.find((product) => product.id === settings.itemType);
+  const previewExportStatus = !hasProcessedResult
+    ? 'Build preview first'
+    : preflightGate.canExport
+      ? 'Ready for proof'
+      : productionCheckStatus;
   const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
   const workflowPath = buildProductionWorkflowPath({
     hasArtwork,
@@ -672,9 +678,42 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
           <div className="space-y-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Preview</p>
-              <h2 className="mt-1 text-xl font-black text-white">Check it where it will live.</h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-500">Switch the canvas between artwork and garment views. Check light and dark colors before exporting.</p>
+              <h2 className="mt-1 text-xl font-black text-white">Approve the placement before export.</h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">Confirm the product, printable area, garment color, and real-world size before creating proofs or package files.</p>
             </div>
+
+            <section className={`rounded-xl border p-4 ${productionCheckClass}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-75">Placement review</p>
+                  <h3 className="mt-1 text-base font-black text-white">{previewExportStatus}</h3>
+                </div>
+                <span className="rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-80">
+                  {selectedProduct?.label ?? settings.itemType}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-[10px] leading-relaxed sm:grid-cols-3">
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Placement</p>
+                  <p className="mt-1 text-slate-100">{placementSummary}</p>
+                </div>
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Print target</p>
+                  <p className="mt-1 text-slate-100">{printSizeSummary} · {printSpecification.targetDpi} DPI</p>
+                </div>
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Operator check</p>
+                  <p className="mt-1 text-slate-100">
+                    {preflightGate.canExport
+                      ? 'Check garment colors and export a customer proof.'
+                      : preflightGate.criticalCount > 0
+                        ? 'Fix critical preflight issues before customer proof.'
+                        : 'Acknowledge warnings before production export.'}
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <Section title="Print readiness">
               <div className="flex items-center justify-between">
                 <div>
