@@ -303,6 +303,22 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
       ? 'Ready for proof'
       : productionCheckStatus;
   const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
+  const proofHandoffStatus = proofApproval.status === 'approved'
+    ? proofFreshness?.stale
+      ? 'Approved proof is stale'
+      : 'Proof approved'
+    : proofApproval.status === 'sent'
+      ? proofFreshness?.stale
+        ? 'Sent proof is stale'
+        : 'Proof awaiting response'
+      : proofApproval.status === 'changes-requested'
+        ? 'Changes requested'
+        : 'Proof not sent';
+  const packageHandoffStatus = packageReview?.canExport
+    ? 'Package ready'
+    : packageReview?.gateStatus === 'blocked'
+      ? 'Package blocked'
+      : 'Package needs review';
   const workflowPath = buildProductionWorkflowPath({
     hasArtwork,
     hasProcessedResult,
@@ -758,10 +774,35 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
           <div className="space-y-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Export</p>
-              <h2 className="mt-1 text-xl font-black text-white">Take the right file, not every file.</h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-500">Your selected treatment is summarized before download.</p>
+              <h2 className="mt-1 text-xl font-black text-white">Package the job for approval or production.</h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">Start with the customer proof and production package. Use individual downloads only when the shop needs a specific file.</p>
             </div>
-            <Section title="Output format">
+
+            <section className={`rounded-xl border p-4 ${productionCheckClass}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-75">Handoff path</p>
+                  <h3 className="mt-1 text-base font-black text-white">{packageHandoffStatus}</h3>
+                </div>
+                <span className="rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-80">
+                  {proofApproval.status.replace('-', ' ')}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-[10px] leading-relaxed sm:grid-cols-2">
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Customer proof</p>
+                  <p className="mt-1 text-slate-100">{proofHandoffStatus}</p>
+                  <p className="mt-1 text-slate-300/80">{proofFilenames.email}</p>
+                </div>
+                <div className="rounded-lg border border-current/20 bg-slate-950/30 px-3 py-2">
+                  <p className="font-black uppercase tracking-widest opacity-70">Production package</p>
+                  <p className="mt-1 text-slate-100">{packageReview?.handoffReadiness.summary ?? 'Build a preview before package review.'}</p>
+                  <p className="mt-1 text-slate-300/80">{selectedMockupCount} mockup color{selectedMockupCount === 1 ? '' : 's'} selected</p>
+                </div>
+              </div>
+            </section>
+
+            <Section title="Print master format" description="Controls the standalone print file. The production package still includes the selected handoff assets below.">
               <div className="grid grid-cols-4 gap-1 rounded-lg border border-slate-700 bg-slate-950/50 p-1">
                 {Object.values(OutputFormat).map((format) => (
                   <button type="button" key={format} disabled={settings.vectorize && format !== OutputFormat.SVG} onClick={() => update('format', format)} className={`rounded-md py-2 text-[10px] font-black transition ${settings.format === format ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-25'}`}>{format}</button>
@@ -785,7 +826,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
             {packageReview && <ProductionPackageReview review={packageReview} />}
 
-            <Section title="Downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
+            <Section title="Individual downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
               <div className="space-y-2">
                 <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadPrintFile} className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
                   Download print file
