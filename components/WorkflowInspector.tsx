@@ -816,29 +816,41 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               )}
             </Section>
 
-            <PreflightPanel
-              specification={printSpecification}
-              findings={preflightFindings}
-              acknowledged={preflightAcknowledged}
-              onSpecificationChange={onPrintSpecificationChange}
-              onAcknowledge={onAcknowledgePreflight}
+            <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">Step 1 · Customer proof first</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-indigo-100/70">
+                Export the proof, mark it sent, then record approval or requested changes before the production package leaves the shop.
+              </p>
+            </div>
+
+            <CustomerProofBuilder
+              branding={proofBranding}
+              approval={proofApproval}
+              proofFreshness={proofFreshness}
+              cloudCapability={cloudApprovalCapability}
+              printFilename={proofFilenames.print}
+              emailFilename={proofFilenames.email}
+              mockupCount={selectedMockupCount}
+              mockupSummary={selectedMockupSummary}
+              canExport={preflightGate.canExport}
+              hasProcessedResult={hasProcessedResult}
+              onChange={onProofBrandingChange}
+              onApprovalChange={onProofApprovalChange}
+              onMarkProofSent={onMarkProofSent}
+              onRecordProofResponse={onRecordProofResponse}
+              onDownloadProof={onDownloadProof}
             />
+
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">Step 2 · Package after approval</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-emerald-100/70">
+                Confirm package contents and export the complete production ZIP when proof and preflight are ready.
+              </p>
+            </div>
 
             {packageReview && <ProductionPackageReview review={packageReview} />}
 
-            <Section title="Individual downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
-              <div className="space-y-2">
-                <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadPrintFile} className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
-                  Download print file
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={!hasProcessedResult} onClick={onDownloadPdf} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Production PDF</button>
-                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
-                </div>
-              </div>
-            </Section>
-
-            <Section title="Production handoff" description="Create the complete shop package or a customer approval proof.">
+            <Section title="Production package contents" description="Configure the complete shop package after proof status is clear.">
               <div className="space-y-3">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -925,23 +937,25 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               </div>
             </Section>
 
-            <CustomerProofBuilder
-              branding={proofBranding}
-              approval={proofApproval}
-              proofFreshness={proofFreshness}
-              cloudCapability={cloudApprovalCapability}
-              printFilename={proofFilenames.print}
-              emailFilename={proofFilenames.email}
-              mockupCount={selectedMockupCount}
-              mockupSummary={selectedMockupSummary}
-              canExport={preflightGate.canExport}
-              hasProcessedResult={hasProcessedResult}
-              onChange={onProofBrandingChange}
-              onApprovalChange={onProofApprovalChange}
-              onMarkProofSent={onMarkProofSent}
-              onRecordProofResponse={onRecordProofResponse}
-              onDownloadProof={onDownloadProof}
+            <PreflightPanel
+              specification={printSpecification}
+              findings={preflightFindings}
+              acknowledged={preflightAcknowledged}
+              onSpecificationChange={onPrintSpecificationChange}
+              onAcknowledge={onAcknowledgePreflight}
             />
+
+            <Section title="Individual downloads" description={`${settings.format} · 4200×5100 print master · ${selectedRecipe?.name ?? 'Custom treatment'}`}>
+              <div className="space-y-2">
+                <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadPrintFile} className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
+                  Download print file
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={!hasProcessedResult} onClick={onDownloadPdf} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Production PDF</button>
+                  <button type="button" disabled={!hasProcessedResult || !preflightGate.canExport} onClick={onDownloadMockups} className="rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Mockup set</button>
+                </div>
+              </div>
+            </Section>
 
             {settings.shirtColor === ShirtColor.BLACK && (
               <Section title="White underbase" description="Optional silhouette layer for dark-garment DTG production.">
