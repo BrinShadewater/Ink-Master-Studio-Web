@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { createStudioJob } from '../services/jobModel';
 import {
+  canMarkCurrentProofSent,
   buildProofApprovalAuditLine,
   createProofApprovalState,
   describeProofApprovalNextStep,
@@ -200,4 +201,53 @@ test('compares latest proof export against the current job revision', () => {
   assert.match(legacy?.message ?? '', /could not compare/i);
 
   assert.equal(getLatestProofFreshness([], 5), null);
+});
+
+test('only allows marking a verified current proof as sent once', () => {
+  const current = getLatestProofFreshness([
+    {
+      filename: 'proof-current.pdf',
+      timestamp: Date.UTC(2026, 0, 2, 3, 4, 5),
+      metadata: {
+        kind: 'customer-proof',
+        proofQuality: 'email',
+        jobRevision: 4,
+      },
+    },
+  ], 4);
+
+  assert.equal(canMarkCurrentProofSent({
+    hasProcessedResult: true,
+    canExport: true,
+    proofFreshness: current,
+    proofAlreadySent: false,
+  }), true);
+  assert.equal(canMarkCurrentProofSent({
+    hasProcessedResult: true,
+    canExport: true,
+    proofFreshness: current,
+    proofAlreadySent: true,
+  }), false);
+  assert.equal(canMarkCurrentProofSent({
+    hasProcessedResult: true,
+    canExport: true,
+    proofFreshness: null,
+    proofAlreadySent: false,
+  }), false);
+  assert.equal(canMarkCurrentProofSent({
+    hasProcessedResult: true,
+    canExport: true,
+    proofFreshness: getLatestProofFreshness([
+      {
+        filename: 'proof-stale.pdf',
+        timestamp: Date.UTC(2026, 0, 2, 3, 4, 5),
+        metadata: {
+          kind: 'customer-proof',
+          proofQuality: 'email',
+          jobRevision: 3,
+        },
+      },
+    ], 4),
+    proofAlreadySent: false,
+  }), false);
 });

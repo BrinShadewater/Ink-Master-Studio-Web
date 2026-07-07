@@ -30,6 +30,13 @@ export interface ProofFreshnessSummary {
   latestProofExportedAt: number | null;
 }
 
+export interface ProofSentEligibilityInput {
+  hasProcessedResult: boolean;
+  canExport: boolean;
+  proofFreshness: ProofFreshnessSummary | null | undefined;
+  proofAlreadySent: boolean;
+}
+
 export const CLOUD_APPROVAL_MESSAGE = 'Cloud proof sharing is not configured. Export local proofs for now.';
 
 export const createProofApprovalState = (): ProofApprovalState => ({
@@ -76,6 +83,21 @@ export const getCloudApprovalCapability = (): CloudApprovalCapability => ({
   message: CLOUD_APPROVAL_MESSAGE,
   supportsShareLinks: false,
 });
+
+export const canMarkCurrentProofSent = ({
+  hasProcessedResult,
+  canExport,
+  proofFreshness,
+  proofAlreadySent,
+}: ProofSentEligibilityInput): boolean => (
+  hasProcessedResult
+  && canExport
+  && !proofAlreadySent
+  && proofFreshness !== null
+  && proofFreshness !== undefined
+  && proofFreshness.comparable
+  && !proofFreshness.stale
+);
 
 export const updateProofApprovalState = (
   current: ProofApprovalState,

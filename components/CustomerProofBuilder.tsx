@@ -2,6 +2,7 @@ import React from 'react';
 import { ProofApprovalState, ProofBranding } from '../types';
 import {
   CloudApprovalCapability,
+  canMarkCurrentProofSent,
   describeProofApprovalNextStep,
   describeProofApprovalStatus,
   formatProofApprovalEvent,
@@ -71,9 +72,26 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
   const approvalBlockedByStaleProof = proofFreshness?.stale === true;
   const proofExportReady = hasProcessedResult && canExport;
   const proofSent = approval.requestedAt !== null || approval.status === 'sent' || approval.status === 'approved' || approval.status === 'changes-requested';
-  const canMarkProofSent = proofExportReady;
+  const canMarkProofSent = canMarkCurrentProofSent({
+    hasProcessedResult,
+    canExport,
+    proofFreshness,
+    proofAlreadySent: proofSent,
+  });
   const canRecordResponse = proofSent && !approvalBlockedByStaleProof;
-  const markSentTitle = canMarkProofSent ? undefined : 'Export-ready artwork is required before marking a proof as sent.';
+  const markSentTitle = canMarkProofSent
+    ? undefined
+    : proofSent
+      ? 'Proof sent is already recorded for this job.'
+      : !proofExportReady
+        ? 'Export-ready artwork is required before marking a proof as sent.'
+        : !proofFreshness
+          ? 'Export a customer proof before marking it sent.'
+          : proofFreshness.stale
+            ? 'Export a fresh proof before marking it sent.'
+            : !proofFreshness.comparable
+              ? 'Ink Master could not verify this proof against the current job revision.'
+              : undefined;
   const responseTitle = approvalBlockedByStaleProof
     ? 'Export a fresh proof before recording customer approval.'
     : proofSent
@@ -212,7 +230,7 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
           onClick={onMarkProofSent}
           className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
         >
-          Mark proof sent
+          {proofSent ? 'Proof sent recorded' : proofFreshness?.stale ? 'Re-export proof first' : proofFreshness ? 'Mark proof sent' : 'Export proof first'}
         </button>
         <button type="button" disabled={!cloudCapability.supportsShareLinks} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-500 opacity-70">
           Share approval link
