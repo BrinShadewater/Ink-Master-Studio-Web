@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildProductionPackageReview } from '../services/packageReview';
-import { buildProductionWorkflowPath, getProductionWorkflowFocus } from '../services/workflowPath';
+import { buildProductionWorkflowPath, getProductionWorkflowFocus, getWorkflowStageForStep } from '../services/workflowPath';
 import { createStudioJob } from '../services/jobModel';
 import { PreflightFinding, StoredJobExport } from '../types';
 
@@ -190,4 +190,12 @@ test('workflow path points to package when proof is approved and ready', () => {
     ['proof', 'done'],
     ['package', 'current'],
   ]);
+});
+
+test('workflow step stage targets send operators to the right panel', () => {
+  assert.equal(getWorkflowStageForStep('job'), 'goal');
+  assert.equal(getWorkflowStageForStep('preflight'), 'prepare');
+  assert.equal(getWorkflowStageForStep('placement'), 'preview');
+  assert.equal(getWorkflowStageForStep('proof'), 'export');
+  assert.equal(getWorkflowStageForStep('package'), 'export');
 });

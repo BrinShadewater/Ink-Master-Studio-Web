@@ -32,7 +32,7 @@ import { migrateStoredRecipes } from '../services/recipeStorage';
 import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
 import { CloudApprovalCapability, getLatestProofFreshness } from '../services/proofApproval';
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
-import { buildProductionWorkflowPath, getProductionWorkflowFocus, ProductionWorkflowStepStatus } from '../services/workflowPath';
+import { buildProductionWorkflowPath, getProductionWorkflowFocus, getWorkflowStageForStep, ProductionWorkflowStepStatus } from '../services/workflowPath';
 import { formatPlacementSummary, formatPrintSizeSummary } from '../services/handoffDetails';
 import { getLatestBlockedPackageAttempt } from '../services/exportHistory';
 
@@ -79,6 +79,13 @@ const workflowStatusLabel: Record<ProductionWorkflowStepStatus, string> = {
   review: 'Review',
   blocked: 'Blocked',
   pending: 'Pending',
+};
+
+const stageActionLabel: Record<WorkspaceStage, string> = {
+  goal: 'Open setup',
+  prepare: 'Open prep',
+  preview: 'Open placement',
+  export: 'Open export',
 };
 
 const STORAGE_KEY = 'inkmaster_presets';
@@ -335,6 +342,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
     packageReview,
   });
   const workflowFocus = getProductionWorkflowFocus(workflowPath);
+  const workflowFocusStage = workflowFocus ? getWorkflowStageForStep(workflowFocus.id) : null;
   const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
   const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
   const togglePackageOption = <K extends keyof ProductionPackageOptions>(
@@ -431,6 +439,15 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               <span className="flex-none rounded-full border border-current px-2 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[workflowFocus.status]}</span>
             </div>
             <p className="mt-1 text-[10px] leading-snug opacity-80">{workflowFocus.note}</p>
+            {workflowFocusStage && workflowFocusStage !== stage && (
+              <button
+                type="button"
+                onClick={() => onStageChange(workflowFocusStage)}
+                className="mt-2 rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-85 transition hover:opacity-100"
+              >
+                {stageActionLabel[workflowFocusStage]}
+              </button>
+            )}
           </div>
         )}
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-1">

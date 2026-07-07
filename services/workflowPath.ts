@@ -1,4 +1,4 @@
-import { PreflightFinding, ProofApprovalStatus } from '../types';
+import { PreflightFinding, ProofApprovalStatus, WorkspaceStage } from '../types';
 import { ProductionPackageReview } from './packageReview';
 import { getPreflightGate } from './preflight';
 import { ProofFreshnessSummary } from './proofApproval';
@@ -40,6 +40,24 @@ export const getProductionWorkflowFocus = (
   ?? path.at(-1)
   ?? null
 );
+
+export const getWorkflowStageForStep = (
+  stepId: ProductionWorkflowStepId,
+): WorkspaceStage => {
+  switch (stepId) {
+    case 'job':
+      return 'goal';
+    case 'preflight':
+      return 'prepare';
+    case 'placement':
+      return 'preview';
+    case 'proof':
+    case 'package':
+      return 'export';
+    default:
+      return 'goal';
+  }
+};
 
 export const buildProductionWorkflowPath = ({
   hasArtwork,
