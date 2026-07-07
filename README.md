@@ -120,7 +120,8 @@ Keep the tool practical and production-minded. Every control should help someone
 
 ## ✅ Review Checklist
 
-- Run `npm test` and `npx tsc --noEmit`.
+- Run `npm test`; it includes strict TypeScript checking, production build verification, and the Node test suite.
+- Run `npm audit --audit-level=high`.
 - Test uploads with safe sample files.
 - Create, reload, duplicate, archive, export, and import a local job.
 - Review profile manager create/edit/archive/default flows, profile JSON import/export, missing or archived source profile states, and revision update review.

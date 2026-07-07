@@ -4,9 +4,10 @@
 
 ```shell
 npm test
-npx tsc --noEmit
 npm audit --audit-level=high
 ```
+
+`npm test` runs `tsc --noEmit`, the production build, the compiled-style smoke test, and all TypeScript domain tests.
 
 Also test the complete local workflow with safe sample files.
 
