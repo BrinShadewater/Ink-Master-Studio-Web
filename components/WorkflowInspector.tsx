@@ -34,6 +34,7 @@ import { CloudApprovalCapability, getLatestProofFreshness } from '../services/pr
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 import { buildProductionWorkflowPath, getProductionWorkflowFocus, ProductionWorkflowStepStatus } from '../services/workflowPath';
 import { formatPlacementSummary, formatPrintSizeSummary } from '../services/handoffDetails';
+import { getLatestBlockedPackageAttempt } from '../services/exportHistory';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -304,6 +305,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
       ? 'Ready for proof'
       : productionCheckStatus;
   const proofFreshness = getLatestProofFreshness(exportHistory, currentJobRevision);
+  const latestBlockedPackageAttempt = useMemo(
+    () => getLatestBlockedPackageAttempt(exportHistory, currentJobRevision),
+    [exportHistory, currentJobRevision],
+  );
   const proofHandoffStatus = proofApproval.status === 'approved'
     ? proofFreshness?.stale
       ? 'Approved proof is stale'
@@ -929,6 +934,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-200">
                     {packageReview.exportAction.disabledReason}
                   </p>
+                )}
+                {latestBlockedPackageAttempt?.metadata?.blockedReason && (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-300">Last blocked package attempt</p>
+                    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-rose-100">
+                      {latestBlockedPackageAttempt.metadata.blockedReason}
+                    </p>
+                    {latestBlockedPackageAttempt.metadata.preflightSummary && (
+                      <p className="mt-1 text-[10px] leading-relaxed text-rose-200/70">
+                        Preflight: {latestBlockedPackageAttempt.metadata.preflightSummary}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {packageReview && (
                   <p className="text-[10px] leading-relaxed text-slate-500">
