@@ -34,7 +34,7 @@ import { CloudApprovalCapability, getLatestProofFreshness } from '../services/pr
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 import { buildProductionWorkflowPath, getProductionWorkflowFocus, getWorkflowStageForStep, ProductionWorkflowStepStatus } from '../services/workflowPath';
 import { formatPlacementSummary, formatPrintSizeSummary } from '../services/handoffDetails';
-import { getCompactExportDownloadLabel, getLatestBlockedPackageAttempt } from '../services/exportHistory';
+import { getBlockedPackageRecoveryLabel, getCompactExportDownloadLabel, getLatestBlockedPackageAttempt, isBlockedPackageAttempt } from '../services/exportHistory';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -1004,6 +1004,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 <div className="space-y-2">
                   {exportHistory.slice(0, 3).map((entry) => {
                     const isProductionPackage = entry.metadata?.kind === 'production-package';
+                    const isBlockedAttempt = isBlockedPackageAttempt(entry);
+                    const recoveryLabel = getBlockedPackageRecoveryLabel(entry);
                     const hasRevisionChanged = typeof entry.metadata?.jobRevision === 'number'
                       && typeof currentJobRevision === 'number'
                       && entry.metadata.jobRevision !== currentJobRevision;
@@ -1046,6 +1048,17 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                               className="w-full rounded border border-emerald-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-300 hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
                             >
                               Regenerate package
+                            </button>
+                          </div>
+                        )}
+                        {isBlockedAttempt && recoveryLabel && workflowFocusStage && (
+                          <div className="mt-2 border-t border-slate-800 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => onStageChange(workflowFocusStage)}
+                              className="w-full rounded border border-rose-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-rose-300 hover:bg-rose-950/30"
+                            >
+                              {recoveryLabel}
                             </button>
                           </div>
                         )}

@@ -9,6 +9,9 @@ export const getExportDownloadLabel = (entry: ExportHistoryEntry) =>
 export const getCompactExportDownloadLabel = (entry: ExportHistoryEntry) =>
   isBlockedPackageAttempt(entry) ? 'Audit' : 'Again';
 
+export const getBlockedPackageRecoveryLabel = (entry: ExportHistoryEntry) =>
+  isBlockedPackageAttempt(entry) ? 'Open blocker' : null;
+
 export const getLatestBlockedPackageAttempt = (
   entries: ExportHistoryEntry[],
   currentJobRevision: number | null,

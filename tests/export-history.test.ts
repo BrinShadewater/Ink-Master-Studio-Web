@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getCompactExportDownloadLabel, getExportDownloadLabel, getLatestBlockedPackageAttempt, isBlockedPackageAttempt } from '../services/exportHistory';
+import { getBlockedPackageRecoveryLabel, getCompactExportDownloadLabel, getExportDownloadLabel, getLatestBlockedPackageAttempt, isBlockedPackageAttempt } from '../services/exportHistory';
 import { ExportHistoryEntry } from '../types';
 
 const exportEntry = (
@@ -69,4 +69,12 @@ test('labels blocked package attempts as audit downloads', () => {
   assert.equal(getCompactExportDownloadLabel(blocked), 'Audit');
   assert.equal(getExportDownloadLabel(packageExport), 'Download again');
   assert.equal(getCompactExportDownloadLabel(packageExport), 'Again');
+});
+
+test('only blocked package attempts get a recovery action label', () => {
+  const blocked = exportEntry('blocked-recovery', 'production-package-blocked', 4);
+  const packageExport = exportEntry('package', 'production-package', 4);
+
+  assert.equal(getBlockedPackageRecoveryLabel(blocked), 'Open blocker');
+  assert.equal(getBlockedPackageRecoveryLabel(packageExport), null);
 });
