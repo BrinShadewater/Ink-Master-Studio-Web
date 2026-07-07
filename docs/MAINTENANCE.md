@@ -13,7 +13,7 @@ Also test the complete local workflow with safe sample files.
 
 ## Security Review
 
-Before deployment or API changes, review `SECURITY.md`. The safest production direction is to move Gemini requests behind a backend proxy or serverless function so secrets stay server-side.
+Before deployment or API changes, review `SECURITY.md`. Gemini requests must stay behind the server-side `/api/edit-image` route; `GEMINI_API_KEY` must never be reintroduced through Vite `define`, `VITE_` variables, or any browser-public path.
 
 ## Asset Handling
 
@@ -54,6 +54,9 @@ Check these after UI or processing changes:
 - New jobs use the default production profile unless the operator explicitly overrides the job profile.
 - Profile edits create revised source profiles; existing jobs should surface update review rather than silently adopting changed defaults.
 - Profiles are local-first in beta. There is no cloud, printer, RIP, or ICC sync.
+- Proof approval links, online comments, and cloud sync remain out of scope until account, storage, permission, moderation, and audit controls exist.
+- AI cleanup must remain server-side and quota-aware. New AI features need rate limiting, payload limits, billing alerts, and clear operator-facing failure states.
+- Screen-print separations are a future production mode. Do not mix separation controls into DTG/DTF preflight or package rules without a separate product design.
 
 ## Deployment Notes
 

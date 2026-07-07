@@ -13,7 +13,7 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 - Supports multiple named production profiles for local DTG/DTF defaults, with a default profile for new jobs and explicit per-job override.
 - Supports guided batch processing with per-file recipes, preflight findings, warning acknowledgement, cancellation, and combined-order export.
 - Saves portable shop templates separately from artwork-treatment recipes.
-- Uses AI assistance where it helps move artwork toward usable proof material.
+- Uses optional AI-assisted cleanup through a server-side route when configured; core preflight and export decisions remain deterministic.
 
 ## 🧰 Stack
 
@@ -26,7 +26,7 @@ Ink Master Studio helps turn source artwork into usable previews and production 
 
 ## 🚦 Repository Status
 
-Production-oriented local-first tool. Gemini requests remain behind the server-side `/api/edit-image` route; `GEMINI_API_KEY` must never be exposed through a browser-public environment variable.
+Production-oriented local-first tool. The completed beta focus is jobs → preflight → measured placement → proof/package handoff → batch/templates. Gemini requests remain behind the server-side `/api/edit-image` route; `GEMINI_API_KEY` must never be exposed through a browser-public environment variable.
 
 ## ⚙️ Local Development
 
@@ -112,7 +112,16 @@ Beta limitation: profiles do not sync to cloud accounts, printers, RIP queues, I
 
 ## 🔐 Security Note
 
-Read `SECURITY.md` before deploying. The current architecture needs careful handling of the Gemini API key; a server-side proxy or serverless function is the safer production path.
+Read `SECURITY.md` before deploying. Gemini is already routed through the server-side `/api/edit-image` function; keep that boundary intact and do not add browser-public key paths.
+
+## 🧭 Roadmap Boundaries
+
+Current product scope is local-first DTG/DTF production. The following are intentionally deferred:
+
+- Cloud sync, online comments, and shareable approval links. Proof approvals are local-only until accounts, storage, permissions, moderation, and audit controls exist.
+- Expanded AI cleanup and edge repair. These require server-side configuration, rate limiting, quotas, billing alerts, and operator-visible failure states.
+- Screen-print separations. Treat this as a distinct future production mode rather than mixing separation controls into DTG/DTF export flows.
+- Printer/RIP/ICC synchronization. Profiles remain local shop defaults and do not connect to printers, RIP queues, or color-management systems.
 
 ## 🧵 Working Style
 
