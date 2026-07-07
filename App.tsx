@@ -890,8 +890,8 @@ const App: React.FC = () => {
   };
 
   const handleSaveTemplate = (name: string, description: string) => {
-    if (!currentJob) return;
-    const next = [createTemplateFromJob(currentJob, name, description), ...shopTemplates];
+    if (!currentProductionJob) return;
+    const next = [createTemplateFromJob(currentProductionJob, name, description), ...shopTemplates];
     setShopTemplates(next);
     setTemplateImportMessage(null);
     saveTemplates(next);
@@ -1111,7 +1111,7 @@ const App: React.FC = () => {
         templates={(
           <TemplatesPopover
             templates={shopTemplates}
-            currentJob={currentJob}
+            currentJob={currentProductionJob}
             onApply={handleApplyTemplate}
             onSave={handleSaveTemplate}
             onDelete={handleDeleteTemplate}
