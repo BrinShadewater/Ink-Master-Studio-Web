@@ -1116,6 +1116,7 @@ const App: React.FC = () => {
             onDelete={handleDeleteTemplate}
             onDuplicate={handleDuplicateTemplate}
             onRename={handleRenameTemplate}
+            onUpdateAppliedTemplate={handleUpdateAppliedTemplate}
             onExport={handleExportTemplates}
             onImport={(file) => void handleImportTemplates(file)}
             importMessage={templateImportMessage}

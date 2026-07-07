@@ -10,6 +10,7 @@ interface TemplatesPopoverProps {
   onDelete: (template: ShopTemplate) => void;
   onDuplicate: (template: ShopTemplate) => void;
   onRename: (template: ShopTemplate, name: string) => void;
+  onUpdateAppliedTemplate?: () => void;
   onExport: () => void;
   onImport: (file: File) => void;
   importMessage?: string | null;
@@ -23,6 +24,7 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
   onDelete,
   onDuplicate,
   onRename,
+  onUpdateAppliedTemplate,
   onExport,
   onImport,
   importMessage = null,
@@ -123,6 +125,19 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
                   )}
                   {currentJob && (
                     <TemplateChangeSummary changes={changes} isPendingApply={isPendingApply} isApplied={isApplied} />
+                  )}
+                  {isApplied && changes.length > 0 && onUpdateAppliedTemplate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingApplyId(null);
+                        setEditingTemplateId(null);
+                        onUpdateAppliedTemplate();
+                      }}
+                      className="mt-2 w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-500/20"
+                    >
+                      Update saved template from this job
+                    </button>
                   )}
                   {isPendingApply && (
                     <div className="mt-2 flex gap-2">
