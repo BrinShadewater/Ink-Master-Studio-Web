@@ -1005,7 +1005,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   {exportHistory.slice(0, 3).map((entry) => {
                     const isProductionPackage = entry.metadata?.kind === 'production-package';
                     const isBlockedAttempt = isBlockedPackageAttempt(entry);
-                    const recoveryLabel = getBlockedPackageRecoveryLabel(entry);
+                    const recoveryLabel = getBlockedPackageRecoveryLabel(entry, workflowFocusStage, stage);
+                    const blockerIsOnCurrentStage = isBlockedAttempt && workflowFocusStage === stage;
                     const hasRevisionChanged = typeof entry.metadata?.jobRevision === 'number'
                       && typeof currentJobRevision === 'number'
                       && entry.metadata.jobRevision !== currentJobRevision;
@@ -1053,13 +1054,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                         )}
                         {isBlockedAttempt && recoveryLabel && workflowFocusStage && (
                           <div className="mt-2 border-t border-slate-800 pt-2">
-                            <button
-                              type="button"
-                              onClick={() => onStageChange(workflowFocusStage)}
-                              className="w-full rounded border border-rose-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-rose-300 hover:bg-rose-950/30"
-                            >
-                              {recoveryLabel}
-                            </button>
+                            {blockerIsOnCurrentStage ? (
+                              <p className="rounded border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-center text-[10px] font-black uppercase tracking-wide text-rose-300">
+                                {recoveryLabel}
+                              </p>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onStageChange(workflowFocusStage)}
+                                className="w-full rounded border border-rose-500/30 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-rose-300 hover:bg-rose-950/30"
+                              >
+                                {recoveryLabel}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

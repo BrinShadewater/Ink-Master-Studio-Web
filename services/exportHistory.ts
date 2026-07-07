@@ -1,4 +1,4 @@
-import { ExportHistoryEntry } from '../types';
+import { ExportHistoryEntry, WorkspaceStage } from '../types';
 
 export const isBlockedPackageAttempt = (entry: ExportHistoryEntry) =>
   entry.metadata?.kind === 'production-package-blocked';
@@ -9,8 +9,14 @@ export const getExportDownloadLabel = (entry: ExportHistoryEntry) =>
 export const getCompactExportDownloadLabel = (entry: ExportHistoryEntry) =>
   isBlockedPackageAttempt(entry) ? 'Audit' : 'Again';
 
-export const getBlockedPackageRecoveryLabel = (entry: ExportHistoryEntry) =>
-  isBlockedPackageAttempt(entry) ? 'Open blocker' : null;
+export const getBlockedPackageRecoveryLabel = (
+  entry: ExportHistoryEntry,
+  targetStage: WorkspaceStage | null = null,
+  currentStage: WorkspaceStage | null = null,
+) => {
+  if (!isBlockedPackageAttempt(entry)) return null;
+  return targetStage !== null && targetStage === currentStage ? 'Review blocker above' : 'Open blocker';
+};
 
 export const getLatestBlockedPackageAttempt = (
   entries: ExportHistoryEntry[],

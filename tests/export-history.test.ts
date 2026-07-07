@@ -76,5 +76,7 @@ test('only blocked package attempts get a recovery action label', () => {
   const packageExport = exportEntry('package', 'production-package', 4);
 
   assert.equal(getBlockedPackageRecoveryLabel(blocked), 'Open blocker');
+  assert.equal(getBlockedPackageRecoveryLabel(blocked, 'prepare', 'export'), 'Open blocker');
+  assert.equal(getBlockedPackageRecoveryLabel(blocked, 'export', 'export'), 'Review blocker above');
   assert.equal(getBlockedPackageRecoveryLabel(packageExport), null);
 });
