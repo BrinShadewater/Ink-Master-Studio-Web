@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import JSZip from 'jszip';
 
-import { batchExportEligibility, buildCombinedBatchOrderPackage, buildSingleBatchItemPackage, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, createSingleBatchItemSummary, resolveBatchRecipe } from '../services/batch';
+import { batchExportEligibility, buildCombinedBatchOrderPackage, buildSingleBatchItemPackage, createBatchItemBlockers, createBatchOutputFilename, createCombinedOrderManifest, createCombinedOrderSummary, createSingleBatchItemSummary, resolveBatchRecipe } from '../services/batch';
 import { ArtworkAnalysis, PreflightFinding } from '../types';
 
 const finding = (severity: PreflightFinding['severity']): PreflightFinding => ({
@@ -102,6 +102,28 @@ test('combined manifests explain warning acknowledgement and unfinished exclusio
   assert.deepEqual(manifest.excludedItems.map((item) => item.id), ['warn', 'pending']);
   assert.match(manifest.excludedItems[0].reasons.join(' '), /require acknowledgement/);
   assert.match(manifest.excludedItems[1].reasons.join(' '), /pending/);
+});
+
+test('batch item blockers explain why an item cannot export', () => {
+  const warningEligibility = batchExportEligibility('ready', [finding('warning')], false);
+  const pendingEligibility = batchExportEligibility('pending', [], false);
+
+  assert.deepEqual(createBatchItemBlockers({
+    id: 'warn',
+    filename: 'warn.png',
+    status: 'ready',
+    recipeId: 'dark-garment',
+    findings: [finding('warning')],
+    acknowledged: false,
+  }, warningEligibility), ['1 warning require acknowledgement.']);
+  assert.deepEqual(createBatchItemBlockers({
+    id: 'pending',
+    filename: 'pending.png',
+    status: 'pending',
+    recipeId: null,
+    findings: [],
+    acknowledged: false,
+  }, pendingEligibility), ['Item status is pending.']);
 });
 
 test('combined order summaries are readable by production operators', () => {

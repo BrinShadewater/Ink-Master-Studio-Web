@@ -11,6 +11,7 @@ import {
   buildSingleBatchItemPackage,
   BatchRecipeSelection,
   BatchProductionStatus,
+  createBatchItemBlockers,
   resolveBatchRecipe,
 } from '../services/batch';
 
@@ -209,6 +210,16 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
           <div className="grid gap-3 xl:grid-cols-2">
             {items.map((item) => {
               const eligibility = batchExportEligibility(item.status, item.findings, item.acknowledged);
+              const blockers = eligibility.canExport
+                ? []
+                : createBatchItemBlockers({
+                    id: item.id,
+                    filename: item.file.name,
+                    status: item.status,
+                    recipeId: item.recipeId,
+                    findings: item.findings,
+                    acknowledged: item.acknowledged,
+                  }, eligibility);
               const warnings = item.findings.filter((finding) => finding.severity === 'warning');
               const critical = item.findings.filter((finding) => finding.severity === 'critical');
               return (
@@ -227,6 +238,15 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
                       <div className="mt-2 flex flex-wrap gap-1">
                         {item.findings.filter((finding) => finding.severity !== 'pass').map((finding) => <span key={finding.id} title={finding.action} className={`rounded px-2 py-1 text-[9px] font-bold ${finding.severity === 'critical' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>{finding.title}</span>)}
                         {!warnings.length && !critical.length && <span className="text-[10px] font-bold text-emerald-400">Preflight passed</span>}
+                      </div>
+                    )}
+                    {blockers.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {blockers.slice(0, 2).map((reason) => (
+                          <p key={reason} className={`rounded-lg border px-3 py-2 text-[10px] font-semibold ${critical.length ? 'border-rose-500/30 bg-rose-500/10 text-rose-200' : 'border-amber-500/30 bg-amber-500/10 text-amber-200'}`}>
+                            {reason}
+                          </p>
+                        ))}
                       </div>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">

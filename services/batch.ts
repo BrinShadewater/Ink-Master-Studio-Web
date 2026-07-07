@@ -69,7 +69,7 @@ const findingSummary = (finding: PreflightFinding) => ({
   action: finding.action,
 });
 
-const exclusionReasons = (
+export const createBatchItemBlockers = (
   candidate: BatchManifestCandidate,
   eligibility: ReturnType<typeof batchExportEligibility>,
 ) => {
@@ -117,7 +117,7 @@ export const createCombinedOrderManifest = (candidates: BatchManifestCandidate[]
       acknowledged: candidate.acknowledged,
       warningCount: eligibility.warningCount,
       criticalCount: eligibility.criticalCount,
-      reasons: exclusionReasons(candidate, eligibility),
+      reasons: createBatchItemBlockers(candidate, eligibility),
       findings: candidate.findings.map(findingSummary),
     }));
   return {
