@@ -85,14 +85,19 @@ export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = (
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Next action</p>
             <p className="mt-1 text-sm font-black text-white">{review.nextAction.label}</p>
             <p className="mt-1 text-[11px] leading-relaxed opacity-90">{review.nextAction.instruction}</p>
-            <button
-              type="button"
-              disabled={!canNavigateToAction}
-              onClick={() => onNavigateToStage(nextActionStage)}
-              className="mt-2 rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-85 transition hover:opacity-100 disabled:cursor-default disabled:opacity-55"
-            >
-              {stageActionLabel[nextActionStage]}
-            </button>
+            {canNavigateToAction ? (
+              <button
+                type="button"
+                onClick={() => onNavigateToStage(nextActionStage)}
+                className="mt-2 rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-85 transition hover:opacity-100"
+              >
+                {stageActionLabel[nextActionStage]}
+              </button>
+            ) : (
+              <p className="mt-2 inline-flex rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-70">
+                {stageActionLabel[nextActionStage]}
+              </p>
+            )}
           </div>
           <span className="flex-none rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-90">
             {review.nextAction.target}
