@@ -81,6 +81,9 @@ test('combined manifests include only eligible completed items', () => {
   assert.equal(manifest.totalCount, 3);
   assert.equal(manifest.exportedCount, 2);
   assert.equal(manifest.blockedCount, 1);
+  assert.equal(manifest.handoffPolicy.packageType, 'batch-prep');
+  assert.equal(manifest.handoffPolicy.productionApprovalRequired, true);
+  assert.match(manifest.handoffPolicy.note, /approved customer proof/i);
   assert.equal(manifest.items[1].warningCount, 1);
   assert.deepEqual(manifest.items[1].findings, [
     { id: 'warning', severity: 'warning', title: 'warning', action: 'warning' },
@@ -110,6 +113,7 @@ test('combined order summaries are readable by production operators', () => {
   const summary = createCombinedOrderSummary(manifest);
 
   assert.match(summary, /InkMaster Combined Batch Order/);
+  assert.match(summary, /Handoff policy: .*approved customer proof/);
   assert.match(summary, /Total files: 2/);
   assert.match(summary, /Exported files: 1/);
   assert.match(summary, /source-pass\.png from source-pass\.png · recipe clean-logo/);
@@ -155,6 +159,8 @@ test('single batch item packages include design, manifest, and summary', async (
   assert.ok(zip.file('Client-Logo.png'));
   assert.equal(manifest.format, 'inkmaster-batch-design');
   assert.equal(manifest.recipeSelection, 'auto');
+  assert.equal(manifest.handoffPolicy.productionApprovalRequired, true);
+  assert.match(manifest.handoffPolicy.note, /approved customer proof/i);
   assert.deepEqual(manifest.items.map((item: { filename: string }) => item.filename), ['Client-Logo.png']);
   assert.match(summary, /InkMaster Batch Design Package/);
   assert.match(summary, /Exported file: Client-Logo\.png/);

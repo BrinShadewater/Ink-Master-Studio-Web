@@ -124,6 +124,11 @@ export const createCombinedOrderManifest = (candidates: BatchManifestCandidate[]
     format: 'inkmaster-combined-order',
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
+    handoffPolicy: {
+      packageType: 'batch-prep',
+      productionApprovalRequired: true,
+      note: 'Batch exports are preflighted artwork/order prep packages. Final production handoff still requires a current approved customer proof on each production job.',
+    },
     totalCount: candidates.length,
     exportedCount: items.length,
     blockedCount: excludedItems.length,
@@ -138,6 +143,7 @@ export const createCombinedOrderSummary = (
 ): string => [
   'InkMaster Combined Batch Order',
   `Generated: ${manifest.generatedAt}`,
+  `Handoff policy: ${manifest.handoffPolicy.note}`,
   '',
   `Total files: ${manifest.totalCount}`,
   `Exported files: ${manifest.exportedCount}`,
@@ -246,6 +252,10 @@ export const buildSingleBatchItemPackage = async (
   zip.file('design-manifest.json', JSON.stringify({
     ...manifest,
     format: 'inkmaster-batch-design',
+    handoffPolicy: {
+      ...manifest.handoffPolicy,
+      note: 'Single-design batch exports are preflighted artwork prep packages. Final production handoff still requires a current approved customer proof on the production job.',
+    },
     recipeSelection: item.recipeSelection,
   }, null, 2));
   zip.file('design-summary.txt', createSingleBatchItemSummary(manifest));

@@ -40,7 +40,7 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
         <span className="hidden md:inline">Templates</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-80 rounded-xl border border-slate-700 bg-slate-950 p-3 shadow-2xl shadow-black/60">
+        <div className="absolute right-0 top-11 z-50 w-[min(calc(100vw-2rem),22rem)] rounded-xl border border-slate-700 bg-slate-950 p-3 shadow-2xl shadow-black/60">
           <div className="flex gap-2">
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="New template name" className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
             <button type="button" disabled={!name.trim()} onClick={() => { onSave(name, 'Shop production template'); setName(''); }} className="rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-30">Save</button>
@@ -56,9 +56,10 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
               const requiresConfirmation = changes.length > 0;
               const isPendingApply = pendingApplyId === template.id;
               const isEditing = editingTemplateId === template.id;
+              const isApplied = currentJob?.appliedTemplate?.id === template.id;
 
               return (
-                <div key={template.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+                <div key={template.id} className={`rounded-lg border p-2 ${isApplied ? 'border-indigo-500/40 bg-indigo-500/10' : 'border-slate-800 bg-slate-900/70'}`}>
                   <div className="flex items-start gap-2">
                     {isEditing ? (
                       <div className="min-w-0 flex-1">
@@ -93,7 +94,14 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
                         }}
                         className="min-w-0 flex-1 text-left"
                       >
-                        <span className="block truncate text-xs font-bold text-white">{template.name}</span>
+                        <span className="flex items-center gap-2 truncate text-xs font-bold text-white">
+                          <span className="min-w-0 truncate">{template.name}</span>
+                          {isApplied && (
+                            <span className="flex-none rounded-full border border-indigo-400/40 bg-indigo-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-indigo-200">
+                              Applied
+                            </span>
+                          )}
+                        </span>
                         <TemplateSummary template={template} />
                       </button>
                     )}
@@ -114,12 +122,12 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
                     </div>
                   )}
                   {currentJob && (
-                    <TemplateChangeSummary changes={changes} isPendingApply={isPendingApply} />
+                    <TemplateChangeSummary changes={changes} isPendingApply={isPendingApply} isApplied={isApplied} />
                   )}
                   {isPendingApply && (
                     <div className="mt-2 flex gap-2">
                       <button type="button" onClick={() => { onApply(template); setPendingApplyId(null); setOpen(false); }} className="flex-1 rounded-md bg-amber-500 px-2 py-1 text-[10px] font-bold text-slate-950">
-                        Apply updates
+                        {isApplied ? 'Reapply template' : 'Apply updates'}
                       </button>
                       <button type="button" onClick={() => setPendingApplyId(null)} className="flex-1 rounded-md border border-slate-700 px-2 py-1 text-[10px] font-bold text-slate-300">
                         Cancel
@@ -157,10 +165,16 @@ const TemplateSummary: React.FC<{ template: ShopTemplate }> = ({ template }) => 
   );
 };
 
-const TemplateChangeSummary: React.FC<{ changes: string[]; isPendingApply: boolean }> = ({ changes, isPendingApply }) => {
+const TemplateChangeSummary: React.FC<{ changes: string[]; isPendingApply: boolean; isApplied: boolean }> = ({ changes, isPendingApply, isApplied }) => {
+  const message = changes.length
+    ? `${isPendingApply ? 'Confirm apply:' : isApplied ? 'Current job drift:' : 'Will update:'} ${changes.join(', ')}`
+    : isApplied
+      ? 'Applied template matches current job settings'
+      : 'Matches current job settings';
+
   return (
     <p className={`mt-2 rounded border px-2 py-1 text-[10px] font-semibold ${changes.length ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
-      {changes.length ? `${isPendingApply ? 'Confirm apply:' : 'Will update:'} ${changes.join(', ')}` : 'Matches current job settings'}
+      {message}
     </p>
   );
 };

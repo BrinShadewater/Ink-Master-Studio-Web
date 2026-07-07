@@ -174,18 +174,18 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-200">
-      <header className="flex h-16 flex-none items-center justify-between border-b border-slate-800 px-4 lg:px-6">
-        <div>
+      <header className="flex min-h-16 flex-none flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 lg:px-6">
+        <div className="min-w-0">
           <h2 className="text-lg font-black text-white">Guided batch production</h2>
-          <p className="text-xs text-slate-500">One recipe and preflight result per artwork file. Nothing blocked is silently exported.</p>
+          <p className="text-xs text-slate-500">One recipe and preflight result per artwork file. Batch ZIPs prep artwork; final production packages still require proof approval.</p>
         </div>
         <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white">Close</button>
       </header>
 
-      <div className="flex flex-none flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-3 lg:px-6">
+      <div className="flex flex-none flex-wrap items-center gap-3 overflow-x-auto border-b border-slate-800 px-4 py-3 lg:px-6">
         <button type="button" onClick={() => inputRef.current?.click()} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-500">Add artwork</button>
         <input ref={inputRef} type="file" multiple accept=".jpg,.jpeg,.png,.svg,.webp" className="hidden" onChange={(event) => { if (event.target.files) addFiles(event.target.files); event.target.value = ''; }} />
-        <label className="flex items-center gap-2 text-xs text-slate-400">
+        <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-400">
           Batch recipe
           <select value={batchRecipeSelection} onChange={(event) => setBatchRecipeSelection(event.target.value as BatchRecipeSelection)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-slate-200 outline-none focus:border-indigo-500">
             <option value="auto">Auto per file</option>
@@ -193,8 +193,11 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
           </select>
         </label>
         <button type="button" disabled={!items.length} onClick={applyBatchRecipeToExisting} className="rounded-lg border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Apply to existing</button>
-        <button type="button" disabled={!eligibleCount} onClick={() => void exportCombined()} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Export combined order ({eligibleCount})</button>
+        <button type="button" disabled={!eligibleCount} onClick={() => void exportCombined()} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Export batch prep ZIP ({eligibleCount})</button>
         <span className="text-xs text-slate-500">{items.length} total · {items.length - eligibleCount} waiting, warning, failed, cancelled, or blocked</span>
+        <span className="basis-full text-[10px] font-semibold uppercase tracking-widest text-amber-300 sm:basis-auto">
+          Production handoff happens in a job after customer proof approval.
+        </span>
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
@@ -245,7 +248,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
                       )}
                       {item.status === 'ready' && <button type="button" onClick={() => updateItem(item.id, { status: 'cancelled' })} className="text-[10px] font-bold text-slate-500 hover:text-rose-300">Cancel item</button>}
                       {item.status === 'failed' && <button type="button" onClick={() => void processItem(item)} className="text-[10px] font-bold text-indigo-300">Retry</button>}
-                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => void exportSinglePackage(item)} className="text-[10px] font-bold text-emerald-300">Export package</button>}
+                      {eligibility.canExport && item.resultBlob && <button type="button" onClick={() => void exportSinglePackage(item)} className="text-[10px] font-bold text-emerald-300">Export prep ZIP</button>}
                     </div>
                   </div>
                 </article>
