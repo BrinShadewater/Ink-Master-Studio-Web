@@ -22,7 +22,7 @@ export type OperatorNextActionId =
 export type OperatorNextActionPriority = 'ready' | 'review' | 'blocked';
 
 export interface HandoffReadinessCheck {
-  id: 'artwork' | 'preflight' | 'package-assets' | 'profile' | 'template' | 'proof';
+  id: 'artwork' | 'preflight' | 'package-assets' | 'manifest-integrity' | 'profile' | 'template' | 'proof';
   label: string;
   status: HandoffReadinessStatus;
   note: string;
@@ -210,6 +210,14 @@ export const buildProductionPackageReview = (
         : 'Requested package assets are configured.',
     ),
     readinessCheck(
+      'manifest-integrity',
+      'Manifest integrity',
+      'ready',
+      options.includeManifest
+        ? 'ZIP contents are verified against the job manifest before download.'
+        : 'Manifest file is disabled; ZIP contents are still checked against selected package assets.',
+    ),
+    readinessCheck(
       'profile',
       'Production profile',
       profileStatus === 'current' ? 'ready' : 'attention',
@@ -333,7 +341,7 @@ export const buildProductionPackageReview = (
         'Download package',
         'ready',
         'Production package',
-        'Proof and handoff checks are ready. Download the production package.',
+        'Proof, handoff checks, and manifest-verified contents are ready. Download the production package.',
       );
     }
     return nextAction(
@@ -355,7 +363,7 @@ export const buildProductionPackageReview = (
     gateStatus,
     canExport,
     statusText: canExport
-      ? 'Ready to build production package.'
+      ? 'Ready to build manifest-verified production package.'
       : gateStatus === 'warning-acknowledgement-required'
         ? 'Acknowledge warnings before export.'
         : 'Production package is blocked.',

@@ -61,6 +61,14 @@ test('previews the final package filename and included production files while re
     review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status,
     'blocked',
   );
+  assert.equal(
+    review.handoffReadiness.checks.find((entry) => entry.id === 'manifest-integrity')?.status,
+    'ready',
+  );
+  assert.match(
+    review.handoffReadiness.checks.find((entry) => entry.id === 'manifest-integrity')?.note ?? '',
+    /verified against the job manifest/i,
+  );
   assert.deepEqual(
     review.items.map((entry) => [entry.id, entry.status, entry.filename]),
     [
@@ -207,6 +215,7 @@ test('marks handoff ready when proof is approved and checks pass', () => {
   const review = buildProductionPackageReview(job, [], false, true, 'current');
 
   assert.equal(review.canExport, true);
+  assert.match(review.statusText, /manifest-verified/i);
   assert.equal(review.exportAction.disabledReason, null);
   assert.equal(review.exportAction.nextStep, 'Ready to download the production package.');
   assert.deepEqual(review.nextAction, {
@@ -214,10 +223,24 @@ test('marks handoff ready when proof is approved and checks pass', () => {
     label: 'Download package',
     priority: 'ready',
     target: 'Production package',
-    instruction: 'Proof and handoff checks are ready. Download the production package.',
+    instruction: 'Proof, handoff checks, and manifest-verified contents are ready. Download the production package.',
   });
   assert.equal(review.handoffReadiness.status, 'ready');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'ready');
+});
+
+test('explains integrity checks when manifest file is disabled', () => {
+  const job = createStudioJob('No manifest file package');
+  job.packageOptions.includeManifest = false;
+
+  const review = buildProductionPackageReview(job, [], false, true, 'current');
+
+  assert.equal(review.items.find((entry) => entry.id === 'manifest')?.status, 'excluded');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'manifest-integrity')?.status, 'ready');
+  assert.match(
+    review.handoffReadiness.checks.find((entry) => entry.id === 'manifest-integrity')?.note ?? '',
+    /still checked against selected package assets/i,
+  );
 });
 
 test('blocks package handoff when approved proof is stale', () => {
