@@ -145,6 +145,16 @@ const proofAuditSummary = (audit: ReturnType<typeof proofAuditManifest>) => {
   ];
 };
 
+const assertProductionPackageHandoffReady = (job: StudioJob) => {
+  if (job.proofApproval.status !== 'approved') {
+    throw new Error('Production package requires approved customer proof.');
+  }
+  const proofFreshness = getLatestProofFreshness(job.exports, job.revision);
+  if (proofFreshness?.stale) {
+    throw new Error('Production package requires a current approved customer proof.');
+  }
+};
+
 export const createJobManifest = (
   job: StudioJob,
   palette: string[],
@@ -236,6 +246,7 @@ export const buildProductionPackage = async (
   input: ProductionPackageInput,
 ): Promise<{ blob: Blob; filename: string }> => {
   const { job } = input;
+  assertProductionPackageHandoffReady(job);
   const zip = new JSZip();
   const options = job.packageOptions;
   const packageAssets = createPackageAssetManifest(input);

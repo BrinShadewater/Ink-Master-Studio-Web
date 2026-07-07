@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 
 import { createStudioJob } from '../services/jobModel';
 import { resolveFilenamePattern } from '../services/naming';
-import { buildProductionPackage } from '../services/productionPackage';
+import { buildProductionPackage, createJobManifest } from '../services/productionPackage';
 import { buildProofDescriptor, buildProofFilename, buildProofMockupCaption, generateCustomerProof } from '../services/proofBuilder';
 import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
 import { StoredJobExport } from '../types';
@@ -22,6 +22,19 @@ const proofExport = (jobRevision: number, timestamp = Date.UTC(2026, 0, 2, 3, 4,
   },
 });
 
+const approveJobForPackage = (job: ReturnType<typeof createStudioJob>) => {
+  const timestamp = Date.UTC(2026, 0, 2, 3, 4, 5);
+  job.exports = [proofExport(job.revision, timestamp)];
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    requestedAt: timestamp,
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+    approverName: 'Taylor',
+  };
+  return job;
+};
+
 test('resolves and sanitizes production filename tokens', () => {
   const job = createStudioJob('River / Street');
   job.metadata.customerName = 'Alex & Co.';
@@ -38,6 +51,7 @@ test('resolves and sanitizes production filename tokens', () => {
 
 test('builds a production package with selected assets and manifest', async () => {
   const job = createStudioJob('Package');
+  approveJobForPackage(job);
   job.packageOptions.includeUnderbase = true;
   job.packageOptions.selectedMockupIndices = [6];
   const result = await buildProductionPackage({
@@ -58,10 +72,10 @@ test('builds a production package with selected assets and manifest', async () =
   assert.ok(zip.file('production-summary.txt'));
   assert.equal(manifest.job.name, 'Package');
   assert.equal(manifest.printSpecification.widthInches, 12);
-  assert.equal(manifest.proofApproval.status, 'not-requested');
+  assert.equal(manifest.proofApproval.status, 'approved');
   assert.equal(manifest.proofApproval.cloudSyncStatus, 'local-only');
-  assert.equal(manifest.proofAudit.freshnessStatus, 'not-exported');
-  assert.equal(manifest.proofAudit.matchesCurrentJob, null);
+  assert.equal(manifest.proofAudit.freshnessStatus, 'matches-current-job');
+  assert.equal(manifest.proofAudit.matchesCurrentJob, true);
   assert.match(manifest.placementSummary, /T-shirt front/);
   assert.match(manifest.placementSummary, /offset 0 in horizontal, 2 in from top/);
   assert.deepEqual(manifest.packageOptions.selectedMockups, [
@@ -82,6 +96,7 @@ test('builds a production package with selected assets and manifest', async () =
 
 test('production package manifest records requested assets that could not be generated', async () => {
   const job = createStudioJob('Missing mockup');
+  approveJobForPackage(job);
   job.packageOptions.selectedMockupIndices = [6];
 
   const result = await buildProductionPackage({
@@ -110,6 +125,7 @@ test('includes profile provenance in production package manifest without full sn
     method: 'DTF',
   });
   const job = createStudioJob('Profile package', profile);
+  approveJobForPackage(job);
 
   const result = await buildProductionPackage({
     job,
@@ -134,6 +150,7 @@ test('includes profile name and revision in production summary', async () => {
   profile.id = 'profile_brother_gtx';
   profile.printerName = 'Brother GTXpro';
   const job = createStudioJob('Profile summary', profile);
+  approveJobForPackage(job);
 
   const result = await buildProductionPackage({
     job,
@@ -145,9 +162,21 @@ test('includes profile name and revision in production summary', async () => {
   assert.match(summary, /Profile: Brother GTX queue/);
   assert.match(summary, /revision 1/);
   assert.match(summary, /Placement: full-front placement · T-shirt front · size L · 12×14 in · offset 0 in horizontal, 2 in from top/);
-  assert.match(summary, /Proof approval: Not requested/);
+  assert.match(summary, /Proof approval: Approved by Taylor/);
   assert.match(summary, /Proof approval events: 0/);
-  assert.match(summary, /Proof freshness: not-exported/);
+  assert.match(summary, /Proof freshness: matches-current-job/);
+});
+
+test('rejects production package export until customer proof is approved', async () => {
+  const job = createStudioJob('Unapproved package');
+
+  await assert.rejects(
+    () => buildProductionPackage({
+      job,
+      palette: [],
+    }),
+    /approved customer proof/i,
+  );
 });
 
 test('includes proof freshness audit in production package handoff', async () => {
@@ -188,7 +217,7 @@ test('includes proof freshness audit in production package handoff', async () =>
   assert.match(summary, /Proof revision check: current job revision 5; proof revision 5/);
 });
 
-test('marks stale proof audit in production package handoff', async () => {
+test('rejects stale approved proof during production package handoff', async () => {
   const job = createStudioJob('Stale proof audit package');
   job.revision = 8;
   job.exports = [proofExport(7)];
@@ -199,25 +228,26 @@ test('marks stale proof audit in production package handoff', async () => {
     approverName: 'Taylor',
   };
 
-  const result = await buildProductionPackage({
-    job,
-    palette: [],
-  });
-  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
-  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
-  const summary = await zip.file('production-summary.txt')!.async('string');
+  await assert.rejects(
+    () => buildProductionPackage({
+      job,
+      palette: [],
+    }),
+    /current approved customer proof/i,
+  );
+
+  const manifest = createJobManifest(job, []);
 
   assert.equal(manifest.proofAudit.freshnessStatus, 'stale');
   assert.equal(manifest.proofAudit.matchesCurrentJob, false);
   assert.equal(manifest.proofAudit.currentJobRevision, 8);
   assert.equal(manifest.proofAudit.latestProofRevision, 7);
   assert.match(manifest.proofAudit.message, /changed since proof revision 7/);
-  assert.match(summary, /Proof freshness: stale/);
-  assert.match(summary, /Proof revision check: current job revision 8; proof revision 7/);
 });
 
 test('includes applied template provenance in production package handoff', async () => {
   const job = createStudioJob('Template package');
+  approveJobForPackage(job);
   job.appliedTemplate = {
     id: 'template_daily_dtg',
     name: 'Daily DTG',
@@ -244,6 +274,7 @@ test('includes applied template provenance in production package handoff', async
 
 test('includes applied template drift status in production package handoff', async () => {
   const job = createStudioJob('Template drift package');
+  approveJobForPackage(job);
   job.appliedTemplate = {
     id: 'template_daily_dtg',
     name: 'Daily DTG',
