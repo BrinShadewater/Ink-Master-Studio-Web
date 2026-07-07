@@ -43,6 +43,12 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
       </button>
       {open && (
         <div className="absolute right-0 top-11 z-50 w-[min(calc(100vw-2rem),22rem)] rounded-xl border border-slate-700 bg-slate-950 p-3 shadow-2xl shadow-black/60">
+          <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Shop template library</p>
+            <p className="mt-1 text-xs font-semibold text-slate-300">
+              {templates.length} saved · local presets for recipe, placement, package, proof branding, and naming.
+            </p>
+          </div>
           <div className="flex gap-2">
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="New template name" className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500" />
             <button type="button" disabled={!name.trim()} onClick={() => { onSave(name, 'Shop production template'); setName(''); }} className="rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-30">Save</button>
@@ -161,6 +167,9 @@ export const TemplatesPopover: React.FC<TemplatesPopoverProps> = ({
               <input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onImport(file); event.target.value = ''; }} />
             </label>
           </div>
+          <p className="mt-2 text-[10px] font-semibold text-slate-500">
+            Template JSON files are portable between workstations and do not include customer jobs or artwork.
+          </p>
         </div>
       )}
     </div>

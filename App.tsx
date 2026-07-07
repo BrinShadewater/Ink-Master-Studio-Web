@@ -957,6 +957,7 @@ const App: React.FC = () => {
 
   const handleExportTemplates = () => {
     downloadBlob(new Blob([exportTemplates(shopTemplates)], { type: 'application/json' }), 'inkmaster-shop-templates.json');
+    setTemplateImportMessage(`Exported ${shopTemplates.length} shop template${shopTemplates.length === 1 ? '' : 's'} to JSON.`);
   };
 
   const handleImportTemplates = async (file: File) => {
