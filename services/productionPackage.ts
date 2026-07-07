@@ -27,12 +27,57 @@ interface PackageManifestAsset {
   label?: string;
 }
 
+interface PackageAssemblyValidation {
+  ok: boolean;
+  errors: string[];
+}
+
 const packageAsset = (
   role: PackageManifestAsset['role'],
   filename: string,
   status: PackageManifestAsset['status'],
   label?: string,
 ): PackageManifestAsset => ({ role, filename, status, ...(label ? { label } : {}) });
+
+const zipFileNames = (zip: JSZip) =>
+  Object.keys(zip.files).filter((filename) => !zip.files[filename].dir).sort();
+
+const validatePackageAssembly = (
+  packageAssets: PackageManifestAsset[],
+  files: string[],
+): PackageAssemblyValidation => {
+  const declaredIncludedFiles = new Set(
+    packageAssets
+      .filter((asset) => asset.status === 'included')
+      .map((asset) => asset.filename),
+  );
+  const fileSet = new Set(files);
+  const errors: string[] = [];
+
+  for (const filename of declaredIncludedFiles) {
+    if (!fileSet.has(filename)) {
+      errors.push(`Manifest includes ${filename}, but the ZIP does not contain it.`);
+    }
+  }
+
+  for (const filename of files) {
+    if (!declaredIncludedFiles.has(filename)) {
+      errors.push(`ZIP contains ${filename}, but the manifest does not declare it as included.`);
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+  };
+};
+
+const assertValidPackageAssembly = (packageAssets: PackageManifestAsset[], zip: JSZip) => {
+  const validation = validatePackageAssembly(packageAssets, zipFileNames(zip));
+  if (!validation.ok) {
+    throw new Error(`Production package manifest mismatch: ${validation.errors.join(' ')}`);
+  }
+};
 
 const createPackageAssetManifest = (input: ProductionPackageInput): PackageManifestAsset[] => {
   const { job } = input;
@@ -258,8 +303,15 @@ export const buildProductionPackage = async (
     zip.file(input.productionPdf.filename, await input.productionPdf.blob.arrayBuffer());
   }
   if (options.includeMockups) {
+    const includedMockupFilenames = new Set(
+      packageAssets
+        .filter((asset) => asset.role === 'mockup' && asset.status === 'included')
+        .map((asset) => asset.filename.replace(/^mockups\//, '')),
+    );
     for (const mockup of input.mockups ?? []) {
-      zip.file(`mockups/${mockup.filename}`, await mockup.blob.arrayBuffer());
+      if (includedMockupFilenames.has(mockup.filename)) {
+        zip.file(`mockups/${mockup.filename}`, await mockup.blob.arrayBuffer());
+      }
     }
   }
   if (options.includeUnderbase && input.underbase) {
@@ -271,6 +323,8 @@ export const buildProductionPackage = async (
   if (options.includeManifest) {
     zip.file('job-manifest.json', JSON.stringify(createJobManifest(job, input.palette, packageAssets, input.appliedTemplateStatus), null, 2));
   }
+
+  assertValidPackageAssembly(packageAssets, zip);
 
   const placementName = job.placements[job.activePlacementKey]?.presetId ?? 'custom';
   const baseName = resolveFilenamePattern(options.namingPattern, job, placementName);

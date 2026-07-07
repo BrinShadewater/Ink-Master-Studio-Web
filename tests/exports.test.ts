@@ -117,6 +117,34 @@ test('production package manifest records requested assets that could not be gen
   assert.match(summary, /Missing requested files: mockups\/black-mockup\.png \(Black\)/);
 });
 
+test('production package omits mockup files that are not declared in the manifest', async () => {
+  const job = createStudioJob('Extra mockup');
+  approveJobForPackage(job);
+  job.packageOptions.selectedMockupIndices = [6];
+
+  const result = await buildProductionPackage({
+    job,
+    printMaster: { filename: 'print.png', blob: new Blob(['print']) },
+    productionPdf: { filename: 'spec.pdf', blob: new Blob(['pdf']) },
+    mockups: [
+      { filename: 'black-mockup.png', blob: new Blob(['black']) },
+      { filename: 'red-mockup.png', blob: new Blob(['red']) },
+    ],
+    palette: [],
+  });
+  const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+  const manifest = JSON.parse(await zip.file('job-manifest.json')!.async('string'));
+
+  assert.ok(zip.file('mockups/black-mockup.png'));
+  assert.equal(zip.file('mockups/red-mockup.png'), null);
+  assert.deepEqual(
+    manifest.packageAssets
+      .filter((asset: { role: string }) => asset.role === 'mockup')
+      .map((asset: { filename: string; status: string }) => [asset.filename, asset.status]),
+    [['mockups/black-mockup.png', 'included']],
+  );
+});
+
 test('includes profile provenance in production package manifest without full snapshot', async () => {
   const baseProfile = createProductionProfile('Mimaki Daily DTG');
   baseProfile.id = 'profile_mimaki_daily';
