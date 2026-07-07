@@ -98,6 +98,31 @@ const nextAction = (
   instruction: string,
 ): ProductionPackageReview['nextAction'] => ({ id, label, priority, target, instruction });
 
+const exportActionLabelFor = (action: ProductionPackageReview['nextAction']) => {
+  switch (action.id) {
+    case 'download-package':
+      return 'Download production package';
+    case 'export-proof':
+      return 'Export proof before package';
+    case 're-export-proof':
+      return 'Re-export proof before package';
+    case 'wait-for-approval':
+      return 'Waiting for proof approval';
+    case 'record-approval':
+      return 'Record proof approval first';
+    case 'acknowledge-preflight':
+      return 'Acknowledge warnings first';
+    case 'resolve-critical-preflight':
+      return 'Resolve preflight blockers';
+    case 'process-artwork':
+      return 'Process artwork first';
+    case 'select-mockups':
+      return 'Select mockups first';
+    default:
+      return 'Production package not ready';
+  }
+};
+
 export const buildProductionPackageReview = (
   job: StudioJob,
   findings: PreflightFinding[],
@@ -142,11 +167,11 @@ export const buildProductionPackageReview = (
   } else if (proofStatus === 'approved' && proofFreshness?.stale) {
     blockingReasons.push('Approved customer proof no longer matches the current job revision.');
   } else if (proofStatus === 'sent') {
-    warnings.push(proofFreshness?.stale
+    blockingReasons.push(proofFreshness?.stale
       ? 'Customer proof is stale because the job changed after the latest proof export.'
-      : 'Customer proof is sent and awaiting response.');
+      : 'Customer proof is sent and awaiting approval.');
   } else if (proofStatus === 'not-requested') {
-    warnings.push('Customer proof has not been requested yet.');
+    blockingReasons.push('Customer proof must be exported, sent, and approved before production handoff.');
   }
 
   const gateStatus: PackageReviewGateStatus = blockingReasons.length > 0
@@ -207,7 +232,7 @@ export const buildProductionPackageReview = (
           ? 'blocked'
         : proofStatus === 'approved'
           ? 'ready'
-          : 'attention',
+          : 'blocked',
       proofStatus === 'approved'
         ? proofFreshness?.stale
           ? 'Approved proof is stale. Export a fresh proof and record approval again.'
@@ -217,8 +242,8 @@ export const buildProductionPackageReview = (
           : proofStatus === 'sent'
             ? proofFreshness?.stale
               ? 'Latest sent proof is stale because the job changed after export.'
-              : 'Proof is sent and awaiting customer response.'
-            : 'Proof has not been requested yet.',
+              : 'Proof is sent and awaiting customer approval before package export.'
+            : 'Proof must be exported, sent, and approved before package export.',
     ),
   ];
   const handoffStatus: HandoffReadinessStatus = handoffChecks.some((check) => check.status === 'blocked')
@@ -322,6 +347,7 @@ export const buildProductionPackageReview = (
   const disabledReason = !canExport
     ? blockingReasons[0] ?? warnings[0] ?? nextCheck?.note ?? 'Resolve handoff readiness items before export.'
     : null;
+  const exportActionLabel = canExport ? 'Download production package' : exportActionLabelFor(operatorNextAction);
 
   return {
     packageFilename: `${baseFilename}_production.zip`,
@@ -334,7 +360,7 @@ export const buildProductionPackageReview = (
         ? 'Acknowledge warnings before export.'
         : 'Production package is blocked.',
     exportAction: {
-      label: canExport ? 'Download production package' : 'Production package not ready',
+      label: exportActionLabel,
       disabledReason,
       nextStep: nextCheck
         ? `${nextCheck.label}: ${nextCheck.note}`

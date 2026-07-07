@@ -125,7 +125,7 @@ test('workflow path moves to proof review before package handoff', () => {
     ['preflight', 'done'],
     ['placement', 'done'],
     ['proof', 'current'],
-    ['package', 'review'],
+    ['package', 'blocked'],
   ]);
 });
 

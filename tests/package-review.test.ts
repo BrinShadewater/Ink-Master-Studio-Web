@@ -34,7 +34,7 @@ const proofExport = (jobRevision: number): StoredJobExport => ({
   },
 });
 
-test('previews the final package filename and included production files', () => {
+test('previews the final package filename and included production files while requiring proof approval', () => {
   const job = createStudioJob('River / Street');
   job.metadata.customerName = 'Alex & Co.';
   job.revision = 4;
@@ -44,10 +44,10 @@ test('previews the final package filename and included production files', () => 
   const review = buildProductionPackageReview(job, [], false, true, 'current');
 
   assert.equal(review.packageFilename, 'river-street_alex-co_tshirt_full-front_v4_production.zip');
-  assert.equal(review.canExport, true);
-  assert.equal(review.gateStatus, 'ready');
-  assert.equal(review.exportAction.label, 'Download production package');
-  assert.equal(review.exportAction.disabledReason, null);
+  assert.equal(review.canExport, false);
+  assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.exportAction.label, 'Export proof before package');
+  assert.match(review.exportAction.disabledReason ?? '', /proof must be exported/i);
   assert.deepEqual(review.nextAction, {
     id: 'export-proof',
     label: 'Export proof',
@@ -55,11 +55,11 @@ test('previews the final package filename and included production files', () => 
     target: 'Customer proof',
     instruction: 'Export a customer proof and send it for approval before final handoff.',
   });
-  assert.equal(review.handoffReadiness.status, 'attention');
-  assert.match(review.handoffReadiness.summary, /operator review/);
+  assert.equal(review.handoffReadiness.status, 'blocked');
+  assert.match(review.handoffReadiness.summary, /blocked/);
   assert.equal(
     review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status,
-    'attention',
+    'blocked',
   );
   assert.deepEqual(
     review.items.map((entry) => [entry.id, entry.status, entry.filename]),
@@ -89,7 +89,7 @@ test('blocks package export until artwork has been processed', () => {
 
   assert.equal(review.canExport, false);
   assert.equal(review.gateStatus, 'blocked');
-  assert.equal(review.exportAction.label, 'Production package not ready');
+  assert.equal(review.exportAction.label, 'Process artwork first');
   assert.match(review.exportAction.disabledReason ?? '', /Process the artwork/);
   assert.match(review.exportAction.nextStep, /Artwork processed/);
   assert.equal(review.nextAction.id, 'process-artwork');
@@ -139,6 +139,11 @@ test('flags enabled mockups with no selected colors for operator review', () => 
 
 test('requires warning acknowledgement before package export', () => {
   const job = createStudioJob('Warning package');
+  job.proofApproval = {
+    ...job.proofApproval,
+    status: 'approved',
+    respondedAt: Date.UTC(2026, 0, 2, 4, 5, 6),
+  };
 
   const review = buildProductionPackageReview(job, [warning], false, true, 'current');
   const acknowledged = buildProductionPackageReview(job, [warning], true, true, 'current');
@@ -240,7 +245,7 @@ test('blocks package handoff when approved proof is stale', () => {
   assert.match(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.note ?? '', /stale/i);
 });
 
-test('warns but does not block package handoff when sent proof is stale', () => {
+test('blocks package handoff when sent proof is stale', () => {
   const job = createStudioJob('Stale sent package');
   job.revision = 7;
   job.exports = [proofExport(6)];
@@ -252,13 +257,14 @@ test('warns but does not block package handoff when sent proof is stale', () => 
 
   const review = buildProductionPackageReview(job, [], false, true, 'current');
 
-  assert.equal(review.canExport, true);
-  assert.equal(review.gateStatus, 'ready');
+  assert.equal(review.canExport, false);
+  assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.exportAction.label, 'Re-export proof before package');
   assert.equal(review.nextAction.id, 're-export-proof');
   assert.equal(review.nextAction.priority, 'review');
-  assert.equal(review.handoffReadiness.status, 'attention');
-  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'attention');
-  assert.match(review.warnings.join(' '), /stale/i);
+  assert.equal(review.handoffReadiness.status, 'blocked');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
+  assert.match(review.blockingReasons.join(' '), /stale/i);
 });
 
 test('surfaces profile snapshot provenance when source profile changed', () => {
@@ -285,8 +291,13 @@ test('guides operator to wait for approval when proof is sent and current', () =
 
   const review = buildProductionPackageReview(job, [], false, true, 'current');
 
-  assert.equal(review.canExport, true);
+  assert.equal(review.canExport, false);
+  assert.equal(review.gateStatus, 'blocked');
+  assert.equal(review.exportAction.label, 'Waiting for proof approval');
+  assert.match(review.exportAction.disabledReason ?? '', /awaiting approval/i);
   assert.equal(review.nextAction.id, 'wait-for-approval');
   assert.equal(review.nextAction.priority, 'review');
+  assert.equal(review.handoffReadiness.status, 'blocked');
+  assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
   assert.match(review.nextAction.instruction, /Record approval/);
 });
