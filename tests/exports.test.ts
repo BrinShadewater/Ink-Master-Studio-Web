@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 
 import { createStudioJob } from '../services/jobModel';
 import { resolveFilenamePattern } from '../services/naming';
-import { buildProductionPackage, createJobManifest } from '../services/productionPackage';
+import { buildProductionPackage, createJobManifest, getProductionPackageErrorMessage } from '../services/productionPackage';
 import { buildProofDescriptor, buildProofFilename, buildProofMockupCaption, generateCustomerProof } from '../services/proofBuilder';
 import { createProductionProfile, reviseProductionProfile } from '../services/productionProfiles';
 import { StoredJobExport } from '../types';
@@ -271,6 +271,29 @@ test('rejects stale approved proof during production package handoff', async () 
   assert.equal(manifest.proofAudit.currentJobRevision, 8);
   assert.equal(manifest.proofAudit.latestProofRevision, 7);
   assert.match(manifest.proofAudit.message, /changed since proof revision 7/);
+});
+
+test('formats known production package errors for operators without exposing unknown details', () => {
+  assert.equal(
+    getProductionPackageErrorMessage(new Error('Production package requires approved customer proof.')),
+    'Production package requires approved customer proof.',
+  );
+  assert.equal(
+    getProductionPackageErrorMessage(new Error('Production package requires a current approved customer proof.')),
+    'Production package requires a current approved customer proof.',
+  );
+  assert.equal(
+    getProductionPackageErrorMessage(new Error('Production package manifest mismatch: ZIP contains extra.png, but the manifest does not declare it as included.')),
+    'Package contents did not match the job manifest. ZIP contains extra.png, but the manifest does not declare it as included.',
+  );
+  assert.equal(
+    getProductionPackageErrorMessage(new Error('Unexpected path C:\\secrets\\GEMINI_API_KEY failed')),
+    'The production package could not be generated.',
+  );
+  assert.equal(
+    getProductionPackageErrorMessage('plain failure'),
+    'The production package could not be generated.',
+  );
 });
 
 test('includes applied template provenance in production package handoff', async () => {

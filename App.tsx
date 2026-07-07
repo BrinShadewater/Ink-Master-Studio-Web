@@ -77,7 +77,7 @@ import {
   resolveMockupSelectionForItemType,
   getSelectedProductionMockups,
 } from './services/mockups';
-import { buildProductionPackage, PackageAsset } from './services/productionPackage';
+import { buildProductionPackage, getProductionPackageErrorMessage, PackageAsset } from './services/productionPackage';
 import { buildProductionPackageReview } from './services/packageReview';
 import { buildProofFilename, generateCustomerProof } from './services/proofBuilder';
 import { formatPlacementSummary } from './services/handoffDetails';
@@ -773,7 +773,7 @@ const App: React.FC = () => {
       });
     } catch (packageError) {
       console.error(packageError);
-      setError('The production package could not be generated.');
+      setError(getProductionPackageErrorMessage(packageError));
     }
   };
 

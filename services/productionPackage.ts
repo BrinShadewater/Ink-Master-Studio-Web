@@ -79,6 +79,23 @@ const assertValidPackageAssembly = (packageAssets: PackageManifestAsset[], zip: 
   }
 };
 
+export const getProductionPackageErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return 'The production package could not be generated.';
+  }
+  if (error.message === 'Production package requires approved customer proof.') {
+    return 'Production package requires approved customer proof.';
+  }
+  if (error.message === 'Production package requires a current approved customer proof.') {
+    return 'Production package requires a current approved customer proof.';
+  }
+  if (error.message.startsWith('Production package manifest mismatch:')) {
+    const detail = error.message.replace('Production package manifest mismatch:', '').trim();
+    return `Package contents did not match the job manifest. ${detail}`;
+  }
+  return 'The production package could not be generated.';
+};
+
 const createPackageAssetManifest = (input: ProductionPackageInput): PackageManifestAsset[] => {
   const { job } = input;
   const options = job.packageOptions;
