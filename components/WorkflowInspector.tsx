@@ -45,6 +45,7 @@ const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
 const exportKindLabel = (entry: ExportHistoryEntry) => {
   switch (entry.metadata?.kind) {
     case 'production-package': return 'Production package';
+    case 'production-package-blocked': return 'Blocked package attempt';
     case 'customer-proof': return 'Customer proof';
     case 'print-master': return 'Print master';
     case 'production-pdf': return 'Production PDF';
@@ -986,6 +987,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                             )}
                             {entry.metadata.manifestVerified && (
                               <span className="font-bold uppercase text-emerald-300">manifest verified</span>
+                            )}
+                            {entry.metadata.blockedReason && (
+                              <span className="truncate text-rose-300">{entry.metadata.blockedReason}</span>
                             )}
                             {entry.metadata.proofQuality && (
                               <span className="font-bold uppercase text-sky-300">{entry.metadata.proofQuality === 'print' ? 'print proof' : 'email proof'}</span>

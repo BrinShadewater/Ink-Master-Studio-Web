@@ -195,6 +195,7 @@ const migrateProofApproval = (value: unknown): ProofApprovalState => {
 
 const EXPORT_KINDS: Array<NonNullable<StoredJobExport['metadata']>['kind']> = [
   'production-package',
+  'production-package-blocked',
   'customer-proof',
   'print-master',
   'production-pdf',
@@ -217,12 +218,13 @@ const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | un
   if (!isRecord(value) || typeof value.kind !== 'string' || !EXPORT_KINDS.includes(value.kind as NonNullable<StoredJobExport['metadata']>['kind'])) {
     return undefined;
   }
-  return {
+  const metadata: StoredJobExport['metadata'] = {
     kind: value.kind as NonNullable<StoredJobExport['metadata']>['kind'],
     readinessStatus: typeof value.readinessStatus === 'string' && READINESS_STATUSES.includes(value.readinessStatus as NonNullable<StoredJobExport['metadata']>['readinessStatus'])
       ? value.readinessStatus as NonNullable<StoredJobExport['metadata']>['readinessStatus']
       : undefined,
     readinessSummary: typeof value.readinessSummary === 'string' ? value.readinessSummary : undefined,
+    blockedReason: typeof value.blockedReason === 'string' ? value.blockedReason : undefined,
     packageContents: Array.isArray(value.packageContents)
       ? value.packageContents.filter((entry): entry is string => typeof entry === 'string')
       : undefined,
@@ -239,6 +241,9 @@ const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | un
       ? value.jobRevision
       : undefined,
   };
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([, fieldValue]) => fieldValue !== undefined),
+  ) as StoredJobExport['metadata'];
 };
 
 export const migrateStudioJob = (value: unknown): StudioJob => {

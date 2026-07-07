@@ -263,9 +263,10 @@ export interface StoredJobExport {
   timestamp: number;
   blob: Blob;
   metadata?: {
-    kind: 'production-package' | 'customer-proof' | 'print-master' | 'production-pdf' | 'mockup-set' | 'underbase';
+    kind: 'production-package' | 'production-package-blocked' | 'customer-proof' | 'print-master' | 'production-pdf' | 'mockup-set' | 'underbase';
     readinessStatus?: 'ready' | 'attention' | 'blocked';
     readinessSummary?: string;
+    blockedReason?: string;
     packageContents?: string[];
     manifestVerified?: boolean;
     preflightSummary?: string;

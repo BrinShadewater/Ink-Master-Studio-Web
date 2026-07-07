@@ -32,6 +32,7 @@ const getFormatColor = (fmt: string) => {
     case 'SVG': return 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30';
     case 'PDF': return 'bg-red-900/40 text-red-400 border-red-500/30';
     case 'ZIP': return 'bg-amber-900/40 text-amber-300 border-amber-500/30';
+    case 'TXT': return 'bg-slate-900 text-slate-300 border-slate-600';
     default: return 'bg-slate-800 text-slate-400 border-slate-700';
   }
 };
@@ -39,6 +40,7 @@ const getFormatColor = (fmt: string) => {
 const getKindLabel = (entry: ExportHistoryEntry) => {
   switch (entry.metadata?.kind) {
     case 'production-package': return 'Production package';
+    case 'production-package-blocked': return 'Blocked package attempt';
     case 'customer-proof': return 'Customer proof';
     case 'print-master': return 'Print master';
     case 'production-pdf': return 'Production PDF';
@@ -72,6 +74,7 @@ const getDetailLines = (entry: ExportHistoryEntry) => {
 
   return [
     metadata.readinessSummary,
+    metadata.blockedReason ? `Blocked: ${metadata.blockedReason}` : null,
     metadata.preflightSummary ? `Preflight: ${metadata.preflightSummary}` : null,
     metadata.proofQuality ? `Proof export: ${metadata.proofQuality === 'print' ? 'print-ready PDF' : 'email-friendly PDF'}` : null,
     metadata.placementSummary,
@@ -202,6 +205,12 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
                         <div className="flex justify-between gap-3">
                           <dt className="text-slate-600">Preflight</dt>
                           <dd className="text-right text-slate-400">{entry.metadata.preflightSummary}</dd>
+                        </div>
+                      )}
+                      {entry.metadata?.blockedReason && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Blocked reason</dt>
+                          <dd className="text-right text-rose-300">{entry.metadata.blockedReason}</dd>
                         </div>
                       )}
                       {entry.metadata?.manifestVerified && (

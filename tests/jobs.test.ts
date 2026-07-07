@@ -598,6 +598,33 @@ test('migrates package manifest verification metadata only when boolean', () => 
   assert.equal(malformed.exports[0].metadata?.manifestVerified, undefined);
 });
 
+test('round-trips blocked production package attempt metadata', async () => {
+  const source = createStudioJob('Blocked package metadata');
+  source.exports = [{
+    id: 'blocked-package',
+    filename: 'blocked-production-package.txt',
+    format: 'TXT',
+    timestamp: 1_700_000_000_001,
+    blob: new Blob(['blocked']),
+    metadata: {
+      kind: 'production-package-blocked',
+      readinessStatus: 'blocked',
+      readinessSummary: 'Production package export was blocked.',
+      blockedReason: 'Customer proof must be approved before production handoff.',
+      preflightSummary: '3 pass · 0 warning · 0 critical',
+      proofApprovalStatus: 'not-requested',
+      placementSummary: 'full-front placement · T-shirt front',
+      jobRevision: source.revision,
+    },
+  }];
+
+  const archive = await exportPortableJob(source);
+  const imported = await importPortableJob(archive);
+
+  assert.deepEqual(imported.exports[0].metadata, source.exports[0].metadata);
+  assert.equal(await imported.exports[0].blob.text(), 'blocked');
+});
+
 test('drops malformed export metadata during migration', () => {
   const migrated = migrateStudioJob({
     ...createStudioJob('Malformed export metadata'),

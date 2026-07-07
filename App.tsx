@@ -102,6 +102,7 @@ import {
   saveTemplates,
   updateTemplateFromJob,
 } from './services/templateStorage';
+import { sanitizeFilenameSegment } from './services/naming';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
 
@@ -471,6 +472,46 @@ const App: React.FC = () => {
     };
   };
 
+  const packagePreflightSummary = () => {
+    const gate = getPreflightGate(preflightFindings, preflightAcknowledged);
+    return `${preflightFindings.filter((finding) => finding.severity === 'pass').length} pass · ${gate.warningCount} warning · ${gate.criticalCount} critical`;
+  };
+
+  const recordBlockedProductionPackageAttempt = (job: StudioJob, reason: string) => {
+    const placement = job.placements[job.activePlacementKey];
+    const timestamp = Date.now();
+    const filename = `${sanitizeFilenameSegment(job.metadata.name)}_blocked-production-package.txt`;
+    const body = [
+      'Ink Master blocked production package attempt',
+      `Job: ${job.metadata.name}`,
+      `Customer: ${job.metadata.customerName || 'Not supplied'}`,
+      `Reason: ${reason}`,
+      `Preflight: ${packagePreflightSummary()}`,
+      `Proof: ${job.proofApproval.status.replace(/-/g, ' ')}`,
+      `Placement: ${placement ? formatPlacementSummary(placement) : 'No placement selected'}`,
+      `Job revision: ${job.revision}`,
+      `Recorded: ${new Date(timestamp).toISOString()}`,
+    ].join('\n');
+    const blob = new Blob([body], { type: 'text/plain' });
+    addToExportHistory({
+      filename,
+      format: 'TXT',
+      timestamp,
+      url: URL.createObjectURL(blob),
+      blob,
+      metadata: {
+        kind: 'production-package-blocked',
+        readinessStatus: 'blocked',
+        readinessSummary: 'Production package export was blocked.',
+        blockedReason: reason,
+        preflightSummary: packagePreflightSummary(),
+        proofApprovalStatus: job.proofApproval.status,
+        placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
+        jobRevision: job.revision,
+      },
+    });
+  };
+
   const handleSettingsChange = (nextSettings: ProcessingSettings, commit: boolean) => {
     const next = { ...appState, settings: nextSettings };
     setAppState(next);
@@ -739,13 +780,17 @@ const App: React.FC = () => {
   const handleDownloadProductionPackage = async () => {
     if (!currentJob || !processedResult) return;
     if (packageReview && !packageReview.canExport) {
-      setError(packageReview.exportAction.disabledReason ?? 'Resolve handoff readiness items before exporting the production package.');
+      const reason = packageReview.exportAction.disabledReason ?? 'Resolve handoff readiness items before exporting the production package.';
+      recordBlockedProductionPackageAttempt(currentProductionJob ?? currentJob, reason);
+      setError(reason);
       return;
     }
     if (!preflightGate.canExport) {
-      setError(preflightGate.criticalCount > 0
+      const reason = preflightGate.criticalCount > 0
         ? 'Production export is blocked until all critical preflight findings are resolved.'
-        : 'Acknowledge the preflight warnings before exporting the production package.');
+        : 'Acknowledge the preflight warnings before exporting the production package.';
+      recordBlockedProductionPackageAttempt(currentProductionJob ?? currentJob, reason);
+      setError(reason);
       return;
     }
     try {
