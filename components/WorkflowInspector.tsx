@@ -871,7 +871,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               </p>
             </div>
 
-            {packageReview && <ProductionPackageReview review={packageReview} />}
+            {packageReview && (
+              <ProductionPackageReview
+                review={packageReview}
+                currentStage={stage}
+                onNavigateToStage={onStageChange}
+              />
+            )}
 
             <Section title="Production package contents" description="Configure the complete shop package after proof status is clear.">
               <div className="space-y-3">

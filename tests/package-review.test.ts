@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createStudioJob } from '../services/jobModel';
-import { buildProductionPackageReview } from '../services/packageReview';
+import { buildProductionPackageReview, getPackageReviewActionStage } from '../services/packageReview';
 import { PreflightFinding, StoredJobExport } from '../types';
 
 const warning: PreflightFinding = {
@@ -323,4 +323,16 @@ test('guides operator to wait for approval when proof is sent and current', () =
   assert.equal(review.handoffReadiness.status, 'blocked');
   assert.equal(review.handoffReadiness.checks.find((entry) => entry.id === 'proof')?.status, 'blocked');
   assert.match(review.nextAction.instruction, /Record approval/);
+});
+
+test('maps package review next actions to workflow panels', () => {
+  assert.equal(getPackageReviewActionStage('process-artwork'), 'prepare');
+  assert.equal(getPackageReviewActionStage('resolve-critical-preflight'), 'prepare');
+  assert.equal(getPackageReviewActionStage('acknowledge-preflight'), 'prepare');
+  assert.equal(getPackageReviewActionStage('select-mockups'), 'export');
+  assert.equal(getPackageReviewActionStage('export-proof'), 'export');
+  assert.equal(getPackageReviewActionStage('re-export-proof'), 'export');
+  assert.equal(getPackageReviewActionStage('wait-for-approval'), 'export');
+  assert.equal(getPackageReviewActionStage('record-approval'), 'export');
+  assert.equal(getPackageReviewActionStage('download-package'), 'export');
 });

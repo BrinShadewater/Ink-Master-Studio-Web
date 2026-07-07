@@ -2,7 +2,7 @@ import { getPreflightGate } from './preflight';
 import { resolveFilenamePattern } from './naming';
 import { describeSelectedMockups, resolveMockupSelectionForItemType } from './mockups';
 import { formatPlacementSummary } from './handoffDetails';
-import { PreflightFinding, StudioJob } from '../types';
+import { PreflightFinding, StudioJob, WorkspaceStage } from '../types';
 import { ProfileUpdateStatus } from './productionProfiles';
 import { getLatestProofFreshness } from './proofApproval';
 
@@ -97,6 +97,26 @@ const nextAction = (
   target: string,
   instruction: string,
 ): ProductionPackageReview['nextAction'] => ({ id, label, priority, target, instruction });
+
+export const getPackageReviewActionStage = (
+  actionId: OperatorNextActionId,
+): WorkspaceStage => {
+  switch (actionId) {
+    case 'process-artwork':
+    case 'resolve-critical-preflight':
+    case 'acknowledge-preflight':
+      return 'prepare';
+    case 'select-mockups':
+    case 'export-proof':
+    case 're-export-proof':
+    case 'wait-for-approval':
+    case 'record-approval':
+    case 'download-package':
+      return 'export';
+    default:
+      return 'export';
+  }
+};
 
 const exportActionLabelFor = (action: ProductionPackageReview['nextAction']) => {
   switch (action.id) {

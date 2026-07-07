@@ -1,8 +1,11 @@
 import React from 'react';
-import { ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
+import { getPackageReviewActionStage, ProductionPackageReview as ProductionPackageReviewModel } from '../services/packageReview';
+import { WorkspaceStage } from '../types';
 
 interface ProductionPackageReviewProps {
   review: ProductionPackageReviewModel;
+  currentStage: WorkspaceStage;
+  onNavigateToStage: (stage: WorkspaceStage) => void;
 }
 
 const statusClass: Record<string, string> = {
@@ -35,8 +38,17 @@ const nextActionClass: Record<string, string> = {
   blocked: 'border-rose-500/40 bg-rose-950/30 text-rose-200',
 };
 
-export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = ({ review }) => {
+const stageActionLabel: Record<WorkspaceStage, string> = {
+  goal: 'Open setup',
+  prepare: 'Open prep',
+  preview: 'Open placement',
+  export: 'Review here',
+};
+
+export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = ({ review, currentStage, onNavigateToStage }) => {
   const manifestIntegrity = review.handoffReadiness.checks.find((check) => check.id === 'manifest-integrity');
+  const nextActionStage = getPackageReviewActionStage(review.nextAction.id);
+  const canNavigateToAction = nextActionStage !== currentStage;
 
   return (
     <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
@@ -73,6 +85,14 @@ export const ProductionPackageReview: React.FC<ProductionPackageReviewProps> = (
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Next action</p>
             <p className="mt-1 text-sm font-black text-white">{review.nextAction.label}</p>
             <p className="mt-1 text-[11px] leading-relaxed opacity-90">{review.nextAction.instruction}</p>
+            <button
+              type="button"
+              disabled={!canNavigateToAction}
+              onClick={() => onNavigateToStage(nextActionStage)}
+              className="mt-2 rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-85 transition hover:opacity-100 disabled:cursor-default disabled:opacity-55"
+            >
+              {stageActionLabel[nextActionStage]}
+            </button>
           </div>
           <span className="flex-none rounded-full border border-current px-2 py-1 text-[9px] font-black uppercase opacity-90">
             {review.nextAction.target}
