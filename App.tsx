@@ -431,19 +431,37 @@ const App: React.FC = () => {
     if (profile) applyProfileToCurrentJob(profile);
   };
 
-  const addToExportHistory = (entry: Omit<ExportHistoryEntry, 'id'>) => {
-    const storedEntry = { ...entry, id: `export_${Date.now()}` };
-    setExportHistory((current) => [storedEntry, ...current].slice(0, 20));
+  const addToExportHistory = (
+    entry: Omit<ExportHistoryEntry, 'id'>,
+    shouldReplace?: (entry: ExportHistoryEntry) => boolean,
+  ) => {
+    const replacedEntry = shouldReplace ? exportHistory.find((current) => shouldReplace(current)) : undefined;
+    const storedEntry = { ...entry, id: replacedEntry?.id ?? `export_${Date.now()}` };
+    setExportHistory((current) => {
+      if (shouldReplace) {
+        const matchIndex = current.findIndex((candidate) => shouldReplace(candidate));
+        if (matchIndex >= 0) {
+          return [
+            storedEntry,
+            ...current.filter((_, index) => index !== matchIndex),
+          ].slice(0, 20);
+        }
+      }
+      return [storedEntry, ...current].slice(0, 20);
+    });
     updateCurrentJob((job) => ({
       ...job,
-      exports: [{
-        id: storedEntry.id,
-        filename: storedEntry.filename,
-        format: storedEntry.format,
-        timestamp: storedEntry.timestamp,
-        blob: storedEntry.blob,
-        metadata: storedEntry.metadata,
-      }, ...job.exports].slice(0, 20),
+      exports: [
+        {
+          id: storedEntry.id,
+          filename: storedEntry.filename,
+          format: storedEntry.format,
+          timestamp: storedEntry.timestamp,
+          blob: storedEntry.blob,
+          metadata: storedEntry.metadata,
+        },
+        ...job.exports.filter((exportEntry) => exportEntry.id !== storedEntry.id),
+      ].slice(0, 20),
     }), false);
   };
 
@@ -509,7 +527,10 @@ const App: React.FC = () => {
         placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',
         jobRevision: job.revision,
       },
-    });
+    }, (entry) =>
+      entry.metadata?.kind === 'production-package-blocked'
+      && entry.metadata.jobRevision === job.revision
+      && entry.metadata.blockedReason === reason);
   };
 
   const handleSettingsChange = (nextSettings: ProcessingSettings, commit: boolean) => {
