@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ExportHistoryEntry } from '../types';
+import { getExportDownloadLabel } from '../services/exportHistory';
 
 interface ExportHistoryProps {
   entries: ExportHistoryEntry[];
@@ -156,7 +157,8 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
                   <button
                     onClick={() => downloadAgain(entry)}
                     className="rounded p-1.5 text-slate-500 transition-all hover:bg-slate-800 hover:text-indigo-400"
-                    title="Download again"
+                    title={getExportDownloadLabel(entry)}
+                    aria-label={getExportDownloadLabel(entry)}
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   </button>

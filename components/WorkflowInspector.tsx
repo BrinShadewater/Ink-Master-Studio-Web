@@ -34,7 +34,7 @@ import { CloudApprovalCapability, getLatestProofFreshness } from '../services/pr
 import { getDefaultMockupSelectionForItemType, getProductionMockupEntries } from '../services/mockups';
 import { buildProductionWorkflowPath, getProductionWorkflowFocus, getWorkflowStageForStep, ProductionWorkflowStepStatus } from '../services/workflowPath';
 import { formatPlacementSummary, formatPrintSizeSummary } from '../services/handoffDetails';
-import { getLatestBlockedPackageAttempt } from '../services/exportHistory';
+import { getCompactExportDownloadLabel, getLatestBlockedPackageAttempt } from '../services/exportHistory';
 
 const STAGES: Array<{ id: WorkspaceStage; label: string; short: string }> = [
   { id: 'goal', label: 'Goal', short: 'Choose the result' },
@@ -1012,7 +1012,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                       <div key={entry.id} className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-bold text-slate-300">{exportKindLabel(entry)}</span>
-                          <a href={entry.url} download={entry.filename} className="text-indigo-300 hover:text-indigo-200">Again</a>
+                          <a href={entry.url} download={entry.filename} className="text-indigo-300 hover:text-indigo-200">{getCompactExportDownloadLabel(entry)}</a>
                         </div>
                         <p className="mt-1 truncate text-[10px] text-slate-500">{entry.filename}</p>
                         {(entry.metadata?.readinessStatus || entry.metadata?.proofQuality || entry.metadata?.placementSummary) && (

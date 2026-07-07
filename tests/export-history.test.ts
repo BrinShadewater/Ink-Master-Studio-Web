@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getLatestBlockedPackageAttempt } from '../services/exportHistory';
+import { getCompactExportDownloadLabel, getExportDownloadLabel, getLatestBlockedPackageAttempt, isBlockedPackageAttempt } from '../services/exportHistory';
 import { ExportHistoryEntry } from '../types';
 
 const exportEntry = (
@@ -57,4 +57,16 @@ test('returns the latest blocked package attempt when no current revision is ava
   const latest = getLatestBlockedPackageAttempt(entries, null);
 
   assert.equal(latest?.id, 'blocked-latest');
+});
+
+test('labels blocked package attempts as audit downloads', () => {
+  const blocked = exportEntry('blocked-audit', 'production-package-blocked', 4);
+  const packageExport = exportEntry('package', 'production-package', 4);
+
+  assert.equal(isBlockedPackageAttempt(blocked), true);
+  assert.equal(isBlockedPackageAttempt(packageExport), false);
+  assert.equal(getExportDownloadLabel(blocked), 'Download audit');
+  assert.equal(getCompactExportDownloadLabel(blocked), 'Audit');
+  assert.equal(getExportDownloadLabel(packageExport), 'Download again');
+  assert.equal(getCompactExportDownloadLabel(packageExport), 'Again');
 });
