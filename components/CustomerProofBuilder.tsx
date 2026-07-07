@@ -232,8 +232,14 @@ export const CustomerProofBuilder: React.FC<CustomerProofBuilderProps> = ({
         >
           {proofSent ? 'Proof sent recorded' : proofFreshness?.stale ? 'Re-export proof first' : proofFreshness ? 'Mark proof sent' : 'Export proof first'}
         </button>
-        <button type="button" disabled={!cloudCapability.supportsShareLinks} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-500 opacity-70">
-          Share approval link
+        <button
+          type="button"
+          disabled={!cloudCapability.supportsShareLinks}
+          title={cloudCapability.message}
+          aria-label={`Share approval link unavailable: ${cloudCapability.message}`}
+          className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-500 opacity-70"
+        >
+          Share link not configured
         </button>
         <button
           type="button"
