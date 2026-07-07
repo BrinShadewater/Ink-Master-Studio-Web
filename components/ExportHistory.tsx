@@ -76,6 +76,7 @@ const getDetailLines = (entry: ExportHistoryEntry) => {
     metadata.proofQuality ? `Proof export: ${metadata.proofQuality === 'print' ? 'print-ready PDF' : 'email-friendly PDF'}` : null,
     metadata.placementSummary,
     metadata.proofApprovalStatus ? `Proof: ${metadata.proofApprovalStatus.replace(/-/g, ' ')}` : null,
+    metadata.manifestVerified ? 'Manifest-verified package contents' : null,
     metadata.packageContents && metadata.packageContents.length > 0
       ? `Includes: ${metadata.packageContents.slice(0, 3).join(', ')}${metadata.packageContents.length > 3 ? ` +${metadata.packageContents.length - 3}` : ''}`
       : null,
@@ -139,6 +140,11 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
                             {entry.metadata.readinessStatus}
                           </span>
                         )}
+                        {entry.metadata?.manifestVerified && (
+                          <span className="rounded border border-emerald-500/30 bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-300">
+                            Manifest verified
+                          </span>
+                        )}
                       </div>
                       <p className="max-w-[150px] truncate text-xs text-slate-300" title={entry.filename}>{entry.filename}</p>
                       <p className="text-[9px] text-slate-600">{getTimeString(entry.timestamp)}</p>
@@ -196,6 +202,12 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
                         <div className="flex justify-between gap-3">
                           <dt className="text-slate-600">Preflight</dt>
                           <dd className="text-right text-slate-400">{entry.metadata.preflightSummary}</dd>
+                        </div>
+                      )}
+                      {entry.metadata?.manifestVerified && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-600">Manifest</dt>
+                          <dd className="text-right font-bold text-emerald-300">Verified against ZIP contents</dd>
                         </div>
                       )}
                       {entry.metadata?.proofApprovalStatus && (

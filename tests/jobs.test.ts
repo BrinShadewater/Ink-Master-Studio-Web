@@ -548,6 +548,7 @@ test('round-trips production export metadata through a portable job archive', as
       readinessStatus: 'ready',
       readinessSummary: 'Production handoff is ready.',
       packageContents: ['Print master', 'Job manifest'],
+      manifestVerified: true,
       preflightSummary: '4 pass · 0 warning · 0 critical',
       proofApprovalStatus: 'approved',
       proofQuality: 'print',
@@ -561,6 +562,40 @@ test('round-trips production export metadata through a portable job archive', as
 
   assert.deepEqual(imported.exports[0].metadata, source.exports[0].metadata);
   assert.equal(await imported.exports[0].blob.text(), 'zip');
+});
+
+test('migrates package manifest verification metadata only when boolean', () => {
+  const verified = migrateStudioJob({
+    ...createStudioJob('Verified export metadata'),
+    exports: [{
+      id: 'export-verified',
+      filename: 'verified.zip',
+      format: 'ZIP',
+      timestamp: 1,
+      blob: new Blob(['verified']),
+      metadata: {
+        kind: 'production-package',
+        manifestVerified: true,
+      },
+    }],
+  });
+  const malformed = migrateStudioJob({
+    ...createStudioJob('Malformed manifest flag'),
+    exports: [{
+      id: 'export-bad-manifest',
+      filename: 'bad.zip',
+      format: 'ZIP',
+      timestamp: 1,
+      blob: new Blob(['bad']),
+      metadata: {
+        kind: 'production-package',
+        manifestVerified: 'yes',
+      },
+    }],
+  });
+
+  assert.equal(verified.exports[0].metadata?.manifestVerified, true);
+  assert.equal(malformed.exports[0].metadata?.manifestVerified, undefined);
 });
 
 test('drops malformed export metadata during migration', () => {

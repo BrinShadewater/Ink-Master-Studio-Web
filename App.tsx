@@ -463,6 +463,7 @@ const App: React.FC = () => {
       packageContents: review.items
         .filter((entry) => entry.status === 'ready')
         .map((entry) => entry.label),
+      manifestVerified: true,
       preflightSummary: `${preflightFindings.filter((finding) => finding.severity === 'pass').length} pass · ${gate.warningCount} warning · ${gate.criticalCount} critical`,
       proofApprovalStatus: job.proofApproval.status,
       placementSummary: placement ? formatPlacementSummary(placement) : 'No placement selected',

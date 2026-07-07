@@ -984,6 +984,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                             {entry.metadata.readinessStatus && (
                               <span className={`font-bold uppercase ${exportReadinessClassName(entry.metadata.readinessStatus)}`}>{entry.metadata.readinessStatus}</span>
                             )}
+                            {entry.metadata.manifestVerified && (
+                              <span className="font-bold uppercase text-emerald-300">manifest verified</span>
+                            )}
                             {entry.metadata.proofQuality && (
                               <span className="font-bold uppercase text-sky-300">{entry.metadata.proofQuality === 'print' ? 'print proof' : 'email proof'}</span>
                             )}

@@ -226,6 +226,7 @@ const migrateExportMetadata = (value: unknown): StoredJobExport['metadata'] | un
     packageContents: Array.isArray(value.packageContents)
       ? value.packageContents.filter((entry): entry is string => typeof entry === 'string')
       : undefined,
+    manifestVerified: typeof value.manifestVerified === 'boolean' ? value.manifestVerified : undefined,
     preflightSummary: typeof value.preflightSummary === 'string' ? value.preflightSummary : undefined,
     proofApprovalStatus: typeof value.proofApprovalStatus === 'string' && PROOF_APPROVAL_STATUSES.includes(value.proofApprovalStatus as ProofApprovalStatus)
       ? value.proofApprovalStatus as ProofApprovalStatus

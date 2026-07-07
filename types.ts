@@ -267,6 +267,7 @@ export interface StoredJobExport {
     readinessStatus?: 'ready' | 'attention' | 'blocked';
     readinessSummary?: string;
     packageContents?: string[];
+    manifestVerified?: boolean;
     preflightSummary?: string;
     proofApprovalStatus?: ProofApprovalStatus;
     proofQuality?: 'print' | 'email';
