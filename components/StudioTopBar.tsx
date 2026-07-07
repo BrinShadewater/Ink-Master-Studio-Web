@@ -49,7 +49,7 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
   templates,
   productionProfile,
 }) => (
-  <header className="relative z-40 flex h-14 flex-none items-center justify-between border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur lg:px-5">
+  <header className="relative z-40 flex min-h-14 flex-none flex-wrap items-center justify-between gap-y-2 border-b border-slate-800 bg-slate-950/95 px-3 py-2 backdrop-blur sm:h-14 sm:flex-nowrap sm:py-0 lg:px-5">
     <div className="flex min-w-0 items-center gap-2">
       <img src="/logo/logo.png" alt="" className="h-8 w-8 object-contain" />
       <div className="hidden min-w-0 sm:block">
@@ -88,6 +88,17 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
       {productionProfile}
       {templates}
       {versions}
+    </div>
+    <div className="basis-full border-t border-slate-900 pt-1 sm:hidden">
+      <input
+        aria-label="Job name"
+        value={jobName}
+        onChange={(event) => onJobNameChange(event.target.value)}
+        className="w-full truncate border-0 bg-transparent p-0 text-xs font-black tracking-tight text-slate-100 outline-none focus:text-white"
+      />
+      <p className={`text-[10px] font-semibold ${saveStatus === 'error' ? 'text-rose-400' : 'text-slate-500'}`}>
+        {saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'error' ? 'Local save failed' : 'Saved locally'}
+      </p>
     </div>
   </header>
 );
