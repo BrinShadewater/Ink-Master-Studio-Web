@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArtworkAnalysis, ProcessedResult } from '../types';
 import { MAX_FILE_SIZE_MB, MAX_SVG_SIZE_MB } from '../constants';
 import { PrintifyProductPreset, printify } from '../specs/printify';
@@ -35,6 +35,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   onCancelProcessing,
   onAdvancedMode,
 }) => {
+  const [backgroundChoice, setBackgroundChoice] = useState<'keep' | null>(null);
   const targetWidth = selectedProduct.px[0];
   const targetHeight = selectedProduct.px[1];
   const sourceWidth = analysis?.width ?? 0;
@@ -46,6 +47,10 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const fileBytes = processedResult?.blob.size ?? 0;
   const underCap = !processedResult || fileBytes <= printify.maxBytes.png;
   const hasTransparency = analysis?.hasTransparency ?? true;
+
+  useEffect(() => {
+    setBackgroundChoice(null);
+  }, [originalImage]);
 
   const checks = [
     {
@@ -69,7 +74,11 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     },
     {
       label: hasTransparency ? 'Transparent background kept' : 'Background kept as uploaded',
-      detail: hasTransparency ? 'Alpha is preserved in the print file.' : 'Use Advanced mode if you want edge cleanup before download.',
+      detail: hasTransparency
+        ? 'Alpha is preserved in the print file.'
+        : backgroundChoice === 'keep'
+          ? 'You chose to keep the uploaded background.'
+          : 'Choose whether to keep it or open Advanced cleanup.',
       state: 'ready',
     },
     {
@@ -142,6 +151,31 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">Checks</p>
           <h2 className="mt-1 text-xl font-black text-white">Ready for {selectedProduct.label}</h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedProduct.note}. Product Creator requirements can vary by provider, so this preset targets the common safe upload shape.</p>
+
+          {!hasTransparency && (
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-xs font-black text-amber-100">Background detected</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-100/80">
+                Keep it if the artwork should print as a rectangle, or open cleanup if the product needs transparent edges.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row lg:flex-col">
+                <button
+                  type="button"
+                  onClick={() => setBackgroundChoice('keep')}
+                  className={`rounded-lg px-3 py-2 text-xs font-black transition ${backgroundChoice === 'keep' ? 'bg-amber-300 text-slate-950' : 'border border-amber-500/40 text-amber-100 hover:border-amber-300'}`}
+                >
+                  Keep as uploaded
+                </button>
+                <button
+                  type="button"
+                  onClick={onAdvancedMode}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 hover:border-slate-500 hover:text-white"
+                >
+                  Open cleanup
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 space-y-2">
             {checks.map((check) => (
