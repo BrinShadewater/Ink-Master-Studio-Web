@@ -343,6 +343,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
   });
   const workflowFocus = getProductionWorkflowFocus(workflowPath);
   const workflowFocusStage = workflowFocus ? getWorkflowStageForStep(workflowFocus.id) : null;
+  const workflowStepForStage = useMemo(() => {
+    const entries = workflowPath.map((step) => [getWorkflowStageForStep(step.id), step] as const);
+    return new Map<WorkspaceStage, typeof workflowPath[number]>(entries);
+  }, [workflowPath]);
+  const visiblePreflightProblems = preflightFindings.filter((finding) => finding.severity !== 'pass');
   const handoffMockupEntries = getProductionMockupEntries(settings.itemType);
   const selectedHandoffMockups = new Set(packageOptions.selectedMockupIndices);
   const togglePackageOption = <K extends keyof ProductionPackageOptions>(
@@ -408,60 +413,48 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-t border-slate-800 bg-slate-950 lg:border-r lg:border-t-0">
-      <nav className="grid flex-none grid-cols-4 border-b border-slate-800 px-2 py-2 lg:grid-cols-1 lg:gap-1 lg:p-3">
-        {STAGES.map((entry, index) => (
-          <button
-            type="button"
-            key={entry.id}
-            onClick={() => onStageChange(entry.id)}
-            className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition lg:px-3 ${stage === entry.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950/30' : 'text-slate-500 hover:bg-slate-900 hover:text-slate-200'}`}
-          >
-            <span className={`flex h-6 w-6 flex-none items-center justify-center rounded-md text-[10px] font-black ${stage === entry.id ? 'bg-white/15' : index < stageIndex ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-900'}`}>
-              {index < stageIndex ? '✓' : index + 1}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[11px] font-bold lg:text-xs">{entry.label}</span>
-              <span className={`hidden truncate text-[10px] lg:block ${stage === entry.id ? 'text-indigo-100/70' : 'text-slate-600'}`}>{entry.short}</span>
-            </span>
-          </button>
-        ))}
+      <nav className="grid flex-none grid-cols-4 border-b border-slate-800 px-2 py-2 lg:grid-cols-1 lg:gap-1 lg:p-3" aria-label="Workflow steps">
+        {STAGES.map((entry, index) => {
+          const pathStep = workflowStepForStage.get(entry.id);
+          const status = pathStep?.status ?? (index < stageIndex ? 'done' : entry.id === stage ? 'current' : 'pending');
+          return (
+            <button
+              type="button"
+              key={entry.id}
+              onClick={() => onStageChange(entry.id)}
+              className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition lg:px-3 ${stage === entry.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950/30' : 'text-slate-500 hover:bg-slate-900 hover:text-slate-200'}`}
+              title={pathStep?.note ?? entry.short}
+            >
+              <span className={`flex h-6 w-6 flex-none items-center justify-center rounded-md text-[10px] font-black ${stage === entry.id ? 'bg-white/15' : index < stageIndex ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-900'}`}>
+                {index < stageIndex ? '✓' : index + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-bold lg:text-xs">{entry.label}</span>
+                <span className={`hidden truncate text-[10px] lg:block ${stage === entry.id ? 'text-indigo-100/70' : 'text-slate-600'}`}>{pathStep?.note ?? entry.short}</span>
+              </span>
+              <span className={`hidden flex-none rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase lg:inline ${workflowStatusClass[status]}`}>
+                {workflowStatusLabel[status]}
+              </span>
+            </button>
+          );
+        })}
       </nav>
 
-      <section aria-label="Production path" className="flex-none overflow-y-auto overscroll-contain border-b border-slate-800 bg-slate-950/60 px-3 py-3 max-h-[7rem] sm:max-h-[12.5rem] lg:max-h-[18rem]">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Production path</p>
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">DTG/DTF</span>
-        </div>
-        {workflowFocus && (
-          <div className={`mb-2 rounded-lg border px-3 py-2 ${workflowStatusClass[workflowFocus.status]}`}>
+      {workflowFocus && (
+        <div className="flex-none border-b border-slate-800 bg-slate-950/60 px-3 py-3">
+          <button
+            type="button"
+            onClick={() => workflowFocusStage && onStageChange(workflowFocusStage)}
+            className={`w-full rounded-lg border px-3 py-2 text-left transition hover:brightness-110 ${workflowStatusClass[workflowFocus.status]}`}
+          >
             <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[11px] font-black">Next: {workflowFocus.label}</p>
-              <span className="flex-none rounded-full border border-current px-2 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[workflowFocus.status]}</span>
+              <p className="min-w-0 truncate text-[11px] font-black">{workflowFocus.label}: {workflowStatusLabel[workflowFocus.status]}</p>
+              {workflowFocusStage && <span className="flex-none text-[9px] font-black uppercase">{stageActionLabel[workflowFocusStage]}</span>}
             </div>
-            <p className="mt-1 line-clamp-2 text-[10px] leading-snug opacity-80 lg:line-clamp-none">{workflowFocus.note}</p>
-            {workflowFocusStage && workflowFocusStage !== stage && (
-              <button
-                type="button"
-                onClick={() => onStageChange(workflowFocusStage)}
-                className="mt-2 rounded-md border border-current px-2 py-1 text-[9px] font-black uppercase tracking-wide opacity-85 transition hover:opacity-100"
-              >
-                {stageActionLabel[workflowFocusStage]}
-              </button>
-            )}
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-1">
-          {workflowPath.map((step) => (
-            <div key={step.id} className={`rounded-lg border px-2 py-1.5 ${workflowStatusClass[step.status]} ${step.id === 'package' ? 'col-span-2 sm:col-span-1' : ''}`} title={step.note}>
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-[10px] font-black">{step.label}</span>
-                <span className="rounded-full border border-current px-1.5 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[step.status]}</span>
-              </div>
-              <p className="mt-1 hidden text-[9px] leading-snug opacity-80 lg:line-clamp-2 lg:block">{step.note}</p>
-            </div>
-          ))}
+            <p className="mt-1 text-[10px] leading-snug opacity-85">{workflowFocus.note}</p>
+          </button>
         </div>
-      </section>
+      )}
 
       <div ref={contentRef} aria-label="Workflow stage controls" className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
         {stage === 'goal' && (
@@ -581,6 +574,21 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   </p>
                 </div>
               </div>
+              {visiblePreflightProblems.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {visiblePreflightProblems.slice(0, 3).map((finding) => (
+                    <button
+                      type="button"
+                      key={finding.id}
+                      onClick={() => onStageChange('prepare')}
+                      className={`w-full rounded-lg border px-3 py-2 text-left text-[11px] leading-relaxed ${finding.severity === 'critical' ? 'border-rose-500/30 bg-rose-500/10 text-rose-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`}
+                    >
+                      <span className="block font-black">{finding.title}</span>
+                      <span className="mt-0.5 block opacity-85">{finding.action}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             <Section title="Background" description="Remove a solid border color while protecting the artwork inside it.">
@@ -751,6 +759,21 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   </p>
                 </div>
               </div>
+              {visiblePreflightProblems.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {visiblePreflightProblems.slice(0, 3).map((finding) => (
+                    <button
+                      type="button"
+                      key={finding.id}
+                      onClick={() => onStageChange('prepare')}
+                      className={`w-full rounded-lg border px-3 py-2 text-left text-[11px] leading-relaxed ${finding.severity === 'critical' ? 'border-rose-500/30 bg-rose-500/10 text-rose-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`}
+                    >
+                      <span className="block font-black">{finding.title}</span>
+                      <span className="mt-0.5 block opacity-85">{finding.action}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             <Section title="Print readiness">
@@ -823,6 +846,21 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                   <p className="mt-1 text-slate-300/80">{selectedMockupCount} mockup color{selectedMockupCount === 1 ? '' : 's'} selected</p>
                 </div>
               </div>
+              {visiblePreflightProblems.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {visiblePreflightProblems.slice(0, 3).map((finding) => (
+                    <button
+                      type="button"
+                      key={finding.id}
+                      onClick={() => onStageChange('prepare')}
+                      className={`w-full rounded-lg border px-3 py-2 text-left text-[11px] leading-relaxed ${finding.severity === 'critical' ? 'border-rose-500/30 bg-rose-500/10 text-rose-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`}
+                    >
+                      <span className="block font-black">{finding.title}</span>
+                      <span className="mt-0.5 block opacity-85">{finding.action}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             <Section title="Print master format" description="Controls the standalone print file. The production package still includes the selected handoff assets below.">

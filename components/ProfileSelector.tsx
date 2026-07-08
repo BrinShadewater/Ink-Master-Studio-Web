@@ -58,8 +58,9 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
         </button>
       )}
       {warning && (
-        <span role="status" title={warning} aria-label={warning} className="inline-flex h-9 items-center rounded-lg border border-amber-700/50 bg-amber-950/40 px-2 text-amber-300">
-          <span aria-hidden="true">!</span>
+        <span role="status" title={warning} aria-label={warning} className="inline-flex h-9 items-center rounded-lg border border-amber-700/50 bg-amber-950/40 px-2 text-[10px] font-black uppercase tracking-wide text-amber-300">
+          <span aria-hidden="true" className="md:hidden">Issue</span>
+          <span aria-hidden="true" className="hidden md:inline">Profile issue</span>
           <span className="sr-only">{warning}</span>
         </span>
       )}
