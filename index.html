@@ -145,6 +145,58 @@
       .animate-blob {
         animation: blob 7s ease-in-out infinite;
       }
+
+      .static-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 5rem 1rem 3rem;
+        background: #020617;
+        color: #e2e8f0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .static-shell__inner {
+        max-width: 760px;
+      }
+
+      .static-shell h1 {
+        margin: 0;
+        max-width: 680px;
+        color: #f8fafc;
+        font-size: clamp(2.25rem, 7vw, 4.25rem);
+        line-height: 0.95;
+        letter-spacing: 0;
+      }
+
+      .static-shell p {
+        max-width: 680px;
+        margin: 1.25rem 0 0;
+        color: #cbd5e1;
+        font-size: 1rem;
+        line-height: 1.75;
+      }
+
+      .static-shell ul {
+        display: grid;
+        gap: 0.75rem;
+        margin: 1.5rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .static-shell li {
+        border: 1px solid #1e293b;
+        border-radius: 0.5rem;
+        padding: 0.85rem 1rem;
+        background: rgba(15, 23, 42, 0.72);
+        color: #cbd5e1;
+      }
+
+      .static-shell a {
+        color: #c7d2fe;
+        font-weight: 700;
+      }
     </style>
 
     <!-- THIS is the important line -->
@@ -152,6 +204,29 @@
   </head>
 
   <body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500 selection:text-white">
-    <div id="root"></div>
+    <div id="root">
+      <main class="static-shell" aria-labelledby="static-title">
+        <section class="static-shell__inner">
+          <h1 id="static-title">Print-ready DTG and DTF artwork in one guided studio.</h1>
+          <p>
+            InkMaster Studio helps print shops turn uploaded artwork into production-ready files, apparel mockups,
+            customer proofs, and handoff packages without forcing operators through a wall of technical controls.
+          </p>
+          <p>
+            The workflow covers local artwork intake, DTG and DTF preflight checks, print recipe selection,
+            cleanup support, placement review, proof approval, and export-ready production packages.
+          </p>
+          <ul aria-label="InkMaster Studio capabilities">
+            <li><strong>Preflight:</strong> check resolution, transparency, placement, and production risk before export.</li>
+            <li><strong>Proof:</strong> prepare mockups and approval details that customers can review clearly.</li>
+            <li><strong>Handoff:</strong> package artwork, settings, notes, and print-shop files for repeatable output.</li>
+          </ul>
+          <p>
+            Learn more from the <a href="/llms.txt">AI-readable site summary</a> or
+            <a href="/sitemap.xml">XML sitemap</a>.
+          </p>
+        </section>
+      </main>
+    </div>
   </body>
 </html>
