@@ -4,6 +4,7 @@ import {
   describeSelectedMockups,
   getProductionMockupEntries,
   getSelectedProductionMockups,
+  getSimpleMockupForItemType,
   normalizeMockupSelection,
   normalizeMockupSelectionForItemType,
   resolveMockupSelectionForItemType,
@@ -57,6 +58,12 @@ test('filters mockup selections by the current product type', () => {
     getSelectedProductionMockups([6, 11], ItemType.HOODIE).map((mockup) => mockup.slug),
     ['hoodie-black'],
   );
+});
+
+test('selects a predictable simple preview mockup for each supported product', () => {
+  assert.equal(getSimpleMockupForItemType(ItemType.TSHIRT)?.slug, 'black');
+  assert.equal(getSimpleMockupForItemType(ItemType.HOODIE)?.slug, 'hoodie-black');
+  assert.equal(getSimpleMockupForItemType(ItemType.MUG)?.slug, 'mug-white');
 });
 
 test('describeSelectedMockups names selected colors for operator review', () => {

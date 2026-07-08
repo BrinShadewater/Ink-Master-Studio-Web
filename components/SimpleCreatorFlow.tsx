@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArtworkAnalysis, ProcessedResult } from '../types';
 import { MAX_FILE_SIZE_MB, MAX_SVG_SIZE_MB } from '../constants';
 import { PrintifyProductPreset, printify } from '../specs/printify';
 import { ProcessingProgress } from '../services/imageProcessingWorkerClient';
+import { assessUpscaleQuality } from '../services/upscaleQuality';
+import { compositeMockup } from '../services/imageProcessing';
+import { getSimpleMockupForItemType } from '../services/mockups';
 
 interface SimpleCreatorFlowProps {
   originalImage: string;
@@ -36,29 +39,83 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   onAdvancedMode,
 }) => {
   const [backgroundChoice, setBackgroundChoice] = useState<'keep' | null>(null);
+  const [mockupUrl, setMockupUrl] = useState<string | null>(null);
+  const [isMockupLoading, setIsMockupLoading] = useState(false);
+  const [mockupError, setMockupError] = useState<string | null>(null);
+  const mockupRunRef = useRef(0);
   const targetWidth = selectedProduct.px[0];
   const targetHeight = selectedProduct.px[1];
   const sourceWidth = analysis?.width ?? 0;
   const sourceHeight = analysis?.height ?? 0;
-  const upscaleRatio = sourceWidth && sourceHeight
-    ? Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight)
-    : 1;
-  const needsUpscale = upscaleRatio > 1.05;
+  const upscaleQuality = assessUpscaleQuality(sourceWidth, sourceHeight, targetWidth, targetHeight);
   const fileBytes = processedResult?.blob.size ?? 0;
   const underCap = !processedResult || fileBytes <= printify.maxBytes.png;
   const hasTransparency = analysis?.hasTransparency ?? true;
+  const previewMockup = ['tee-front-full', 'hoodie-front', 'mug-wrap'].includes(selectedProduct.id)
+    ? getSimpleMockupForItemType(selectedProduct.itemType)
+    : undefined;
 
   useEffect(() => {
     setBackgroundChoice(null);
   }, [originalImage]);
 
+  useEffect(() => {
+    mockupRunRef.current += 1;
+    setMockupUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    setIsMockupLoading(false);
+    setMockupError(null);
+  }, [originalImage, processedResult, selectedProduct.id]);
+
+  useEffect(() => () => {
+    mockupRunRef.current += 1;
+    if (mockupUrl) URL.revokeObjectURL(mockupUrl);
+  }, [mockupUrl]);
+
+  const handleMockupPreview = async () => {
+    if (!processedResult || !previewMockup || isMockupLoading) return;
+    const runId = mockupRunRef.current + 1;
+    mockupRunRef.current = runId;
+    setIsMockupLoading(true);
+    setMockupError(null);
+
+    try {
+      const placement = selectedProduct.id === 'mug-wrap'
+        ? { x: 15, y: 25, width: 70, height: 50 }
+        : { x: 32, y: 22, width: 36, height: 38 };
+      const result = await compositeMockup(
+        previewMockup.file,
+        processedResult.previewUrl || processedResult.url,
+        placement,
+        'PNG',
+      );
+      if (runId !== mockupRunRef.current) {
+        URL.revokeObjectURL(result.url);
+        return;
+      }
+      setMockupUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return result.url;
+      });
+    } catch (error) {
+      if (runId !== mockupRunRef.current) return;
+      setMockupError(error instanceof Error ? error.message : 'Mockup preview could not be created.');
+    } finally {
+      if (runId === mockupRunRef.current) setIsMockupLoading(false);
+    }
+  };
+
   const checks = [
     {
       label: `Sized to ${targetWidth} x ${targetHeight}px`,
-      detail: needsUpscale
-        ? `Upscaled from ${sourceWidth} x ${sourceHeight}px. Good for this selected size.`
-        : 'Source size fits this product target.',
-      state: 'ready',
+      detail: upscaleQuality.detail,
+      state: upscaleQuality.level === 'stop'
+        ? 'stop'
+        : upscaleQuality.level === 'caution'
+          ? 'caution'
+          : 'ready',
     },
     {
       label: `${selectedProduct.dpi} DPI PNG`,
@@ -104,10 +161,22 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
           <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-lg bg-slate-950/80 p-4">
               <img
-                src={processedResult?.previewUrl || processedResult?.url || originalImage}
-                alt="Selected artwork preview"
+                src={mockupUrl || processedResult?.previewUrl || processedResult?.url || originalImage}
+                alt={mockupUrl ? `${selectedProduct.label} mockup preview` : 'Selected artwork preview'}
                 className="max-h-[68dvh] max-w-full object-contain"
               />
+              {mockupUrl && (
+                <button
+                  type="button"
+                  onClick={() => setMockupUrl((current) => {
+                    if (current) URL.revokeObjectURL(current);
+                    return null;
+                  })}
+                  className="absolute right-3 top-3 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs font-bold text-slate-200 hover:border-slate-500 hover:text-white"
+                >
+                  Show artwork
+                </button>
+              )}
               {isProcessing && (
                 <div className="absolute inset-4 flex items-center justify-center rounded-lg bg-slate-950/75 backdrop-blur-sm">
                   <div className="w-full max-w-xs text-center">
@@ -149,7 +218,9 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
 
         <aside className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">Checks</p>
-          <h2 className="mt-1 text-xl font-black text-white">Ready for {selectedProduct.label}</h2>
+          <h2 className="mt-1 text-xl font-black text-white">
+            {upscaleQuality.blocksDownload ? `Needs a larger image for ${selectedProduct.label}` : `Ready for ${selectedProduct.label}`}
+          </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedProduct.note}. Product Creator requirements can vary by provider, so this preset targets the common safe upload shape.</p>
 
           {!hasTransparency && (
@@ -179,10 +250,10 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
 
           <div className="mt-4 space-y-2">
             {checks.map((check) => (
-              <div key={check.label} className={`rounded-lg border p-3 ${check.state === 'stop' ? 'border-rose-500/40 bg-rose-950/30' : 'border-slate-800 bg-slate-950/50'}`}>
+              <div key={check.label} className={`rounded-lg border p-3 ${check.state === 'stop' ? 'border-rose-500/40 bg-rose-950/30' : check.state === 'caution' ? 'border-amber-500/30 bg-amber-950/20' : 'border-slate-800 bg-slate-950/50'}`}>
                 <div className="flex items-start gap-3">
-                  <span className={`mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full text-[11px] font-black ${check.state === 'stop' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-slate-950'}`}>
-                    {check.state === 'stop' ? '!' : '✓'}
+                  <span className={`mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full text-[11px] font-black ${check.state === 'stop' ? 'bg-rose-500 text-white' : check.state === 'caution' ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-slate-950'}`}>
+                    {check.state === 'stop' || check.state === 'caution' ? '!' : '✓'}
                   </span>
                   <div>
                     <p className="text-xs font-black text-white">{check.label}</p>
@@ -196,11 +267,26 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
           <button
             type="button"
             onClick={onDownload}
-            disabled={!processedResult || isProcessing || !underCap}
+            disabled={!processedResult || isProcessing || !underCap || upscaleQuality.blocksDownload}
             className="mt-5 w-full rounded-lg bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
           >
             Download print file
           </button>
+          {previewMockup && (
+            <button
+              type="button"
+              onClick={() => void handleMockupPreview()}
+              disabled={!processedResult || isProcessing || isMockupLoading}
+              className="mt-2 w-full rounded-lg border border-slate-700 px-4 py-3 text-sm font-black text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+            >
+              {isMockupLoading ? 'Building mockup preview...' : mockupUrl ? 'Refresh mockup preview' : 'Preview on product'}
+            </button>
+          )}
+          {mockupError && (
+            <p className="mt-2 rounded-lg border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
+              Mockup preview failed. {mockupError} Try again; your print file is unaffected.
+            </p>
+          )}
           <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-500">
             PNG/JPEG cap: {MAX_FILE_SIZE_MB} MB. SVG cap: {MAX_SVG_SIZE_MB} MB. Download is not gated by mockups.
           </p>

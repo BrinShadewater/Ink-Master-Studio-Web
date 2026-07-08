@@ -94,6 +94,19 @@ export const getSelectedProductionMockups = (
 export const getProductionMockupBySlug = (slug: string): ProductionMockup | undefined =>
   PRODUCTION_MOCKUPS.find((mockup) => mockup.slug === slug);
 
+export const getSimpleMockupForItemType = (
+  itemType: ItemType,
+): ProductionMockup | undefined => {
+  const preferredSlug = itemType === ItemType.TSHIRT
+    ? 'black'
+    : itemType === ItemType.HOODIE
+      ? 'hoodie-black'
+      : itemType === ItemType.MUG
+        ? 'mug-white'
+        : null;
+  return preferredSlug ? getProductionMockupBySlug(preferredSlug) : undefined;
+};
+
 export const resolveProductionMockupLabel = (filename: string): string => {
   const normalized = filename.split(/[\\/]/).pop() ?? filename;
   const slug = normalized.toLowerCase().replace(/\.(png|jpe?g|webp)$/i, '').replace(/-mockup$/, '');
