@@ -811,7 +811,7 @@ const App: React.FC = () => {
 
   const handleOpenJob = async (job: StudioJob) => {
     if (!job.sourceArtwork) {
-      setError('This job does not contain source artwork.');
+      setError('This saved design does not contain source artwork.');
       return;
     }
     setError(null);
@@ -839,7 +839,7 @@ const App: React.FC = () => {
       setStage(job.selectedRecipeId ? 'prepare' : 'goal');
       setShowJobs(false);
     } catch {
-      setError('Ink Master could not reopen this job artwork.');
+      setError('InkMaster Studio could not reopen this design artwork.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -873,7 +873,7 @@ const App: React.FC = () => {
       await refreshJobs();
       await handleOpenJob(duplicate);
     } catch {
-      setError('That portable job could not be imported.');
+      setError('That design archive could not be imported.');
     }
   };
 

@@ -66,9 +66,9 @@ export const StudioTopBar: React.FC<StudioTopBarProps> = ({
     </div>
 
     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-      <IconButton label="Open production jobs" onClick={onOpenJobs}>
+      <IconButton label="Open saved designs" onClick={onOpenJobs}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h6l2 2h8v9H4z" /><path d="M4 7V5h6l2 2" /></svg>
-        <span className="hidden md:inline">Jobs</span>
+        <span className="hidden md:inline">Saved</span>
       </IconButton>
       <IconButton label="New file" onClick={onNewFile}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
