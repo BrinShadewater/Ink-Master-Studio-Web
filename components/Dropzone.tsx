@@ -96,7 +96,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
         </div>
         <div className="bg-slate-950/95 p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">3 · Download</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">Save a compliant PNG without print-shop jargon.</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Save a compliant PNG without technical jargon.</p>
         </div>
       </div>
     </section>

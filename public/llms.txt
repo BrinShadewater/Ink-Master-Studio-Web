@@ -1,19 +1,19 @@
 # InkMaster Studio
 
-> InkMaster Studio is a browser-based print production workspace for turning uploaded artwork into print-ready DTG and DTF files, mockups, proofs, and handoff packages.
+> InkMaster Studio is a browser-based creator tool for turning uploaded artwork into print-ready PNG files for Printify and print-on-demand shops.
 
 ## Product
 
-- [InkMaster Studio](https://inkmasterstudio.com/): Guided local-first artwork preflight and production packaging for print shops.
+- [InkMaster Studio](https://inkmasterstudio.com/): Local-first Printify file prep for creators who need product-sized print-ready artwork.
 
 ## Capabilities
 
-- Artwork upload and local job setup
-- DTG and DTF preflight checks
-- Guided print recipe selection
+- Artwork upload and local saved designs
+- Printify product presets
+- Plain-language file checks
 - Artwork cleanup and background removal
-- Apparel mockups and proof approval
-- Production package exports
+- PNG export with DPI metadata
+- Advanced mockups, proofs, batch tools, and production exports when Advanced mode is enabled
 
 ## Notes
 

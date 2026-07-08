@@ -1,5 +1,5 @@
 {
   "name": "InkMaster Studio",
-  "description": "Guided local-first artwork preflight, mockup, proofing, and production handoff studio for DTG and DTF print shops.",
+  "description": "Local-first creator tool for turning artwork into print-ready PNG files for Printify and print-on-demand shops.",
   "requestFramePermissions": []
 }
