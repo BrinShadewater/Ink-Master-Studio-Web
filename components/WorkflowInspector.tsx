@@ -427,7 +427,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
         ))}
       </nav>
 
-      <section className="flex-none border-b border-slate-800 bg-slate-950/60 px-3 py-3">
+      <section aria-label="Production path" className="flex-none overflow-y-auto overscroll-contain border-b border-slate-800 bg-slate-950/60 px-3 py-3 max-h-[7rem] sm:max-h-[12.5rem] lg:max-h-[18rem]">
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Production path</p>
           <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">DTG/DTF</span>
@@ -438,7 +438,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
               <p className="min-w-0 truncate text-[11px] font-black">Next: {workflowFocus.label}</p>
               <span className="flex-none rounded-full border border-current px-2 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[workflowFocus.status]}</span>
             </div>
-            <p className="mt-1 text-[10px] leading-snug opacity-80">{workflowFocus.note}</p>
+            <p className="mt-1 line-clamp-2 text-[10px] leading-snug opacity-80 lg:line-clamp-none">{workflowFocus.note}</p>
             {workflowFocusStage && workflowFocusStage !== stage && (
               <button
                 type="button"
@@ -457,13 +457,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = (props) => {
                 <span className="truncate text-[10px] font-black">{step.label}</span>
                 <span className="rounded-full border border-current px-1.5 py-0.5 text-[8px] font-black uppercase opacity-80">{workflowStatusLabel[step.status]}</span>
               </div>
-              <p className="mt-1 hidden text-[9px] leading-snug opacity-80 lg:block">{step.note}</p>
+              <p className="mt-1 hidden text-[9px] leading-snug opacity-80 lg:line-clamp-2 lg:block">{step.note}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
+      <div ref={contentRef} aria-label="Workflow stage controls" className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
         {stage === 'goal' && (
           <div className="space-y-4">
             <div>
