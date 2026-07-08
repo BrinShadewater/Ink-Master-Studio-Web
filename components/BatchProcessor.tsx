@@ -223,15 +223,15 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
         <button type="button" disabled={!items.length} onClick={applyBatchRecipeToExisting} className="rounded-lg border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 disabled:opacity-30">Apply to existing</button>
         <button type="button" disabled={!eligibleCount} onClick={() => void exportCombined()} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">Export batch prep ZIP ({eligibleCount})</button>
         <span className="text-xs text-slate-500">{items.length} total · {items.length - eligibleCount} waiting, warning, failed, cancelled, or blocked</span>
-        <span className="basis-full text-[10px] font-semibold uppercase tracking-widest text-amber-300 sm:basis-auto">
-          Production handoff happens in a job after customer proof approval.
+        <span className="basis-full text-[10px] font-semibold text-amber-300 sm:basis-auto">
+          Batch ZIPs are prep files. Open a saved design when you need proof approval or a full production package.
         </span>
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
         {items.length === 0 ? (
           <button type="button" onClick={() => inputRef.current?.click()} className="flex min-h-80 w-full items-center justify-center rounded-2xl border-2 border-dashed border-slate-700 text-center hover:border-indigo-500">
-            <span><span className="block text-lg font-black text-white">Drop in an order’s artwork</span><span className="mt-2 block text-sm text-slate-500">Each design receives a recipe recommendation and production preflight.</span></span>
+            <span><span className="block text-lg font-black text-white">Drop in artwork files</span><span className="mt-2 block text-sm text-slate-500">Each design receives a treatment recommendation and checks.</span></span>
           </button>
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
