@@ -182,6 +182,19 @@ const filenameToDesignName = (filename: string) => {
     || 'Untitled design';
 };
 
+const SiteFooter: React.FC = () => (
+  <footer className="relative z-10 border-t border-slate-900 px-4 py-5">
+    <nav className="mx-auto flex max-w-6xl flex-wrap justify-center gap-3 text-xs text-slate-500 lg:justify-start" aria-label="Footer">
+      <a href="/privacy" className="hover:text-slate-200">Privacy</a>
+      <a href="/terms" className="hover:text-slate-200">Terms</a>
+      <a href="/contact" className="hover:text-slate-200">Contact</a>
+      <a href="/printify-file-requirements" className="hover:text-slate-200">Printify requirements</a>
+      <a href="/print-ready-file-checklist" className="hover:text-slate-200">Checklist</a>
+      <a href="/upscaling-art-for-t-shirt-printing" className="hover:text-slate-200">Upscaling</a>
+    </nav>
+  </footer>
+);
+
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -1190,6 +1203,7 @@ const App: React.FC = () => {
             </div>
           </section>
         </main>
+        <SiteFooter />
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>
             <BatchProcessor
