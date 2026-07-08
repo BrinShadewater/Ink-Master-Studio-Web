@@ -1,9 +1,40 @@
-# Allow all search engines
+# Allow search engines and AI answer engines to read the public app shell.
 User-agent: *
 Allow: /
 
 # Sitemap location
 Sitemap: https://inkmasterstudio.com/sitemap.xml
 
-# Crawl delay (optional, to be nice to servers)
-Crawl-delay: 1
+# AI search crawler policy
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: FacebookBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /

@@ -1,5 +1,5 @@
 {
   "name": "InkMaster Studio",
-  "description": "Professional Print-on-Demand image processor and AI editor using Gemini 2.5 Flash. Prepares artwork specifically for black garments.",
+  "description": "Guided local-first artwork preflight, mockup, proofing, and production handoff studio for DTG and DTF print shops.",
   "requestFramePermissions": []
 }

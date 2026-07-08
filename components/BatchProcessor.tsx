@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DEFAULT_PRINT_SPECIFICATION } from '../constants';
 import { ArtworkAnalysis, PreflightFinding, ProcessingSettings, ProductionProfile, RecipeId } from '../types';
 import { analyzeArtwork } from '../services/artworkAnalysis';
@@ -14,6 +14,8 @@ import {
   createBatchItemBlockers,
   resolveBatchRecipe,
 } from '../services/batch';
+import { revokeObjectUrl } from '../services/objectUrls';
+import { createProcessingRunRegistry, ProcessingRunRegistry } from '../services/processingRuns';
 
 interface BatchProcessorProps {
   onClose: () => void;
@@ -53,16 +55,39 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
   const [items, setItems] = useState<GuidedBatchItem[]>([]);
   const [batchRecipeSelection, setBatchRecipeSelection] = useState<BatchRecipeSelection>('auto');
   const inputRef = useRef<HTMLInputElement>(null);
+  const itemsRef = useRef<GuidedBatchItem[]>([]);
+  const processingRunsRef = useRef<ProcessingRunRegistry | null>(null);
+  if (processingRunsRef.current === null) {
+    processingRunsRef.current = createProcessingRunRegistry();
+  }
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => () => {
+    processingRunsRef.current?.cancelAll();
+    itemsRef.current.forEach((item) => revokeObjectUrl(item.previewUrl));
+  }, []);
 
   const updateItem = (id: string, update: Partial<GuidedBatchItem>) =>
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...update } : item));
 
+  const updateItemIfRunActive = (id: string, runId: string, update: Partial<GuidedBatchItem>) =>
+    setItems((current) => {
+      if (!processingRunsRef.current?.isActive(id, runId)) return current;
+      return current.map((item) => item.id === id ? { ...item, ...update } : item);
+    });
+
   const processItem = async (item: GuidedBatchItem, recipeSelection = item.recipeSelection) => {
-    updateItem(item.id, { status: 'analyzing', error: null });
+    const runId = processingRunsRef.current.begin(item.id);
+    updateItemIfRunActive(item.id, runId, { status: 'analyzing', error: null });
     try {
       const base64 = await fileToBase64(item.file);
+      if (!processingRunsRef.current?.isActive(item.id, runId)) return;
       const dataUrl = `data:${item.file.type};base64,${base64}`;
       const analysis = await analyzeArtwork(dataUrl);
+      if (!processingRunsRef.current?.isActive(item.id, runId)) return;
       const recipeId = resolveBatchRecipe(recipeSelection, analysis);
       const settings = resolveRecipeSettings(recipeId, analysis, defaultSettings);
       const findings = evaluatePreflight(
@@ -71,7 +96,7 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
         settings,
         productionProfile,
       );
-      updateItem(item.id, {
+      updateItemIfRunActive(item.id, runId, {
         status: 'processing',
         analysis,
         recipeId,
@@ -81,10 +106,12 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
         acknowledged: false,
       });
       const result = await processImage(dataUrl, settings);
-      updateItem(item.id, { status: 'ready', resultBlob: result.blob });
+      updateItemIfRunActive(item.id, runId, { status: 'ready', resultBlob: result.blob });
     } catch (error) {
       console.error(error);
-      updateItem(item.id, { status: 'failed', error: 'Could not analyze or process this artwork.' });
+      updateItemIfRunActive(item.id, runId, { status: 'failed', error: 'Could not analyze or process this artwork.' });
+    } finally {
+      processingRunsRef.current?.finish(item.id, runId);
     }
   };
 

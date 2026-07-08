@@ -54,15 +54,15 @@ export const getAiCleanupStatus = async (): Promise<AiCleanupStatus> => {
 
 export const editImageWithGemini = async (
   base64Image: string,
-  prompt: string,
-  mimeType: string
+  mimeType: string,
+  action = 'edge-cleanup',
 ): Promise<string | null> => {
   const response = await fetch('/api/edit-image', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ base64Image, prompt, mimeType }),
+    body: JSON.stringify({ base64Image, action, mimeType }),
   });
 
   if (!response.ok) {

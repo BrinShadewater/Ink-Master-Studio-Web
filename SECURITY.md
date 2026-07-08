@@ -34,19 +34,21 @@ This means:
 
 - The API key is no longer bundled into client-side JavaScript.
 - `GEMINI_API_KEY` must be configured in Vercel Project Settings.
-- The API route validates request shape, image type, prompt length, and approximate payload size.
+- The API route validates request shape, image type, fixed cleanup action ID, same-origin request origin, and approximate payload size.
+- The browser does not send arbitrary Gemini prompts; the server maps supported action IDs such as `edge-cleanup` to fixed production-safe instructions.
+- Daily AI cleanup quota uses durable KV/Upstash Redis REST storage when `KV_REST_API_URL`/`KV_REST_API_TOKEN` or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are configured. If durable quota is configured but unavailable, cleanup fails closed.
 - Google Cloud usage quotas and billing alerts are still recommended.
 
 Do not add `GEMINI_API_KEY` as a `VITE_` variable or reintroduce Vite `define` replacements for secret values.
 
 ## 🔒 Additional Recommendations
 
-### 1. Add Rate Limiting
-Prevent abuse by limiting requests per user/IP
+### 1. Configure Durable Rate Limiting
+Configure KV/Upstash Redis REST credentials in production so AI cleanup quota survives serverless cold starts, redeploys, and parallel instances.
 
 ### 2. Input Sanitization
-- Validate user prompts for length and content
-- Implement prompt injection prevention
+- Keep browser requests limited to server-supported action IDs.
+- Do not reintroduce user-controlled prompts for Gemini cleanup.
 
 ### 3. HTTPS Only
 Ensure all traffic uses HTTPS in production
@@ -69,5 +71,5 @@ Set up alerts for:
 
 ---
 
-**Last Updated**: February 12, 2026
-**Status**: ✅ API key moved behind Vercel serverless function
+**Last Updated**: July 7, 2026
+**Status**: ✅ API key behind Vercel serverless function; fixed cleanup action IDs; same-origin checks; optional durable quota

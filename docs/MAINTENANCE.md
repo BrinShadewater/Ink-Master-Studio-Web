@@ -60,4 +60,4 @@ Check these after UI or processing changes:
 
 ## Deployment Notes
 
-The repo includes Docker and nginx configuration. Confirm the intended hosting path and environment-variable model before changing deployment files.
+The repo includes nginx configuration for non-Vercel static hosting, but no Docker production path. Confirm the intended hosting path and environment-variable model before changing deployment files.

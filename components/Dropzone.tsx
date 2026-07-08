@@ -52,7 +52,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/75 shadow-2xl shadow-black/30">
+    <section aria-labelledby="upload-artwork-title" className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80 shadow-2xl shadow-black/30">
       <div
         onDrop={handleDrop}
         onDragOver={(e) => {
@@ -75,7 +75,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
               </svg>
           </div>
           <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.25em] text-indigo-300">Start a local production job</p>
-          <h3 className="mb-2 text-2xl font-black text-slate-100">Drop DTG/DTF artwork here</h3>
+          <h2 id="upload-artwork-title" className="mb-2 text-2xl font-black text-slate-100">Drop DTG/DTF artwork here</h2>
           <p className="mb-6 text-sm text-slate-500">
             JPG, PNG, or WebP up to {MAX_FILE_SIZE_MB}MB · safe SVG up to {MAX_SVG_SIZE_MB}MB
           </p>

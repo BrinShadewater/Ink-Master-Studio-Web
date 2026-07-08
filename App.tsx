@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { Dropzone } from './components/Dropzone';
 import { Header } from './components/Header';
@@ -103,6 +103,7 @@ import {
   updateTemplateFromJob,
 } from './services/templateStorage';
 import { sanitizeFilenameSegment } from './services/naming';
+import { revokeExportHistoryUrls, revokeRemovedExportHistoryUrls } from './services/objectUrls';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
 
@@ -165,6 +166,7 @@ const App: React.FC = () => {
   const [palette, setPalette] = useState<string[]>([]);
   const [showBatch, setShowBatch] = useState(false);
   const [exportHistory, setExportHistory] = useState<ExportHistoryEntry[]>([]);
+  const exportHistoryRef = useRef<ExportHistoryEntry[]>([]);
   const [isEyedropperMode, setIsEyedropperMode] = useState(false);
   const [lowResolutionAcknowledged, setLowResolutionAcknowledged] = useState(false);
   const [mockupExportToken, setMockupExportToken] = useState(0);
@@ -190,6 +192,14 @@ const App: React.FC = () => {
   const settings = appState.settings;
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
+
+  useEffect(() => {
+    exportHistoryRef.current = exportHistory;
+  }, [exportHistory]);
+
+  useEffect(() => () => {
+    revokeExportHistoryUrls(exportHistoryRef.current);
+  }, []);
   const dpiInfo = analysis?.printQuality ?? null;
   const defaultProductionProfile = useMemo(
     () => getDefaultProfile(profileStore),
@@ -438,16 +448,21 @@ const App: React.FC = () => {
     const replacedEntry = shouldReplace ? exportHistory.find((current) => shouldReplace(current)) : undefined;
     const storedEntry = { ...entry, id: replacedEntry?.id ?? `export_${Date.now()}` };
     setExportHistory((current) => {
+      let nextHistory: ExportHistoryEntry[];
       if (shouldReplace) {
         const matchIndex = current.findIndex((candidate) => shouldReplace(candidate));
         if (matchIndex >= 0) {
-          return [
+          nextHistory = [
             storedEntry,
             ...current.filter((_, index) => index !== matchIndex),
           ].slice(0, 20);
+          revokeRemovedExportHistoryUrls(current, nextHistory);
+          return nextHistory;
         }
       }
-      return [storedEntry, ...current].slice(0, 20);
+      nextHistory = [storedEntry, ...current].slice(0, 20);
+      revokeRemovedExportHistoryUrls(current, nextHistory);
+      return nextHistory;
     });
     updateCurrentJob((job) => ({
       ...job,
@@ -649,7 +664,6 @@ const App: React.FC = () => {
     try {
       const cleanedBase64 = await editImageWithGemini(
         payload.base64,
-        'Production edge cleanup: remove leftover background haze and edge halos, preserve the main artwork exactly, keep transparent PNG alpha, do not add text, borders, mockups, shadows, or new design elements.',
         payload.mimeType,
       );
       if (!cleanedBase64) {
@@ -740,10 +754,14 @@ const App: React.FC = () => {
       setAnalysis(job.analysis);
       setRecommendation(job.analysis ? recommendRecipe(job.analysis) : null);
       setSelectedRecipeId(job.selectedRecipeId);
-      setExportHistory(job.exports.map((entry) => ({
+      const reopenedExportHistory = job.exports.map((entry) => ({
         ...entry,
         url: URL.createObjectURL(entry.blob),
-      })));
+      }));
+      setExportHistory((current) => {
+        revokeRemovedExportHistoryUrls(current, reopenedExportHistory);
+        return reopenedExportHistory;
+      });
       setLowResolutionAcknowledged(job.acknowledgedPreflightRevision === job.revision);
       setProcessedResult(null);
       setStage(job.selectedRecipeId ? 'prepare' : 'goal');
@@ -1025,26 +1043,46 @@ const App: React.FC = () => {
       <div className="relative flex min-h-screen flex-col bg-slate-950 pt-14 text-slate-200">
         <AnimatedBackground />
         <Header />
-        <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-4 py-10">
-          <div className="mb-7 flex flex-col items-center">
-            <img src="/logo/logo.png" alt="InkMaster Studio" className="h-24 w-24 object-contain drop-shadow-2xl" />
-            <h1 className="mt-3 text-center text-4xl font-black text-slate-100">InkMaster <span className="text-indigo-400">Studio</span></h1>
-            <p className="mt-3 max-w-xl text-center text-sm leading-relaxed text-slate-400">Turn artwork into a print-ready file and convincing apparel mockups without learning a wall of technical controls.</p>
-          </div>
-          <div className="w-full max-w-2xl">
+        <main className="relative z-10 mx-auto grid w-full max-w-6xl flex-1 content-center gap-8 px-4 py-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:px-8">
+          <section className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left" aria-labelledby="home-title">
+            <img src="/logo/logo.png" alt="" className="mx-auto h-16 w-16 object-contain drop-shadow-2xl sm:h-20 sm:w-20 lg:mx-0" />
+            <h1 id="home-title" className="mt-4 text-balance text-3xl font-black leading-tight text-slate-100 sm:mt-5 sm:text-5xl">
+              Print-ready artwork in one guided studio.
+            </h1>
+            <p className="mt-4 text-sm leading-6 text-slate-400 sm:leading-7 sm:text-base">
+              InkMaster Studio helps print shops turn uploaded designs into DTG and DTF-ready files, client proofs, apparel mockups, and clean handoff packages.
+            </p>
+            <div className="mt-6 hidden gap-3 text-left sm:grid sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Preflight</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Check resolution, transparency, placement, and production risk before export.</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Proof</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Generate mockups and approval details that are easy to review with customers.</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Handoff</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Package files, notes, and production settings for repeatable shop output.</p>
+              </div>
+            </div>
+            <div className="mt-6 hidden flex-wrap justify-center gap-3 text-xs text-slate-500 sm:flex lg:justify-start">
+              <span>Local artwork analysis</span><span className="text-slate-700">/</span><span>Guided print recipes</span><span className="text-slate-700">/</span><span>Production files + mockups</span>
+            </div>
+          </section>
+          <section className="mx-auto w-full max-w-2xl" aria-label="Start a production job">
             <Dropzone onFileAccepted={handleFileAccepted} />
             {error && <p className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-center text-xs text-rose-300">{error}</p>}
-          </div>
-          <div className="mt-8 flex flex-wrap justify-center gap-3 text-xs text-slate-500">
-            <span>Local artwork analysis</span><span className="text-slate-700">•</span><span>Guided print recipes</span><span className="text-slate-700">•</span><span>Production files + mockups</span>
-          </div>
-          <button type="button" onClick={() => setShowBatch(true)} className="mt-7 rounded-lg border border-slate-700 bg-slate-900/60 px-5 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-white">Open batch processing</button>
-          <button type="button" onClick={() => setShowJobs(true)} className="mt-3 rounded-lg px-5 py-2 text-xs font-bold text-indigo-300 hover:text-indigo-200">
-            Open saved production job{jobs.length ? ` (${jobs.length})` : ''}
-          </button>
-          <button type="button" onClick={() => setShowProfiles(true)} className="mt-1 rounded-lg px-5 py-2 text-xs font-bold text-slate-400 hover:text-white">
-            Manage production profiles
-          </button>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={() => setShowBatch(true)} className="rounded-lg border border-slate-700 bg-slate-900/70 px-5 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-white">Open batch processing</button>
+              <button type="button" onClick={() => setShowJobs(true)} className="rounded-lg border border-slate-800 px-5 py-2.5 text-xs font-bold text-indigo-300 hover:border-indigo-700 hover:text-indigo-200">
+                Open saved job{jobs.length ? ` (${jobs.length})` : ''}
+              </button>
+              <button type="button" onClick={() => setShowProfiles(true)} className="rounded-lg px-5 py-2.5 text-xs font-bold text-slate-400 hover:text-white">
+                Manage profiles
+              </button>
+            </div>
+          </section>
         </main>
         {showBatch && (
           <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70" />}>

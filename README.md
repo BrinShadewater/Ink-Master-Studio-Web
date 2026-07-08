@@ -75,7 +75,6 @@ public/mockups/         Apparel mockup assets
 public/logo/            Brand assets
 PERFORMANCE_SEO_REPORT.md
 SECURITY.md
-Dockerfile
 nginx.conf
 ```
 
@@ -88,7 +87,7 @@ nginx.conf
 - `components/Preview.tsx` controls mockup review.
 - `components/BatchProcessor.tsx` applies shared recipe and preflight rules to many files.
 - `api/edit-image.ts`, `services/geminiService.ts`, and `services/imageProcessing.ts` are security- and cost-sensitive.
-- `nginx.conf` and `Dockerfile` support production hosting.
+- `nginx.conf` mirrors the production security headers for non-Vercel static hosting. Keep it aligned with `vercel.json`.
 
 ## 🏷️ Production Profiles
 
@@ -112,7 +111,7 @@ Beta limitation: profiles do not sync to cloud accounts, printers, RIP queues, I
 
 ## 🔐 Security Note
 
-Read `SECURITY.md` before deploying. Gemini is already routed through the server-side `/api/edit-image` function; keep that boundary intact and do not add browser-public key paths.
+Read `SECURITY.md` before deploying. Gemini is already routed through the server-side `/api/edit-image` function; keep that boundary intact and do not add browser-public key paths. The browser sends fixed cleanup action IDs, not arbitrary Gemini prompts.
 
 ## 🧭 Roadmap Boundaries
 

@@ -5,13 +5,13 @@
   <!-- Homepage -->
   <url>
     <loc>https://inkmasterstudio.com/</loc>
-    <lastmod>2026-02-12</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://inkmasterstudio.com/logo/logo.png</image:loc>
-      <image:title>InkMaster Studio Logo</image:title>
-      <image:caption>Professional AI-powered image processing for print-on-demand</image:caption>
+      <image:loc>https://inkmasterstudio.com/og-image.png</image:loc>
+      <image:title>InkMaster Studio Preview</image:title>
+      <image:caption>Guided artwork preflight, mockups, proofing, and production handoff for print shops</image:caption>
     </image:image>
   </url>
   
