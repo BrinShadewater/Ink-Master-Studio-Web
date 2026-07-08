@@ -293,6 +293,68 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, rej
   reader.readAsDataURL(blob);
 });
 
+const crcTable = new Uint32Array(256).map((_, tableIndex) => {
+  let crc = tableIndex;
+  for (let bit = 0; bit < 8; bit += 1) {
+    crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+  }
+  return crc >>> 0;
+});
+
+const crc32 = (bytes: Uint8Array) => {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const writeUint32 = (target: Uint8Array, offset: number, value: number) => {
+  target[offset] = (value >>> 24) & 0xff;
+  target[offset + 1] = (value >>> 16) & 0xff;
+  target[offset + 2] = (value >>> 8) & 0xff;
+  target[offset + 3] = value & 0xff;
+};
+
+const addPngDpiMetadata = async (blob: Blob, dpi: number) => {
+  if (blob.type !== 'image/png' || dpi <= 0) return blob;
+  const source = new Uint8Array(await blob.arrayBuffer());
+  const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (!pngSignature.every((byte, index) => source[index] === byte)) return blob;
+
+  const pixelsPerMeter = Math.round(dpi / 0.0254);
+  const chunkData = new Uint8Array(9);
+  writeUint32(chunkData, 0, pixelsPerMeter);
+  writeUint32(chunkData, 4, pixelsPerMeter);
+  chunkData[8] = 1;
+
+  const chunkType = new TextEncoder().encode('pHYs');
+  const crcInput = new Uint8Array(chunkType.length + chunkData.length);
+  crcInput.set(chunkType, 0);
+  crcInput.set(chunkData, chunkType.length);
+
+  const chunk = new Uint8Array(4 + chunkType.length + chunkData.length + 4);
+  writeUint32(chunk, 0, chunkData.length);
+  chunk.set(chunkType, 4);
+  chunk.set(chunkData, 8);
+  writeUint32(chunk, 8 + chunkData.length, crc32(crcInput));
+
+  let offset = 8;
+  while (offset + 8 <= source.length) {
+    const length = (source[offset] << 24) | (source[offset + 1] << 16) | (source[offset + 2] << 8) | source[offset + 3];
+    const type = String.fromCharCode(source[offset + 4], source[offset + 5], source[offset + 6], source[offset + 7]);
+    if (type === 'pHYs') {
+      const before = source.slice(0, offset);
+      const after = source.slice(offset + 12 + length);
+      return new Blob([before, chunk, after], { type: 'image/png' });
+    }
+    offset += 12 + length;
+    if (type === 'IHDR') break;
+  }
+
+  return new Blob([source.slice(0, offset), chunk, source.slice(offset)], { type: 'image/png' });
+};
+
 const canvasToDataUrl = async (canvas: OffscreenCanvas, type = 'image/png', quality = 0.92) => {
   const blob = await canvas.convertToBlob({ type, quality });
   return blobToDataUrl(blob);
@@ -302,14 +364,17 @@ const exportRaster = async (
   id: string,
   canvas: OffscreenCanvas,
   settings: ProcessingSettings,
+  targetWidth: number,
+  targetHeight: number,
 ): Promise<{ blob: Blob; previewBlob?: Blob; width: number; height: number }> => {
   postProgress(id, 88, 'Exporting print file');
 
   if (settings.format === OutputFormat.PDF) {
     const previewBlob = await canvas.convertToBlob({ type: 'image/png' });
     const imageData = await blobToDataUrl(previewBlob);
-    const widthInches = TARGET_WIDTH / 300;
-    const heightInches = TARGET_HEIGHT / 300;
+    const dpi = settings.targetDpi ?? 300;
+    const widthInches = targetWidth / dpi;
+    const heightInches = targetHeight / dpi;
     const pdf = new jsPDF({
       orientation: widthInches > heightInches ? 'l' : 'p',
       unit: 'in',
@@ -319,40 +384,41 @@ const exportRaster = async (
     return {
       blob: pdf.output('blob'),
       previewBlob,
-      width: TARGET_WIDTH,
-      height: TARGET_HEIGHT,
+      width: targetWidth,
+      height: targetHeight,
     };
   }
 
   if (settings.format === OutputFormat.JPG) {
-    const exportCanvas = new OffscreenCanvas(TARGET_WIDTH, TARGET_HEIGHT);
+    const exportCanvas = new OffscreenCanvas(targetWidth, targetHeight);
     const exportContext = exportCanvas.getContext('2d');
     if (!exportContext) throw new Error('Could not export JPG.');
     exportContext.fillStyle = settings.shirtColor === ShirtColor.BLACK ? '#000000' : '#ffffff';
-    exportContext.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+    exportContext.fillRect(0, 0, targetWidth, targetHeight);
     exportContext.drawImage(canvas, 0, 0);
     return {
       blob: await exportCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 }),
-      width: TARGET_WIDTH,
-      height: TARGET_HEIGHT,
+      width: targetWidth,
+      height: targetHeight,
     };
   }
 
   if (settings.format === OutputFormat.SVG) {
     const dataUrl = await canvasToDataUrl(canvas);
-    const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${TARGET_WIDTH}" height="${TARGET_HEIGHT}" viewBox="0 0 ${TARGET_WIDTH} ${TARGET_HEIGHT}"><image href="${dataUrl}" x="0" y="0" width="${TARGET_WIDTH}" height="${TARGET_HEIGHT}" /></svg>`;
+    const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${targetHeight}" viewBox="0 0 ${targetWidth} ${targetHeight}"><image href="${dataUrl}" x="0" y="0" width="${targetWidth}" height="${targetHeight}" /></svg>`;
     return {
       blob: new Blob([svgString], { type: 'image/svg+xml' }),
       previewBlob: await canvas.convertToBlob({ type: 'image/png' }),
-      width: TARGET_WIDTH,
-      height: TARGET_HEIGHT,
+      width: targetWidth,
+      height: targetHeight,
     };
   }
 
+  const pngBlob = await canvas.convertToBlob({ type: 'image/png' });
   return {
-    blob: await canvas.convertToBlob({ type: 'image/png' }),
-    width: TARGET_WIDTH,
-    height: TARGET_HEIGHT,
+    blob: await addPngDpiMetadata(pngBlob, settings.targetDpi ?? 300),
+    width: targetWidth,
+    height: targetHeight,
   };
 };
 
@@ -363,7 +429,9 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
 
   postProgress(id, 5, 'Loading artwork');
   const image = await createImageBitmap(source);
-  const canvas = new OffscreenCanvas(TARGET_WIDTH, TARGET_HEIGHT);
+  const targetWidth = Math.max(1, Math.round(settings.targetWidth ?? TARGET_WIDTH));
+  const targetHeight = Math.max(1, Math.round(settings.targetHeight ?? TARGET_HEIGHT));
+  const canvas = new OffscreenCanvas(targetWidth, targetHeight);
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Could not start the image processor.');
 
@@ -375,9 +443,9 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
     const pattern = context.createPattern(image, 'repeat');
     if (pattern) {
       context.fillStyle = pattern;
-      context.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+      context.fillRect(0, 0, targetWidth, targetHeight);
     } else {
-      context.drawImage(image, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
     }
   } else {
     let drawWidth: number;
@@ -386,23 +454,23 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
     let offsetY: number;
 
     if (settings.resizeMode === ResizeMode.STRETCH) {
-      drawWidth = TARGET_WIDTH;
-      drawHeight = TARGET_HEIGHT;
+      drawWidth = targetWidth;
+      drawHeight = targetHeight;
       offsetX = 0;
       offsetY = 0;
     } else if (settings.resizeMode === ResizeMode.COVER) {
-      const scale = Math.max(TARGET_WIDTH / image.width, TARGET_HEIGHT / image.height);
+      const scale = Math.max(targetWidth / image.width, targetHeight / image.height);
       drawWidth = image.width * scale;
       drawHeight = image.height * scale;
-      offsetX = (TARGET_WIDTH - drawWidth) / 2;
-      offsetY = (TARGET_HEIGHT - drawHeight) / 2;
+      offsetX = (targetWidth - drawWidth) / 2;
+      offsetY = (targetHeight - drawHeight) / 2;
     } else {
-      let scale = Math.min(TARGET_WIDTH / image.width, TARGET_HEIGHT / image.height);
+      let scale = Math.min(targetWidth / image.width, targetHeight / image.height);
       if (!settings.allowUpscaling && scale > 1) scale = 1;
       drawWidth = image.width * scale;
       drawHeight = image.height * scale;
-      offsetX = (TARGET_WIDTH - drawWidth) / 2;
-      offsetY = (TARGET_HEIGHT - drawHeight) / 2;
+      offsetX = (targetWidth - drawWidth) / 2;
+      offsetY = (targetHeight - drawHeight) / 2;
     }
 
     context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
@@ -450,7 +518,7 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
 
   if (settings.vectorize) {
     postProgress(id, 88, 'Tracing vector paths');
-    const traceCanvas = new OffscreenCanvas(1280 * (TARGET_WIDTH / Math.max(TARGET_WIDTH, TARGET_HEIGHT)), 1280);
+    const traceCanvas = new OffscreenCanvas(1280 * (targetWidth / Math.max(targetWidth, targetHeight)), 1280);
     const traceContext = traceCanvas.getContext('2d', { willReadFrequently: true });
     if (traceContext) {
       traceContext.drawImage(canvas, 0, 0, traceCanvas.width, traceCanvas.height);
@@ -465,18 +533,18 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
         blurradius: settings.vectorizeBlur,
         strokewidth: 0,
         viewbox: true,
-        scale: TARGET_HEIGHT / 1280,
+        scale: targetHeight / 1280,
       });
       return {
         blob: new Blob([svgString], { type: 'image/svg+xml' }),
         previewBlob: await canvas.convertToBlob({ type: 'image/png' }),
-        width: TARGET_WIDTH,
-        height: TARGET_HEIGHT,
+        width: targetWidth,
+        height: targetHeight,
       };
     }
   }
 
-  return exportRaster(id, canvas, settings);
+  return exportRaster(id, canvas, settings, targetWidth, targetHeight);
 };
 
 const generateUnderbase = async ({ id, source, format }: UnderbaseRequest) => {

@@ -12,8 +12,8 @@ import {
   ProofBranding,
 } from './types';
 
-export const TARGET_WIDTH = 4200;
-export const TARGET_HEIGHT = 5100;
+export const TARGET_WIDTH = 4500;
+export const TARGET_HEIGHT = 5400;
 export const MAX_FILE_SIZE_MB = 100;
 export const MAX_SVG_SIZE_MB = 20;
 
@@ -33,6 +33,9 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   grain: 0,
   sharpness: 0,
   preserveTransparency: true,
+  targetWidth: TARGET_WIDTH,
+  targetHeight: TARGET_HEIGHT,
+  targetDpi: 300,
   
   // Smart Background Removal Defaults
   bgRemoval: false,

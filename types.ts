@@ -340,6 +340,9 @@ export interface ProcessingSettings {
   grain: number;
   sharpness: number;
   preserveTransparency: boolean;
+  targetWidth?: number;
+  targetHeight?: number;
+  targetDpi?: number;
 
   // Smart Background Removal
   bgRemoval: boolean;

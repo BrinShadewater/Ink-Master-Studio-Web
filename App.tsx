@@ -6,6 +6,7 @@ import { JobLibrary } from './components/JobLibrary';
 import { ProfileManager } from './components/ProfileManager';
 import { ProfileSelector } from './components/ProfileSelector';
 import { ProfileUpdateReview } from './components/ProfileUpdateReview';
+import { SimpleCreatorFlow } from './components/SimpleCreatorFlow';
 import { TemplatesPopover } from './components/TemplatesPopover';
 import { Preview } from './components/Preview';
 import { StudioTopBar } from './components/StudioTopBar';
@@ -18,6 +19,7 @@ import {
   ExportHistoryEntry,
   AiCleanupStatus,
   OutputFormat,
+  ResizeMode,
   ProcessingSettings,
   ProcessedResult,
   ProofApprovalState,
@@ -105,6 +107,7 @@ import {
 } from './services/templateStorage';
 import { sanitizeFilenameSegment } from './services/naming';
 import { revokeExportHistoryUrls, revokeRemovedExportHistoryUrls } from './services/objectUrls';
+import { DEFAULT_PRINTIFY_PRODUCT_ID, PrintifyProductPreset, printify, printifyProductToSpecification } from './specs/printify';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
 
@@ -152,6 +155,33 @@ const base64ToBlob = (base64: string, mimeType: string) => {
 const jobFilename = (job: StudioJob) =>
   `${job.metadata.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'inkmaster-job'}.inkmaster-job`;
 
+const ADVANCED_MODE_STORAGE_KEY = 'inkmaster_advanced_mode_v1';
+
+const loadAdvancedMode = () => {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(ADVANCED_MODE_STORAGE_KEY) === 'true';
+};
+
+const filenameToDesignName = (filename: string) => {
+  const stem = filename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+  const uuidish = /^[a-z]{1,4}\s+\d{8}\s+\d{6}\s+[a-f0-9]{6,}/i.test(stem)
+    || /[a-f0-9]{8}\s+[a-f0-9]{4}\s+[a-f0-9]{4}/i.test(stem);
+  if (uuidish) {
+    const dateMatch = /(\d{4})(\d{2})(\d{2})/.exec(stem);
+    if (dateMatch) {
+      const date = new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
+      const label = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+      return `Untitled design - ${label}`;
+    }
+    return 'Untitled design';
+  }
+
+  return stem
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .slice(0, 64)
+    || 'Untitled design';
+};
+
 const App: React.FC = () => {
   const [history, setHistory] = useState<AppState[]>([{ image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false }]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -176,6 +206,8 @@ const App: React.FC = () => {
   const [jobs, setJobs] = useState<StudioJob[]>([]);
   const [showJobs, setShowJobs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [advancedMode, setAdvancedMode] = useState(loadAdvancedMode);
+  const [selectedPrintifyProductId, setSelectedPrintifyProductId] = useState(DEFAULT_PRINTIFY_PRODUCT_ID);
   const [shopTemplates, setShopTemplates] = useState<ShopTemplate[]>([]);
   const [templateImportMessage, setTemplateImportMessage] = useState<string | null>(null);
   const [profileStore, setProfileStore] = useState(() => loadProfileStore());
@@ -308,6 +340,14 @@ const App: React.FC = () => {
   );
   const cloudApprovalCapability = useMemo(() => getCloudApprovalCapability(), []);
   const fallbackProofApproval = useMemo(() => createProofApprovalState(), []);
+  const selectedPrintifyProduct = useMemo(
+    () => printify.products.find((product) => product.id === selectedPrintifyProductId) ?? printify.products[0],
+    [selectedPrintifyProductId],
+  );
+
+  useEffect(() => {
+    localStorage.setItem(ADVANCED_MODE_STORAGE_KEY, String(advancedMode));
+  }, [advancedMode]);
 
   const refreshJobs = async () => {
     try {
@@ -602,10 +642,19 @@ const App: React.FC = () => {
     try {
       const base64 = await fileToBase64(file);
       const dataUrl = `data:${file.type};base64,${base64}`;
-      const job = createStudioJob(
-        file.name.replace(/\.[^.]+$/, '') || 'Untitled job',
-        defaultProductionProfile,
-      );
+      const job = createStudioJob(filenameToDesignName(file.name), defaultProductionProfile);
+      job.printSpecification = printifyProductToSpecification(selectedPrintifyProduct);
+      job.settings = {
+        ...job.settings,
+        itemType: selectedPrintifyProduct.itemType,
+        format: OutputFormat.PNG,
+        resizeMode: ResizeMode.FIT,
+        allowUpscaling: true,
+        preserveTransparency: true,
+        targetWidth: selectedPrintifyProduct.px[0],
+        targetHeight: selectedPrintifyProduct.px[1],
+        targetDpi: selectedPrintifyProduct.dpi,
+      };
       const next = {
         image: dataUrl,
         settings: structuredClone(job.settings),
@@ -1034,9 +1083,30 @@ const App: React.FC = () => {
 
   const handleDownloadPrintFile = () => {
     if (!processedResult) return;
-    const filename = `inkmaster_${selectedRecipeId ?? 'custom'}_${settings.itemType.toLowerCase()}.${settings.format.toLowerCase()}`;
+    const filename = `${sanitizeFilenameSegment(currentJob?.metadata.name ?? 'untitled-design')}_${selectedPrintifyProduct.id}.${settings.format.toLowerCase()}`;
     downloadBlob(processedResult.blob, filename);
     addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
+  };
+
+  const handleProductChange = (product: PrintifyProductPreset) => {
+    setSelectedPrintifyProductId(product.id);
+    const nextSettings = {
+      ...settings,
+      itemType: product.itemType,
+      format: OutputFormat.PNG,
+      resizeMode: ResizeMode.FIT,
+      allowUpscaling: true,
+      preserveTransparency: true,
+      targetWidth: product.px[0],
+      targetHeight: product.px[1],
+      targetDpi: product.dpi,
+    };
+    handleSettingsChange(nextSettings, true);
+    updateCurrentJob((job) => ({
+      ...job,
+      settings: nextSettings,
+      printSpecification: printifyProductToSpecification(product),
+    }));
   };
 
   const handleDownloadPdf = async () => {
@@ -1076,40 +1146,47 @@ const App: React.FC = () => {
           <section className="mx-auto max-w-xl text-center lg:mx-0 lg:text-left" aria-labelledby="home-title">
             <img src="/logo/logo.png" alt="" className="mx-auto h-16 w-16 object-contain drop-shadow-2xl sm:h-20 sm:w-20 lg:mx-0" />
             <h1 id="home-title" className="mt-4 text-balance text-3xl font-black leading-tight text-slate-100 sm:mt-5 sm:text-5xl">
-              Print-ready artwork in one guided studio.
+              Turn any image into a print-ready file for Printify.
             </h1>
             <p className="mt-4 text-sm leading-6 text-slate-400 sm:leading-7 sm:text-base">
-              InkMaster Studio helps print shops turn uploaded designs into DTG and DTF-ready files, client proofs, apparel mockups, and clean handoff packages.
+              Drop artwork, pick a product, and download a PNG sized for print-on-demand upload without production jargon.
             </p>
             <div className="mt-6 hidden gap-3 text-left sm:grid sm:grid-cols-3">
               <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Preflight</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">Check resolution, transparency, placement, and production risk before export.</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Drop</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Start with a PNG, JPG, WebP, or safe SVG kept on this device.</p>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Proof</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">Generate mockups and approval details that are easy to review with customers.</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Pick</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Choose a visual product preset with the right pixels and DPI.</p>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Handoff</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">Package files, notes, and production settings for repeatable shop output.</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Download</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">Save a compliant file under Printify upload limits.</p>
               </div>
             </div>
             <div className="mt-6 hidden flex-wrap justify-center gap-3 text-xs text-slate-500 sm:flex lg:justify-start">
-              <span>Local artwork analysis</span><span className="text-slate-700">/</span><span>Guided print recipes</span><span className="text-slate-700">/</span><span>Production files + mockups</span>
+              <span>Local-first</span><span className="text-slate-700">/</span><span>Printify presets</span><span className="text-slate-700">/</span><span>PNG export</span>
             </div>
           </section>
           <section className="mx-auto w-full max-w-2xl" aria-label="Start a production job">
             <Dropzone onFileAccepted={handleFileAccepted} />
             {error && <p className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-center text-xs text-rose-300">{error}</p>}
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={() => setShowBatch(true)} className="rounded-lg border border-slate-700 bg-slate-900/70 px-5 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-white">Open batch processing</button>
               <button type="button" onClick={() => setShowJobs(true)} className="rounded-lg border border-slate-800 px-5 py-2.5 text-xs font-bold text-indigo-300 hover:border-indigo-700 hover:text-indigo-200">
-                Open saved job{jobs.length ? ` (${jobs.length})` : ''}
+                Open saved design{jobs.length ? ` (${jobs.length})` : ''}
               </button>
-              <button type="button" onClick={() => setShowProfiles(true)} className="rounded-lg px-5 py-2.5 text-xs font-bold text-slate-400 hover:text-white">
-                Manage profiles
+              <button type="button" onClick={() => setAdvancedMode((value) => !value)} className="rounded-lg border border-slate-800 px-5 py-2.5 text-xs font-bold text-slate-400 hover:border-slate-600 hover:text-white">
+                Advanced mode {advancedMode ? 'on' : 'off'}
               </button>
+              {advancedMode && (
+                <>
+                  <button type="button" onClick={() => setShowBatch(true)} className="rounded-lg border border-slate-700 bg-slate-900/70 px-5 py-2.5 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-white">Open batch processing</button>
+                  <button type="button" onClick={() => setShowProfiles(true)} className="rounded-lg px-5 py-2.5 text-xs font-bold text-slate-400 hover:text-white">
+                    Manage profiles
+                  </button>
+                </>
+              )}
             </div>
           </section>
         </main>
@@ -1139,6 +1216,57 @@ const App: React.FC = () => {
             store={profileStore}
             onStoreChange={handleProfileStoreChange}
             onClose={() => setShowProfiles(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (!advancedMode) {
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden bg-slate-950 text-slate-200">
+        <header className="flex min-h-14 flex-none items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <img src="/logo/logo.png" alt="" className="h-8 w-8 object-contain" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-white">{currentJob?.metadata.name ?? 'Untitled design'}</p>
+              <p className={`text-[10px] font-semibold ${saveStatus === 'error' ? 'text-rose-400' : 'text-slate-500'}`}>
+                {saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'error' ? 'Local save failed' : 'Saved locally'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleReset} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white">New file</button>
+            <button type="button" onClick={() => setShowJobs(true)} className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white">Saved</button>
+          </div>
+        </header>
+        <SimpleCreatorFlow
+          originalImage={originalImage}
+          sourceName={currentJob?.metadata.name ?? 'Untitled design'}
+          analysis={analysis}
+          processedResult={processedResult}
+          isProcessing={isProcessing}
+          processingProgress={processingProgress}
+          selectedProduct={selectedPrintifyProduct}
+          products={printify.products}
+          onProductChange={handleProductChange}
+          onDownload={handleDownloadPrintFile}
+          onCancelProcessing={handleCancelProcessing}
+          onAdvancedMode={() => setAdvancedMode(true)}
+        />
+        {error && (
+          <div className="fixed left-3 right-3 top-16 z-40 rounded-lg border border-rose-500/30 bg-rose-950/90 px-4 py-3 text-xs text-rose-200 shadow-xl">{error}</div>
+        )}
+        {showJobs && (
+          <JobLibrary
+            jobs={jobs}
+            currentJobId={currentJob?.id ?? null}
+            onClose={() => setShowJobs(false)}
+            onOpen={(job) => void handleOpenJob(job)}
+            onDuplicate={(job) => void handleDuplicateJob(job)}
+            onArchive={(job) => void handleArchiveJob(job)}
+            onExport={(job) => void handleExportJob(job)}
+            onImport={(file) => void handleImportJob(file)}
           />
         )}
       </div>

@@ -74,8 +74,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
           </div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.25em] text-indigo-300">Start a local production job</p>
-          <h2 id="upload-artwork-title" className="mb-2 text-2xl font-black text-slate-100">Drop DTG/DTF artwork here</h2>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.25em] text-indigo-300">Start a print-ready file</p>
+          <h2 id="upload-artwork-title" className="mb-2 text-2xl font-black text-slate-100">Drop artwork here</h2>
           <p className="mb-6 text-sm text-slate-500">
             JPG, PNG, or WebP up to {MAX_FILE_SIZE_MB}MB · safe SVG up to {MAX_SVG_SIZE_MB}MB
           </p>
@@ -87,16 +87,16 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted }) => {
 
       <div className="grid gap-px bg-slate-800 text-left sm:grid-cols-3">
         <div className="bg-slate-950/95 p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">1 · Save</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">Creates a named local-first job with the source artwork attached.</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">1 · Drop</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Keeps your artwork local and prepares a working copy.</p>
         </div>
         <div className="bg-slate-950/95 p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">2 · Preflight</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">Analyzes artwork, recommends a print recipe, and checks production risk.</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">2 · Product</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Pick a Printify preset with the right pixel size and DPI.</p>
         </div>
         <div className="bg-slate-950/95 p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">3 · Package</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">Guides proof approval and the final print-shop handoff package.</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">3 · Download</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Save a compliant PNG without print-shop jargon.</p>
         </div>
       </div>
     </section>
