@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = () => {
 
       <div className="flex-1" />
 
-      <div className="hidden text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:block">Local-first production workflow</div>
+      <div className="hidden text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:block">Local-first Printify prep</div>
     </header>
   );
 };

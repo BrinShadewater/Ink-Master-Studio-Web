@@ -1163,7 +1163,7 @@ const App: React.FC = () => {
               <span>Local-first</span><span className="text-slate-700">/</span><span>Printify presets</span><span className="text-slate-700">/</span><span>PNG export</span>
             </div>
           </section>
-          <section className="mx-auto w-full max-w-2xl" aria-label="Start a production job">
+          <section className="mx-auto w-full max-w-2xl" aria-label="Start a print-ready file">
             <Dropzone onFileAccepted={handleFileAccepted} />
             {error && <p className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-center text-xs text-rose-300">{error}</p>}
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -1489,14 +1489,14 @@ const App: React.FC = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">Artwork loaded</p>
                     <h2 className="mt-1 text-sm font-black text-white">{currentJob?.sourceArtwork?.name ?? currentJob?.metadata.name ?? 'Source artwork'} is ready for setup.</h2>
                     <p className="mt-2 text-xs leading-relaxed text-indigo-100/70">
-                      Choose a print goal on the left, apply a recipe, then build the first production preview.
+                      Choose a print goal on the left, apply a treatment, then build the first preview.
                     </p>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-center text-slate-600">
-                <div><div className="text-4xl">◫</div><p className="mt-2 text-xs">Upload artwork to start a production job</p></div>
+                <div><div className="text-4xl">◫</div><p className="mt-2 text-xs">Upload artwork to start a design</p></div>
               </div>
             )}
           </div>
