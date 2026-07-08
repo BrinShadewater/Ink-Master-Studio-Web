@@ -1,5 +1,11 @@
 import { ProcessingSettings, ProcessedResult, OutputFormat, EdgeBehavior, DetailLevel, ResizeMode, ShirtColor } from '../types';
 import { TARGET_WIDTH, TARGET_HEIGHT } from '../constants';
+import {
+  compositeMockupInWorker,
+  generateUnderbaseInWorker,
+  processImageInWorker,
+  ProcessImageWorkerOptions,
+} from './imageProcessingWorkerClient';
 // @ts-ignore
 import ImageTracer from 'imagetracerjs';
 // @ts-ignore
@@ -313,6 +319,14 @@ const applyColorReplacements = (
   };
 
 export const processImage = async (
+  imageSource: string | HTMLImageElement,
+  settings: ProcessingSettings,
+  options?: ProcessImageWorkerOptions,
+): Promise<ProcessedResult> => {
+  return processImageInWorker(imageSource, settings, options);
+};
+
+const processImageOnMainThread = async (
   imageSource: string | HTMLImageElement,
   settings: ProcessingSettings
 ): Promise<ProcessedResult> => {
@@ -646,7 +660,7 @@ export const generatePrintPDF = async (
   };
 
 // --- FEATURE 3: UNDERBASE GENERATOR ---
-export const generateUnderbase = async (
+const generateUnderbaseOnMainThread = async (
     processedImageUrl: string,
     format: 'PNG' | 'SVG' | 'JPG'
   ): Promise<{ blob: Blob; url: string }> => {
@@ -781,7 +795,19 @@ const exportRaster = async (canvas: HTMLCanvasElement, settings: ProcessingSetti
   });
 };
 
-export const compositeMockup = async (
+export const generateUnderbase = async (
+  processedImageUrl: string,
+  format: 'PNG' | 'SVG' | 'JPG',
+): Promise<{ blob: Blob; url: string }> => {
+  try {
+    return await generateUnderbaseInWorker(processedImageUrl, format);
+  } catch (error) {
+    console.warn('Underbase worker failed; retrying on main thread.', error);
+    return generateUnderbaseOnMainThread(processedImageUrl, format);
+  }
+};
+
+const compositeMockupOnMainThread = async (
   shirtImageSrc: string,
   designSrc: string,
   placement: { x: number; y: number; width: number; height: number },
@@ -832,4 +858,18 @@ export const compositeMockup = async (
       0.92
     );
   });
+};
+
+export const compositeMockup = async (
+  shirtImageSrc: string,
+  designSrc: string,
+  placement: { x: number; y: number; width: number; height: number },
+  outputFormat: 'PNG' | 'JPG',
+): Promise<{ blob: Blob; url: string }> => {
+  try {
+    return await compositeMockupInWorker(shirtImageSrc, designSrc, placement, outputFormat);
+  } catch (error) {
+    console.warn('Mockup worker failed; retrying on main thread.', error);
+    return compositeMockupOnMainThread(shirtImageSrc, designSrc, placement, outputFormat);
+  }
 };

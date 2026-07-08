@@ -199,7 +199,23 @@
       }
     </style>
 
-    <!-- THIS is the important line -->
+    <script>
+      (() => {
+        const reloadKey = 'inkmaster:asset-reload-attempted';
+        const reloadOnce = () => {
+          if (sessionStorage.getItem(reloadKey) === '1') return;
+          sessionStorage.setItem(reloadKey, '1');
+          location.reload();
+        };
+        window.addEventListener('vite:preloadError', reloadOnce);
+        window.addEventListener('error', (event) => {
+          const target = event.target;
+          if (target instanceof HTMLScriptElement && target.type === 'module') {
+            reloadOnce();
+          }
+        }, true);
+      })();
+    </script>
     <script type="module" src="/index.tsx"></script>
   </head>
 

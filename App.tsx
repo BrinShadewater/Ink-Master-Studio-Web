@@ -39,6 +39,7 @@ import {
   generateUnderbase,
   processImage,
 } from './services/imageProcessing';
+import { ProcessingProgress } from './services/imageProcessingWorkerClient';
 import { analyzeArtwork } from './services/artworkAnalysis';
 import { recommendRecipe, resolveRecipeSettings } from './services/recipes';
 import {
@@ -161,6 +162,7 @@ const App: React.FC = () => {
   const [selectedRecipeId, setSelectedRecipeId] = useState<RecipeId | null>(null);
   const [stage, setStage] = useState<WorkspaceStage>('goal');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [palette, setPalette] = useState<string[]>([]);
@@ -187,6 +189,7 @@ const App: React.FC = () => {
     supportedActions: [],
   });
   const [isAiCleanupProcessing, setIsAiCleanupProcessing] = useState(false);
+  const processingAbortRef = useRef<AbortController | null>(null);
 
   const originalImage = appState.image;
   const settings = appState.settings;
@@ -386,19 +389,45 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!originalImage) return;
     const timer = window.setTimeout(async () => {
+      const controller = new AbortController();
+      processingAbortRef.current?.abort();
+      processingAbortRef.current = controller;
       setIsProcessing(true);
+      setProcessingProgress({ percent: 0, stage: 'Starting image processor' });
       setError(null);
       try {
-        setProcessedResult(await processImage(originalImage, settings));
+        setProcessedResult(await processImage(originalImage, settings, {
+          signal: controller.signal,
+          timeoutMs: 120_000,
+          onProgress: setProcessingProgress,
+        }));
       } catch (processingError) {
+        if (processingError instanceof DOMException && processingError.name === 'AbortError') return;
         console.error(processingError);
-        setError('Ink Master could not process this artwork. Try a different treatment or file.');
+        setError(processingError instanceof Error && /stalled|cancelled|worker|background/i.test(processingError.message)
+          ? processingError.message
+          : 'Ink Master could not process this artwork. Try a different treatment or file.');
       } finally {
-        setIsProcessing(false);
+        if (processingAbortRef.current === controller) {
+          processingAbortRef.current = null;
+          setIsProcessing(false);
+          setProcessingProgress(null);
+        }
       }
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      processingAbortRef.current?.abort();
+    };
   }, [originalImage, settings]);
+
+  const handleCancelProcessing = () => {
+    processingAbortRef.current?.abort();
+    processingAbortRef.current = null;
+    setIsProcessing(false);
+    setProcessingProgress(null);
+    setError('Preview build was cancelled.');
+  };
 
   const addToHistory = (state: AppState) => {
     setHistory((current) => {
@@ -1248,9 +1277,27 @@ const App: React.FC = () => {
           <div className="relative h-full min-h-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-2xl shadow-black/30">
             {(isAnalyzing || (isProcessing && !processedResult)) && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
-                <div className="text-center">
+                <div className="w-full max-w-xs px-5 text-center">
                   <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-                  <p className="mt-3 text-xs font-bold text-slate-300">{isAnalyzing ? 'Reading the artwork…' : 'Building the print preview…'}</p>
+                  <p className="mt-3 text-xs font-bold text-slate-300">{isAnalyzing ? 'Reading the artwork…' : processingProgress?.stage ?? 'Building the print preview…'}</p>
+                  {!isAnalyzing && processingProgress && (
+                    <>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full rounded-full bg-indigo-500 transition-[width] duration-200"
+                          style={{ width: `${processingProgress.percent}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-[11px] font-bold text-slate-500">{processingProgress.percent}%</p>
+                      <button
+                        type="button"
+                        onClick={handleCancelProcessing}
+                        className="mt-4 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
