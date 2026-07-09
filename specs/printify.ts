@@ -17,6 +17,13 @@ export interface PrintifyProductPreset {
   dpi: number;
   note: string;
   icon: string;
+  validation: {
+    product: string;
+    provider: string;
+    observedPrintArea: [number, number];
+    checkedAt: string;
+    productCreatorUrl: string;
+  };
 }
 
 export const printify: ServiceSpec = {
@@ -32,28 +39,49 @@ export const printify: ServiceSpec = {
       itemType: ItemType.TSHIRT,
       px: [4500, 5400],
       dpi: 300,
-      note: 'Full-front apparel artboard',
+      note: 'Safe full-front export validated on Gildan 5000',
       icon: 'T',
+      validation: {
+        product: 'Gildan 5000',
+        provider: 'Printify Choice',
+        observedPrintArea: [3951, 4919],
+        checkedAt: '2026-07-08',
+        productCreatorUrl: 'https://printify.com/app/editor/6/99/dtg',
+      },
     },
     {
       id: 'hoodie-front',
       label: 'Hoodie (front)',
       shortLabel: 'Hoodie',
       itemType: ItemType.HOODIE,
-      px: [4500, 5400],
+      px: [3531, 2352],
       dpi: 300,
-      note: 'Front print area starter',
+      note: 'Front print area validated on Gildan 18500',
       icon: 'H',
+      validation: {
+        product: 'Gildan 18500',
+        provider: 'Printify Choice',
+        observedPrintArea: [3531, 2352],
+        checkedAt: '2026-07-08',
+        productCreatorUrl: 'https://printify.com/app/editor/77/99/dtg',
+      },
     },
     {
       id: 'mug-wrap',
       label: 'Mug (wrap)',
       shortLabel: 'Mug',
       itemType: ItemType.MUG,
-      px: [2700, 1125],
+      px: [2475, 1155],
       dpi: 300,
-      note: 'Common 9 x 3.75in wrap',
+      note: '11oz wrap validated on the Accent Coffee Mug',
       icon: 'M',
+      validation: {
+        product: 'Accent Coffee Mug (11oz)',
+        provider: 'Printify Choice',
+        observedPrintArea: [2475, 1155],
+        checkedAt: '2026-07-08',
+        productCreatorUrl: 'https://printify.com/app/editor/635/99/dye-sublimation',
+      },
     },
     {
       id: 'poster-12x18',
@@ -62,18 +90,32 @@ export const printify: ServiceSpec = {
       itemType: ItemType.TSHIRT,
       px: [3600, 5400],
       dpi: 300,
-      note: 'Poster-style raster target',
+      note: '12 x 18in target based on the validated 300 DPI poster area',
       icon: 'P',
+      validation: {
+        product: 'Matte Vertical Poster (12 x 18)',
+        provider: 'Printify Choice',
+        observedPrintArea: [2400, 3000],
+        checkedAt: '2026-07-08',
+        productCreatorUrl: 'https://printify.com/app/editor/282/99/digital-printing',
+      },
     },
     {
       id: 'large-format',
-      label: 'Large format',
-      shortLabel: 'Large',
+      label: 'Blanket (50 x 60)',
+      shortLabel: 'Blanket',
       itemType: ItemType.TSHIRT,
-      px: [4500, 6000],
+      px: [7825, 9325],
       dpi: 150,
-      note: 'For blankets, tapestries, and oversized prints',
-      icon: 'L',
+      note: '50 x 60in area validated on the Velveteen Plush Blanket',
+      icon: 'B',
+      validation: {
+        product: 'Velveteen Plush Blanket (50 x 60)',
+        provider: 'Printify Choice',
+        observedPrintArea: [7825, 9325],
+        checkedAt: '2026-07-08',
+        productCreatorUrl: 'https://printify.com/app/editor/522/99/dye-sublimation',
+      },
     },
   ],
 };
