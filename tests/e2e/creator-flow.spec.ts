@@ -66,6 +66,97 @@ const uploadFixture = async (page: Page, width: number, height: number, name: st
   });
 };
 
+test('defers full export until download', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  const purposes: string[] = [];
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith('worker-purpose:')) purposes.push(text.replace('worker-purpose:', ''));
+  });
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        console.log('worker-purpose:' + (settings.purpose || 'unset'));
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#123456';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({ id, type: 'progress', progress: { percent: 100, stage: 'Done' } });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: {
+            method: settings.purpose === 'preview' ? 'none' : 'local-progressive',
+            ratio: settings.purpose === 'preview' ? 1 : 1.8,
+            sourceSize: [2500, 3000],
+            targetSize: [4500, 5400],
+          },
+        });
+      };
+    `,
+  }));
+  await page.goto('/');
+
+  await uploadFixture(page, 2500, 3000, 'deferred-art.png');
+  await expect(page.getByRole('button', { name: 'Download print file' })).toBeEnabled();
+  expect(purposes).toEqual(['preview']);
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download print file' }).click();
+  await downloadPromise;
+  expect(purposes).toEqual(['preview', 'export']);
+});
+
+test('allows extreme enlargement after showing a strong warning', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#345678';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: {
+            method: settings.purpose === 'preview' ? 'none' : 'local-progressive',
+            ratio: settings.purpose === 'preview' ? 1 : 5,
+            sourceSize: [900, 1080],
+            targetSize: [4500, 5400],
+          },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 900, 1080, 'tiny-art.png');
+  await expect(page.getByText('This image needs 5x enlargement. Download is allowed, but fine detail may look soft or artificial.')).toBeVisible();
+  const downloadButton = page.getByRole('button', { name: 'Download print file' });
+  await expect(downloadButton).toBeEnabled();
+
+  const downloadPromise = page.waitForEvent('download');
+  await downloadButton.click();
+  await downloadPromise;
+});
+
 test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));

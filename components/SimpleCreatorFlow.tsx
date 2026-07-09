@@ -12,12 +12,14 @@ interface SimpleCreatorFlowProps {
   sourceName: string;
   analysis: ArtworkAnalysis | null;
   processedResult: ProcessedResult | null;
+  simpleExportResult: ProcessedResult | null;
+  simpleExportError: string | null;
   isProcessing: boolean;
   processingProgress: ProcessingProgress | null;
   selectedProduct: PrintifyProductPreset;
   products: PrintifyProductPreset[];
   onProductChange: (product: PrintifyProductPreset) => void;
-  onDownload: () => void;
+  onDownload: () => void | Promise<void>;
   onCancelProcessing: () => void;
   onAdvancedMode: () => void;
 }
@@ -29,6 +31,8 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   sourceName,
   analysis,
   processedResult,
+  simpleExportResult,
+  simpleExportError,
   isProcessing,
   processingProgress,
   selectedProduct,
@@ -48,8 +52,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const sourceWidth = analysis?.width ?? 0;
   const sourceHeight = analysis?.height ?? 0;
   const upscaleQuality = assessUpscaleQuality(sourceWidth, sourceHeight, targetWidth, targetHeight);
-  const fileBytes = processedResult?.blob.size ?? 0;
-  const underCap = !processedResult || fileBytes <= printify.maxBytes.png;
+  const finalFileBytes = simpleExportResult?.blob.size ?? 0;
   const hasTransparency = analysis?.hasTransparency ?? true;
   const previewMockup = ['tee-front-full', 'hoodie-front', 'mug-wrap'].includes(selectedProduct.id)
     ? getSimpleMockupForItemType(selectedProduct.itemType)
@@ -107,10 +110,14 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     }
   };
 
+  const sizingDetail = simpleExportResult?.upscale.method === 'local-progressive'
+    ? `Enhanced locally ${simpleExportResult.upscale.ratio}x from ${simpleExportResult.upscale.sourceSize[0]} x ${simpleExportResult.upscale.sourceSize[1]}px. Fine detail was smoothed, not recreated.`
+    : upscaleQuality.detail;
+
   const checks = [
     {
       label: `Sized to ${targetWidth} x ${targetHeight}px`,
-      detail: upscaleQuality.detail,
+      detail: sizingDetail,
       state: upscaleQuality.level === 'caution' || upscaleQuality.level === 'extreme'
           ? 'caution'
           : 'ready',
@@ -138,8 +145,11 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     },
     {
       label: `Under ${MAX_FILE_SIZE_MB} MB PNG limit`,
-      detail: processedResult ? `${formatBytes(fileBytes)} generated. SVG limit is ${MAX_SVG_SIZE_MB} MB.` : 'File size will appear after processing.',
-      state: underCap ? 'ready' : 'stop',
+      detail: simpleExportError
+        ?? (simpleExportResult
+          ? `${formatBytes(finalFileBytes)} generated. SVG limit is ${MAX_SVG_SIZE_MB} MB.`
+          : 'Final file size is checked during download.'),
+      state: simpleExportError ? 'stop' : 'ready',
     },
   ];
 
@@ -217,7 +227,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
         <aside className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">Checks</p>
           <h2 className="mt-1 text-xl font-black text-white">
-            {upscaleQuality.blocksDownload ? `Needs a larger image for ${selectedProduct.label}` : `Ready for ${selectedProduct.label}`}
+            Ready for {selectedProduct.label}
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedProduct.note}. Product Creator requirements can vary by provider, so this preset targets the common safe upload shape.</p>
 
@@ -264,8 +274,8 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
 
           <button
             type="button"
-            onClick={onDownload}
-            disabled={!processedResult || isProcessing || !underCap || upscaleQuality.blocksDownload}
+            onClick={() => void onDownload()}
+            disabled={!processedResult || isProcessing}
             className="mt-5 w-full rounded-lg bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
           >
             Download print file

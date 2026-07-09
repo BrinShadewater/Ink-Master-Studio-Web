@@ -107,7 +107,7 @@ import {
   updateTemplateFromJob,
 } from './services/templateStorage';
 import { sanitizeFilenameSegment } from './services/naming';
-import { revokeExportHistoryUrls, revokeRemovedExportHistoryUrls } from './services/objectUrls';
+import { revokeExportHistoryUrls, revokeObjectUrl, revokeRemovedExportHistoryUrls } from './services/objectUrls';
 import { DEFAULT_PRINTIFY_PRODUCT_ID, PrintifyProductPreset, printify, printifyProductToSpecification } from './specs/printify';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
@@ -142,6 +142,14 @@ const dataUrlToImagePayload = (dataUrl: string) => {
     base64: match[2],
     approximateBytes: Math.ceil((match[2].length * 3) / 4),
   };
+};
+
+const revokeProcessedResultUrls = (result: ProcessedResult | null) => {
+  if (!result) return;
+  revokeObjectUrl(result.url);
+  if (result.previewUrl && result.previewUrl !== result.url) {
+    revokeObjectUrl(result.previewUrl);
+  }
 };
 
 const base64ToBlob = (base64: string, mimeType: string) => {
@@ -181,6 +189,8 @@ const App: React.FC = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [appState, setAppState] = useState<AppState>(history[0]);
   const [processedResult, setProcessedResult] = useState<ProcessedResult | null>(null);
+  const [simpleExportResult, setSimpleExportResult] = useState<ProcessedResult | null>(null);
+  const [simpleExportError, setSimpleExportError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<ArtworkAnalysis | null>(null);
   const [recommendation, setRecommendation] = useState<RecipeRecommendation | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<RecipeId | null>(null);
@@ -194,6 +204,7 @@ const App: React.FC = () => {
   const [showBatch, setShowBatch] = useState(false);
   const [exportHistory, setExportHistory] = useState<ExportHistoryEntry[]>([]);
   const exportHistoryRef = useRef<ExportHistoryEntry[]>([]);
+  const simpleExportResultRef = useRef<ProcessedResult | null>(null);
   const [isEyedropperMode, setIsEyedropperMode] = useState(false);
   const [lowResolutionAcknowledged, setLowResolutionAcknowledged] = useState(false);
   const [mockupExportToken, setMockupExportToken] = useState(0);
@@ -227,8 +238,13 @@ const App: React.FC = () => {
     exportHistoryRef.current = exportHistory;
   }, [exportHistory]);
 
+  useEffect(() => {
+    simpleExportResultRef.current = simpleExportResult;
+  }, [simpleExportResult]);
+
   useEffect(() => () => {
     revokeExportHistoryUrls(exportHistoryRef.current);
+    revokeProcessedResultUrls(simpleExportResultRef.current);
   }, []);
   const dpiInfo = analysis?.printQuality ?? null;
   const defaultProductionProfile = useMemo(
@@ -427,6 +443,11 @@ const App: React.FC = () => {
   }, [originalImage]);
 
   useEffect(() => {
+    setSimpleExportError(null);
+    setSimpleExportResult((current) => {
+      revokeProcessedResultUrls(current);
+      return null;
+    });
     if (!originalImage) return;
     const timer = window.setTimeout(async () => {
       const controller = new AbortController();
@@ -436,7 +457,10 @@ const App: React.FC = () => {
       setProcessingProgress({ percent: 0, stage: 'Starting image processor' });
       setError(null);
       try {
-        setProcessedResult(await processImage(originalImage, settings, {
+        setProcessedResult(await processImage(originalImage, {
+          ...settings,
+          purpose: advancedMode ? 'export' : 'preview',
+        }, {
           signal: controller.signal,
           timeoutMs: 120_000,
           onProgress: setProcessingProgress,
@@ -459,7 +483,7 @@ const App: React.FC = () => {
       window.clearTimeout(timer);
       processingAbortRef.current?.abort();
     };
-  }, [originalImage, settings, processingRetryToken]);
+  }, [originalImage, settings, processingRetryToken, advancedMode]);
 
   const handleCancelProcessing = () => {
     processingAbortRef.current?.abort();
@@ -1087,11 +1111,60 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadPrintFile = () => {
+  const handleDownloadPrintFile = async () => {
     if (!processedResult) return;
     const filename = `${sanitizeFilenameSegment(currentJob?.metadata.name ?? 'untitled-design')}_${selectedPrintifyProduct.id}.${settings.format.toLowerCase()}`;
-    downloadBlob(processedResult.blob, filename);
-    addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
+
+    if (advancedMode || !originalImage) {
+      downloadBlob(processedResult.blob, filename);
+      addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(processedResult.blob), blob: processedResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
+      return;
+    }
+
+    if (isProcessing) return;
+
+    const controller = new AbortController();
+    processingAbortRef.current?.abort();
+    processingAbortRef.current = controller;
+    setIsProcessing(true);
+    setProcessingProgress({ percent: 0, stage: 'Preparing print file' });
+    setError(null);
+    setSimpleExportError(null);
+    try {
+      const exportResult = await processImage(originalImage, {
+        ...settings,
+        purpose: 'export',
+      }, {
+        signal: controller.signal,
+        timeoutMs: 120_000,
+        onProgress: setProcessingProgress,
+      });
+
+      if (exportResult.blob.size > printify.maxBytes.png) {
+        revokeProcessedResultUrls(exportResult);
+        setSimpleExportError("The generated PNG is over Printify's 100 MB limit. Try a smaller product or simpler artwork.");
+        return;
+      }
+
+      setSimpleExportResult((current) => {
+        revokeProcessedResultUrls(current);
+        return exportResult;
+      });
+      downloadBlob(exportResult.blob, filename);
+      addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(exportResult.blob), blob: exportResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
+    } catch (exportError) {
+      if (exportError instanceof DOMException && exportError.name === 'AbortError') return;
+      console.error(exportError);
+      setError(exportError instanceof Error && /stalled|cancelled|worker|background/i.test(exportError.message)
+        ? exportError.message
+        : 'Ink Master could not export this print file. Try again or choose a smaller product.');
+    } finally {
+      if (processingAbortRef.current === controller) {
+        processingAbortRef.current = null;
+        setIsProcessing(false);
+        setProcessingProgress(null);
+      }
+    }
   };
 
   const handleProductChange = (product: PrintifyProductPreset) => {
@@ -1252,6 +1325,8 @@ const App: React.FC = () => {
           sourceName={currentJob?.metadata.name ?? 'Untitled design'}
           analysis={analysis}
           processedResult={processedResult}
+          simpleExportResult={simpleExportResult}
+          simpleExportError={simpleExportError}
           isProcessing={isProcessing}
           processingProgress={processingProgress}
           selectedProduct={selectedPrintifyProduct}
