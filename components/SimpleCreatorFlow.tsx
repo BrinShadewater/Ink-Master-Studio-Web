@@ -111,9 +111,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     {
       label: `Sized to ${targetWidth} x ${targetHeight}px`,
       detail: upscaleQuality.detail,
-      state: upscaleQuality.level === 'stop'
-        ? 'stop'
-        : upscaleQuality.level === 'caution'
+      state: upscaleQuality.level === 'caution' || upscaleQuality.level === 'extreme'
           ? 'caution'
           : 'ready',
     },

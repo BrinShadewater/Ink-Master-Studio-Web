@@ -1,3 +1,5 @@
+import type { UpscaleResultMetadata } from './services/upscaleEngine';
+
 export enum OutputFormat {
   PNG = 'PNG',
   JPG = 'JPG',
@@ -343,6 +345,7 @@ export interface ProcessingSettings {
   targetWidth?: number;
   targetHeight?: number;
   targetDpi?: number;
+  purpose?: 'preview' | 'export';
 
   // Smart Background Removal
   bgRemoval: boolean;
@@ -373,6 +376,7 @@ export interface ProcessedResult {
   previewUrl?: string;
   width: number;
   height: number;
+  upscale: UpscaleResultMetadata;
 }
 
 export type AiCleanupAvailability = 'checking' | 'available' | 'unavailable' | 'error';

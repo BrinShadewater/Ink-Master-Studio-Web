@@ -7,6 +7,12 @@ import {
   ShirtColor,
 } from '../types';
 import { TARGET_HEIGHT, TARGET_WIDTH } from '../constants';
+import {
+  buildUpscaleMetadata,
+  getProcessingTargetSize,
+  planProgressiveResize,
+  type UpscaleResultMetadata,
+} from '../services/upscaleEngine';
 // @ts-ignore
 import ImageTracer from 'imagetracerjs';
 // @ts-ignore
@@ -46,6 +52,12 @@ const postProgress = (id: string, percent: number, stage: string) => {
 };
 
 const yieldToWorker = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+type DrawableImageSource = ImageBitmap | OffscreenCanvas;
+
+const closeImageSource = (source: DrawableImageSource) => {
+  if ('close' in source) source.close();
+};
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
   const clean = hex.replace('#', '');
@@ -416,10 +428,43 @@ const exportRaster = async (
 
   const pngBlob = await canvas.convertToBlob({ type: 'image/png' });
   return {
-    blob: await addPngDpiMetadata(pngBlob, settings.targetDpi ?? 300),
+    blob: settings.purpose === 'preview'
+      ? pngBlob
+      : await addPngDpiMetadata(pngBlob, settings.targetDpi ?? 300),
     width: targetWidth,
     height: targetHeight,
   };
+};
+
+const progressivelyResize = async (
+  id: string,
+  source: ImageBitmap,
+  scale: number,
+): Promise<DrawableImageSource> => {
+  const passes = planProgressiveResize(source.width, source.height, scale);
+  if (passes.length === 0) return source;
+
+  let current: DrawableImageSource = source;
+  for (const [index, pass] of passes.entries()) {
+    const canvas = new OffscreenCanvas(pass.width, pass.height);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not enhance artwork.');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(current, 0, 0, pass.width, pass.height);
+
+    if (current !== source) closeImageSource(current);
+    current = canvas;
+
+    postProgress(
+      id,
+      18 + Math.round(((index + 1) / passes.length) * 12),
+      `Enhancing image (${index + 1} of ${passes.length})`,
+    );
+    await yieldToWorker();
+  }
+
+  return current;
 };
 
 const processImage = async ({ id, source, settings }: ProcessRequest) => {
@@ -429,8 +474,19 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
 
   postProgress(id, 5, 'Loading artwork');
   const image = await createImageBitmap(source);
-  const targetWidth = Math.max(1, Math.round(settings.targetWidth ?? TARGET_WIDTH));
-  const targetHeight = Math.max(1, Math.round(settings.targetHeight ?? TARGET_HEIGHT));
+  const target = getProcessingTargetSize({
+    settings,
+    defaultWidth: TARGET_WIDTH,
+    defaultHeight: TARGET_HEIGHT,
+  });
+  const targetWidth = target.processingWidth;
+  const targetHeight = target.processingHeight;
+  const upscale = buildUpscaleMetadata(
+    image.width,
+    image.height,
+    target.metadataWidth,
+    target.metadataHeight,
+  );
   const canvas = new OffscreenCanvas(targetWidth, targetHeight);
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Could not start the image processor.');
@@ -453,6 +509,9 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
     let offsetX: number;
     let offsetY: number;
 
+    let sourceForDraw: DrawableImageSource = image;
+    let shouldCloseSourceForDraw = false;
+
     if (settings.resizeMode === ResizeMode.STRETCH) {
       drawWidth = targetWidth;
       drawHeight = targetHeight;
@@ -460,20 +519,35 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
       offsetY = 0;
     } else if (settings.resizeMode === ResizeMode.COVER) {
       const scale = Math.max(targetWidth / image.width, targetHeight / image.height);
-      drawWidth = image.width * scale;
-      drawHeight = image.height * scale;
+      if (scale > 1.05 && settings.purpose !== 'preview') {
+        sourceForDraw = await progressivelyResize(id, image, scale);
+        shouldCloseSourceForDraw = sourceForDraw !== image;
+        drawWidth = sourceForDraw.width;
+        drawHeight = sourceForDraw.height;
+      } else {
+        drawWidth = image.width * scale;
+        drawHeight = image.height * scale;
+      }
       offsetX = (targetWidth - drawWidth) / 2;
       offsetY = (targetHeight - drawHeight) / 2;
     } else {
       let scale = Math.min(targetWidth / image.width, targetHeight / image.height);
       if (!settings.allowUpscaling && scale > 1) scale = 1;
-      drawWidth = image.width * scale;
-      drawHeight = image.height * scale;
+      if (scale > 1.05 && settings.purpose !== 'preview') {
+        sourceForDraw = await progressivelyResize(id, image, scale);
+        shouldCloseSourceForDraw = sourceForDraw !== image;
+        drawWidth = sourceForDraw.width;
+        drawHeight = sourceForDraw.height;
+      } else {
+        drawWidth = image.width * scale;
+        drawHeight = image.height * scale;
+      }
       offsetX = (targetWidth - drawWidth) / 2;
       offsetY = (targetHeight - drawHeight) / 2;
     }
 
-    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+    context.drawImage(sourceForDraw, offsetX, offsetY, drawWidth, drawHeight);
+    if (shouldCloseSourceForDraw) closeImageSource(sourceForDraw);
   }
 
   postProgress(id, 30, 'Reading pixels');
@@ -499,7 +573,10 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
     );
   }
 
-  await applySharpen(id, data, canvas.width, canvas.height, settings.sharpness);
+  const effectiveSharpness = settings.purpose !== 'preview' && upscale.method === 'local-progressive'
+    ? Math.max(settings.sharpness, 12)
+    : settings.sharpness;
+  await applySharpen(id, data, canvas.width, canvas.height, effectiveSharpness);
   await applyRasterTreatment(id, data, settings);
 
   postProgress(id, 82, 'Compositing artwork');
@@ -540,11 +617,15 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
         previewBlob: await canvas.convertToBlob({ type: 'image/png' }),
         width: targetWidth,
         height: targetHeight,
+        upscale,
       };
     }
   }
 
-  return exportRaster(id, canvas, settings, targetWidth, targetHeight);
+  return {
+    ...(await exportRaster(id, canvas, settings, targetWidth, targetHeight)),
+    upscale,
+  };
 };
 
 const generateUnderbase = async ({ id, source, format }: UnderbaseRequest) => {

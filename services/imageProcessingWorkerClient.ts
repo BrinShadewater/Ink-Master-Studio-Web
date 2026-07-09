@@ -1,5 +1,6 @@
 import { ProcessingSettings, ProcessedResult } from '../types';
 import { dataUrlToBlob } from './dataUrls';
+import type { UpscaleResultMetadata } from './upscaleEngine';
 
 export interface ProcessingProgress {
   percent: number;
@@ -31,7 +32,15 @@ interface MockupRequest {
 
 type WorkerMessage =
   | { id: string; type: 'progress'; progress: ProcessingProgress }
-  | { id: string; type: 'complete'; blob: Blob; previewBlob?: Blob; width?: number; height?: number }
+  | {
+      id: string;
+      type: 'complete';
+      blob: Blob;
+      previewBlob?: Blob;
+      width?: number;
+      height?: number;
+      upscale: UpscaleResultMetadata;
+    }
   | { id: string; type: 'error'; message: string };
 
 export interface ProcessImageWorkerOptions {
@@ -145,6 +154,7 @@ export const processImageInWorker = async (
     previewUrl,
     width: message.width ?? 0,
     height: message.height ?? 0,
+    upscale: message.upscale,
   };
 };
 

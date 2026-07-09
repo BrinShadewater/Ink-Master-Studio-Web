@@ -1,3 +1,5 @@
+import type { ProcessingSettings } from '../types';
+
 export type UpscaleMethod = 'none' | 'local-progressive' | 'ai';
 
 export interface UpscaleResultMetadata {
@@ -10,6 +12,13 @@ export interface UpscaleResultMetadata {
 export interface ProgressiveResizePass {
   width: number;
   height: number;
+}
+
+export interface ProcessingTargetSize {
+  processingWidth: number;
+  processingHeight: number;
+  metadataWidth: number;
+  metadataHeight: number;
 }
 
 export const calculateUpscaleRatio = (
@@ -34,6 +43,39 @@ export const buildUpscaleMetadata = (
     ratio: ratio > 1.05 ? roundRatio(ratio) : 1,
     sourceSize: [sourceWidth, sourceHeight],
     targetSize: [targetWidth, targetHeight],
+  };
+};
+
+export const getProcessingTargetSize = ({
+  settings,
+  defaultWidth = 3600,
+  defaultHeight = 4200,
+  maxPreviewSide = 1600,
+}: {
+  settings: Partial<Pick<ProcessingSettings, 'targetWidth' | 'targetHeight' | 'purpose'>>;
+  defaultWidth?: number;
+  defaultHeight?: number;
+  maxPreviewSide?: number;
+}): ProcessingTargetSize => {
+  const metadataWidth = Math.max(1, Math.round(settings.targetWidth ?? defaultWidth));
+  const metadataHeight = Math.max(1, Math.round(settings.targetHeight ?? defaultHeight));
+
+  if (settings.purpose !== 'preview') {
+    return {
+      processingWidth: metadataWidth,
+      processingHeight: metadataHeight,
+      metadataWidth,
+      metadataHeight,
+    };
+  }
+
+  const previewScale = Math.min(1, maxPreviewSide / Math.max(metadataWidth, metadataHeight));
+
+  return {
+    processingWidth: Math.max(1, Math.round(metadataWidth * previewScale)),
+    processingHeight: Math.max(1, Math.round(metadataHeight * previewScale)),
+    metadataWidth,
+    metadataHeight,
   };
 };
 

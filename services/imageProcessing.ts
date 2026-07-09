@@ -6,10 +6,18 @@ import {
   processImageInWorker,
   ProcessImageWorkerOptions,
 } from './imageProcessingWorkerClient';
+import { buildUpscaleMetadata } from './upscaleEngine';
 // @ts-ignore
 import ImageTracer from 'imagetracerjs';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
+
+const legacyUpscaleMetadata = () => buildUpscaleMetadata(
+  TARGET_WIDTH,
+  TARGET_HEIGHT,
+  TARGET_WIDTH,
+  TARGET_HEIGHT,
+);
 
 export const loadImage = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
@@ -577,7 +585,7 @@ const processImageOnMainThread = async (
             
             const blob = new Blob([svgString], { type: 'image/svg+xml' });
             const url = URL.createObjectURL(blob);
-            resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT });
+            resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata() });
         } else {
              // Fallback if context fails
              resolve(exportRaster(canvas, settings));
@@ -736,7 +744,8 @@ const exportRaster = async (canvas: HTMLCanvasElement, settings: ProcessingSetti
          url: pdfUrl,
          previewUrl: previewUrl,
          width: TARGET_WIDTH,
-         height: TARGET_HEIGHT
+         height: TARGET_HEIGHT,
+         upscale: legacyUpscaleMetadata()
      };
   }
 
@@ -761,7 +770,7 @@ const exportRaster = async (canvas: HTMLCanvasElement, settings: ProcessingSetti
             (blob) => {
                 if (!blob) throw new Error("Failed");
                 const url = URL.createObjectURL(blob);
-                resolve({blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT});
+                resolve({blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata()});
             },
             'image/jpeg',
             0.9
@@ -780,13 +789,13 @@ const exportRaster = async (canvas: HTMLCanvasElement, settings: ProcessingSetti
       </svg>`;
       const blob = new Blob([svgString], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
-      resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT });
+      resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata() });
     } else {
       canvas.toBlob(
         (blob) => {
           if (!blob) throw new Error('Failed to generate blob');
           const url = URL.createObjectURL(blob);
-          resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT });
+          resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata() });
         },
         mimeType,
         0.9
