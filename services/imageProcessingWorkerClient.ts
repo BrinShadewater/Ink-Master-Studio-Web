@@ -1,4 +1,5 @@
 import { ProcessingSettings, ProcessedResult } from '../types';
+import { dataUrlToBlob } from './dataUrls';
 
 export interface ProcessingProgress {
   percent: number;
@@ -41,6 +42,7 @@ export interface ProcessImageWorkerOptions {
 
 const imageSourceToBlob = async (imageSource: string | HTMLImageElement): Promise<Blob> => {
   if (typeof imageSource === 'string') {
+    if (imageSource.startsWith('data:')) return dataUrlToBlob(imageSource);
     const response = await fetch(imageSource);
     if (!response.ok) throw new Error('Could not read artwork for processing.');
     return response.blob();

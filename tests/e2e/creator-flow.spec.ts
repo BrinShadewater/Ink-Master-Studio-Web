@@ -82,7 +82,11 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
   await page.getByRole('button', { name: 'Keep as uploaded' }).click();
 
   const downloadButton = page.getByRole('button', { name: 'Download print file' });
-  await expect(downloadButton).toBeEnabled({ timeout: 60_000 });
+  try {
+    await expect(downloadButton).toBeEnabled({ timeout: 60_000 });
+  } catch {
+    throw new Error(`Print-file processing did not complete. Browser errors: ${browserErrors.join(' | ') || 'none'}`);
+  }
   expect(Date.now() - startedAt).toBeLessThan(60_000);
 
   await page.getByRole('button', { name: 'Preview on product' }).click();
@@ -113,6 +117,7 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
 });
 
 test('keeps processing cancellable while the worker is busy', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
   await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
     contentType: 'application/javascript',
     body: 'self.onmessage = () => {};',
@@ -128,6 +133,7 @@ test('keeps processing cancellable while the worker is busy', async ({ page }) =
 });
 
 test('shows a retry when the worker stalls', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker timeout simulation is local-only.');
   await page.clock.install();
   await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
     contentType: 'application/javascript',
