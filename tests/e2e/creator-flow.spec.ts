@@ -1,0 +1,146 @@
+import { expect, Page, test } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+
+const createPngFixture = async (page: Page, width: number, height: number): Promise<Buffer> => {
+  const bytes = await page.evaluate(async ({ fixtureWidth, fixtureHeight }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = fixtureWidth;
+    canvas.height = fixtureHeight;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+    const gradient = context.createLinearGradient(0, 0, fixtureWidth, fixtureHeight);
+    gradient.addColorStop(0, '#17345f');
+    gradient.addColorStop(1, '#f2b84b');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, fixtureWidth, fixtureHeight);
+    context.fillStyle = '#f8fafc';
+    context.fillRect(
+      Math.round(fixtureWidth * 0.2),
+      Math.round(fixtureHeight * 0.2),
+      Math.round(fixtureWidth * 0.6),
+      Math.round(fixtureHeight * 0.6),
+    );
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => result ? resolve(result) : reject(new Error('PNG fixture failed.')), 'image/png');
+    });
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  }, { fixtureWidth: width, fixtureHeight: height });
+  return Buffer.from(bytes);
+};
+
+const readPng = (buffer: Buffer) => {
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = -1;
+  let pixelsPerMeter: [number, number] | null = null;
+
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    const dataStart = offset + 8;
+    if (type === 'IHDR') {
+      width = buffer.readUInt32BE(dataStart);
+      height = buffer.readUInt32BE(dataStart + 4);
+      colorType = buffer[dataStart + 9];
+    }
+    if (type === 'pHYs') {
+      pixelsPerMeter = [
+        buffer.readUInt32BE(dataStart),
+        buffer.readUInt32BE(dataStart + 4),
+      ];
+    }
+    offset += length + 12;
+    if (type === 'IEND') break;
+  }
+
+  return { width, height, colorType, pixelsPerMeter };
+};
+
+const uploadFixture = async (page: Page, width: number, height: number, name: string) => {
+  const buffer = await createPngFixture(page, width, height);
+  await page.locator('input[type="file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer,
+  });
+};
+
+test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+
+  await page.goto('/');
+  const startedAt = Date.now();
+  await uploadFixture(page, 2500, 3000, 'acceptance-art.png');
+
+  await expect(page.getByText('Upscaled 1.8x from 2500 x 3000px. Good for this selected size.')).toBeVisible();
+  await expect(page.getByText('Background detected')).toBeVisible();
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+
+  const downloadButton = page.getByRole('button', { name: 'Download print file' });
+  await expect(downloadButton).toBeEnabled({ timeout: 60_000 });
+  expect(Date.now() - startedAt).toBeLessThan(60_000);
+
+  await page.getByRole('button', { name: 'Preview on product' }).click();
+  await expect(page.getByAltText('T-shirt (full front) mockup preview')).toBeVisible({ timeout: 30_000 });
+  await expect(downloadButton).toBeEnabled();
+
+  const downloadPromise = page.waitForEvent('download');
+  await downloadButton.click();
+  const download = await downloadPromise;
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const output = Buffer.concat(chunks);
+  const png = readPng(output);
+  if (process.env.INKMASTER_E2E_EXPORT_PATH) {
+    await writeFile(process.env.INKMASTER_E2E_EXPORT_PATH, output);
+  }
+
+  expect(download.suggestedFilename()).toMatch(/acceptance-art_tee-front-full\.png$/);
+  expect(output.byteLength).toBeLessThan(100_000_000);
+  expect(png).toEqual({
+    width: 4500,
+    height: 5400,
+    colorType: 6,
+    pixelsPerMeter: [11811, 11811],
+  });
+  expect(browserErrors).toEqual([]);
+});
+
+test('keeps processing cancellable while the worker is busy', async ({ page }) => {
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'self.onmessage = () => {};',
+  }));
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'cancel-art.png');
+
+  const cancelButton = page.getByRole('button', { name: 'Cancel' });
+  await expect(cancelButton).toBeVisible();
+  await cancelButton.click();
+  await expect(page.getByText('Preview build was cancelled.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New file' })).toBeEnabled();
+});
+
+test('shows a retry when the worker stalls', async ({ page }) => {
+  await page.clock.install();
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'self.onmessage = () => {};',
+  }));
+  await page.goto('/');
+  await uploadFixture(page, 800, 900, 'stalled-art.png');
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+
+  await page.clock.fastForward(120_001);
+  await expect(page.getByText('Image processing stalled. Try again or use a smaller source file.')).toBeVisible();
+  const retryButton = page.getByRole('button', { name: 'Retry processing' });
+  await expect(retryButton).toBeVisible();
+  await retryButton.click();
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+});

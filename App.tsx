@@ -187,6 +187,7 @@ const App: React.FC = () => {
   const [stage, setStage] = useState<WorkspaceStage>('goal');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
+  const [processingRetryToken, setProcessingRetryToken] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [palette, setPalette] = useState<string[]>([]);
@@ -338,6 +339,11 @@ const App: React.FC = () => {
     () => printify.products.find((product) => product.id === selectedPrintifyProductId) ?? printify.products[0],
     [selectedPrintifyProductId],
   );
+  const canRetryProcessing = Boolean(
+    originalImage
+    && error
+    && /processing stalled|worker|background image processing/i.test(error),
+  );
 
   useEffect(() => {
     localStorage.setItem(ADVANCED_MODE_STORAGE_KEY, String(advancedMode));
@@ -453,7 +459,7 @@ const App: React.FC = () => {
       window.clearTimeout(timer);
       processingAbortRef.current?.abort();
     };
-  }, [originalImage, settings]);
+  }, [originalImage, settings, processingRetryToken]);
 
   const handleCancelProcessing = () => {
     processingAbortRef.current?.abort();
@@ -461,6 +467,12 @@ const App: React.FC = () => {
     setIsProcessing(false);
     setProcessingProgress(null);
     setError('Preview build was cancelled.');
+  };
+
+  const handleRetryProcessing = () => {
+    if (!originalImage) return;
+    setError(null);
+    setProcessingRetryToken((token) => token + 1);
   };
 
   const addToHistory = (state: AppState) => {
@@ -1250,7 +1262,18 @@ const App: React.FC = () => {
           onAdvancedMode={() => setAdvancedMode(true)}
         />
         {error && (
-          <div className="fixed left-3 right-3 top-16 z-40 rounded-lg border border-rose-500/30 bg-rose-950/90 px-4 py-3 text-xs text-rose-200 shadow-xl">{error}</div>
+          <div className="fixed left-3 right-3 top-16 z-40 flex items-center justify-between gap-3 rounded-lg border border-rose-500/30 bg-rose-950/90 px-4 py-3 text-xs text-rose-200 shadow-xl">
+            <span>{error}</span>
+            {canRetryProcessing && (
+              <button
+                type="button"
+                onClick={handleRetryProcessing}
+                className="flex-none rounded-md border border-rose-300/40 px-3 py-1.5 font-black text-rose-100 hover:border-rose-200 hover:text-white"
+              >
+                Retry processing
+              </button>
+            )}
+          </div>
         )}
         {showJobs && (
           <JobLibrary
@@ -1425,7 +1448,18 @@ const App: React.FC = () => {
               </div>
             )}
             {error && (
-              <div className="absolute left-3 right-3 top-3 z-40 rounded-lg border border-rose-500/30 bg-rose-950/90 px-4 py-3 text-xs text-rose-200 shadow-xl">{error}</div>
+              <div className="absolute left-3 right-3 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-rose-500/30 bg-rose-950/90 px-4 py-3 text-xs text-rose-200 shadow-xl">
+                <span>{error}</span>
+                {canRetryProcessing && (
+                  <button
+                    type="button"
+                    onClick={handleRetryProcessing}
+                    className="flex-none rounded-md border border-rose-300/40 px-3 py-1.5 font-black text-rose-100 hover:border-rose-200 hover:text-white"
+                  >
+                    Retry processing
+                  </button>
+                )}
+              </div>
             )}
             {processedResult ? (
               <Preview

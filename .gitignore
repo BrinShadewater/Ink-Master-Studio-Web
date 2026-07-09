@@ -12,6 +12,8 @@ dist
 dist-ssr
 .vercel
 *.local
+playwright-report
+test-results
 
 # Editor directories and files
 .vscode/*

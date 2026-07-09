@@ -129,6 +129,7 @@ Keep the tool practical and production-minded. Every control should help someone
 ## ✅ Review Checklist
 
 - Run `npm test`; it includes strict TypeScript checking, production build verification, and the Node test suite.
+- Run `npm run verify` before deployment; it adds the Chromium creator-flow acceptance suite, including export metadata, cancellation, and worker timeout recovery.
 - Run `npm audit --audit-level=high`.
 - Test uploads with safe sample files.
 - Create, reload, duplicate, archive, export, and import a local job.

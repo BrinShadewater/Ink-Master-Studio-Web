@@ -11,7 +11,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && node --test tests/production-styles.test.mjs && tsx --test tests/*.test.ts"
+    "test": "npm run typecheck && npm run build && node --test tests/production-styles.test.mjs && tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "verify": "npm test && npm run test:e2e"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
@@ -22,6 +24,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
