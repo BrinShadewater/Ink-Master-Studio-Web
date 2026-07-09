@@ -207,6 +207,58 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
   expect(browserErrors).toEqual([]);
 });
 
+const expectedPixelsPerMeter = (dpi: number): [number, number] => {
+  const value = Math.round(dpi / 0.0254);
+  return [value, value];
+};
+
+const presetCases = [
+  { button: 'T-shirt', source: [2500, 3000], output: [4500, 5400], dpi: 300, filename: /matrix-t-shirt_tee-front-full\.png$/ },
+  { button: 'Hoodie', source: [1800, 1200], output: [3531, 2352], dpi: 300, filename: /matrix-hoodie_hoodie-front\.png$/ },
+  { button: 'Mug', source: [1200, 560], output: [2475, 1155], dpi: 300, filename: /matrix-mug_mug-wrap\.png$/ },
+  { button: 'Poster', source: [1600, 2400], output: [3600, 5400], dpi: 300, filename: /matrix-poster_poster-12x18\.png$/ },
+  { button: 'Blanket', source: [2500, 3000], output: [7825, 9325], dpi: 150, filename: /matrix-blanket_large-format\.png$/ },
+] as const;
+
+for (const preset of presetCases) {
+  test(`Printify preset export matrix: ${preset.button}`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const startedAt = Date.now();
+
+    await page.goto('/');
+    await uploadFixture(
+      page,
+      preset.source[0],
+      preset.source[1],
+      `matrix-${preset.button.toLowerCase()}.png`,
+    );
+    await page.getByRole('button', { name: new RegExp(preset.button) }).click();
+    await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+
+    const downloadButton = page.getByRole('button', { name: 'Download print file' });
+    await expect(downloadButton).toBeEnabled({ timeout: 60_000 });
+
+    const downloadPromise = page.waitForEvent('download');
+    await downloadButton.click();
+    const download = await downloadPromise;
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const output = Buffer.concat(chunks);
+    const png = readPng(output);
+    const elapsed = Date.now() - startedAt;
+    test.info().annotations.push({ type: 'elapsed-ms', description: `${elapsed}` });
+
+    expect(download.suggestedFilename()).toMatch(preset.filename);
+    expect(output.byteLength).toBeLessThan(100_000_000);
+    expect(png.width).toBe(preset.output[0]);
+    expect(png.height).toBe(preset.output[1]);
+    expect([2, 6]).toContain(png.colorType);
+    expect(png.pixelsPerMeter).toEqual(expectedPixelsPerMeter(preset.dpi));
+    if (preset.button === 'T-shirt') expect(elapsed).toBeLessThan(60_000);
+  });
+}
+
 test('keeps processing cancellable while the worker is busy', async ({ page }) => {
   test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
   await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
