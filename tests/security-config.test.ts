@@ -12,14 +12,14 @@ test('nginx CSP stays aligned with the Vercel production security boundary', () 
   assert.match(nginx, /Strict-Transport-Security "max-age=63072000; includeSubDomains"/);
   assert.match(nginx, /object-src 'none'/);
   assert.match(nginx, /frame-ancestors 'none'/);
-  assert.match(nginx, /connect-src 'self'/);
+  assert.match(nginx, /connect-src 'self' blob:/);
   assert.match(nginx, /script-src 'self' 'sha256-MlGPWVQunVQdKVk7ydY\/ii\+V7PU\/v\+Meb2rLkn4l4G4='/);
   assert.doesNotMatch(nginx, /generativelanguage\.googleapis\.com/);
   assert.doesNotMatch(nginx, /cdn\.tailwindcss\.com/);
 
   assert.match(vercel, /"X-Frame-Options", "value": "DENY"/);
   assert.match(vercel, /"Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains"/);
-  assert.match(vercel, /connect-src 'self'/);
+  assert.match(vercel, /connect-src 'self' blob:/);
   assert.match(vercel, /script-src 'self' 'sha256-MlGPWVQunVQdKVk7ydY\/ii\+V7PU\/v\+Meb2rLkn4l4G4='/);
   assert.doesNotMatch(vercel, /generativelanguage\.googleapis\.com/);
 });
