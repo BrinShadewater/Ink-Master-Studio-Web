@@ -1,4 +1,6 @@
-export type UpscaleQualityLevel = 'ready' | 'good' | 'caution' | 'stop';
+import { calculateUpscaleRatio } from './upscaleEngine';
+
+export type UpscaleQualityLevel = 'ready' | 'good' | 'caution' | 'extreme';
 
 export interface UpscaleQualityAssessment {
   ratio: number;
@@ -24,7 +26,7 @@ export const assessUpscaleQuality = (
     };
   }
 
-  const rawRatio = Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight, 1);
+  const rawRatio = calculateUpscaleRatio(sourceWidth, sourceHeight, targetWidth, targetHeight);
   const ratio = formatRatio(rawRatio);
   if (rawRatio <= 1.05) {
     return {
@@ -55,8 +57,8 @@ export const assessUpscaleQuality = (
 
   return {
     ratio,
-    level: 'stop',
-    blocksDownload: true,
-    detail: `This source is too small for a reliable full-size print. Use an image at least ${Math.ceil(targetWidth / 4)} x ${Math.ceil(targetHeight / 4)}px.`,
+    level: 'extreme',
+    blocksDownload: false,
+    detail: `This image needs ${ratio}x enlargement. Download is allowed, but fine detail may look soft or artificial.`,
   };
 };

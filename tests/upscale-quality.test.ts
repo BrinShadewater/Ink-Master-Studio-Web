@@ -20,21 +20,22 @@ test('warns without blocking when enlargement may look soft', () => {
   });
 });
 
-test('blocks an extreme enlargement and names the minimum source size', () => {
+test('allows extreme enlargement with a strong warning', () => {
   assert.deepEqual(assessUpscaleQuality(900, 1080, 4500, 5400), {
     ratio: 5,
-    level: 'stop',
-    blocksDownload: true,
-    detail: 'This source is too small for a reliable full-size print. Use an image at least 1125 x 1350px.',
+    level: 'extreme',
+    blocksDownload: false,
+    detail:
+      'This image needs 5x enlargement. Download is allowed, but fine detail may look soft or artificial.',
   });
 });
 
-test('does not round an enlargement over the stop boundary down to 4x', () => {
+test('does not round an enlargement over the extreme boundary down to 4x', () => {
   const assessment = assessUpscaleQuality(1114, 1337, 4500, 5400);
 
   assert.equal(assessment.ratio, 4);
-  assert.equal(assessment.level, 'stop');
-  assert.equal(assessment.blocksDownload, true);
+  assert.equal(assessment.level, 'extreme');
+  assert.equal(assessment.blocksDownload, false);
 });
 
 test('reports when the source already fits the target', () => {
