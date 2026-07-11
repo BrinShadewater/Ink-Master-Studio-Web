@@ -684,6 +684,11 @@ const App: React.FC = () => {
         targetWidth: selectedPrintifyProduct.px[0],
         targetHeight: selectedPrintifyProduct.px[1],
         targetDpi: selectedPrintifyProduct.dpi,
+        designScalePercent: 100,
+        designOffsetXPercent: 0,
+        designOffsetYPercent: 0,
+        designRotationDegrees: 0,
+        canvasBackground: 'transparent',
       };
       const next = {
         image: dataUrl,
@@ -1179,6 +1184,11 @@ const App: React.FC = () => {
       targetWidth: product.px[0],
       targetHeight: product.px[1],
       targetDpi: product.dpi,
+      designScalePercent: 100,
+      designOffsetXPercent: 0,
+      designOffsetYPercent: 0,
+      designRotationDegrees: 0,
+      canvasBackground: 'transparent',
     };
     handleSettingsChange(nextSettings, true);
     updateCurrentJob((job) => ({
@@ -1332,6 +1342,8 @@ const App: React.FC = () => {
           selectedProduct={selectedPrintifyProduct}
           products={printify.products}
           onProductChange={handleProductChange}
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
           onDownload={handleDownloadPrintFile}
           onCancelProcessing={handleCancelProcessing}
           onAdvancedMode={() => setAdvancedMode(true)}

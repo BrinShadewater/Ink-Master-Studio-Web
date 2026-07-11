@@ -157,6 +157,73 @@ test('allows extreme enlargement after showing a strong warning', async ({ page 
   await downloadPromise;
 });
 
+test('offers creator placement controls before download', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  const exportSettings: Array<Record<string, unknown>> = [];
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith('export-settings:')) {
+      exportSettings.push(JSON.parse(text.replace('export-settings:', '')));
+    }
+  });
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        if (settings.purpose === 'export') console.log('export-settings:' + JSON.stringify(settings));
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#223344';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: {
+            method: 'none',
+            ratio: 1,
+            sourceSize: [2500, 3000],
+            targetSize: [4500, 5400],
+          },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'placement-art.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+  await expect(page.getByText('Position and size')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Fill' }).click();
+  await page.getByLabel('Scale').fill('125');
+  await page.getByLabel('Horizontal position').fill('10');
+  await page.getByLabel('Vertical position').fill('-8');
+  await page.getByLabel('Rotate').fill('12');
+  await page.getByRole('button', { name: 'Black' }).click();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download print file' }).click();
+  await downloadPromise;
+
+  expect(exportSettings.at(-1)).toMatchObject({
+    resizeMode: 'COVER',
+    designScalePercent: 125,
+    designOffsetXPercent: 10,
+    designOffsetYPercent: -8,
+    designRotationDegrees: 12,
+    preserveTransparency: false,
+    shirtColor: 'NONE',
+    canvasBackground: 'black',
+  });
+});
+
 test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));

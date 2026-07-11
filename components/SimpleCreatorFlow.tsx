@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArtworkAnalysis, ProcessedResult } from '../types';
+import { ArtworkAnalysis, OutputFormat, ProcessedResult, ProcessingSettings, ResizeMode, ShirtColor } from '../types';
 import { MAX_FILE_SIZE_MB, MAX_SVG_SIZE_MB } from '../constants';
 import { PrintifyProductPreset, printify } from '../specs/printify';
 import { ProcessingProgress } from '../services/imageProcessingWorkerClient';
@@ -19,6 +19,8 @@ interface SimpleCreatorFlowProps {
   selectedProduct: PrintifyProductPreset;
   products: PrintifyProductPreset[];
   onProductChange: (product: PrintifyProductPreset) => void;
+  settings: ProcessingSettings;
+  onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
   onDownload: () => void | Promise<void>;
   onCancelProcessing: () => void;
   onAdvancedMode: () => void;
@@ -38,6 +40,8 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   selectedProduct,
   products,
   onProductChange,
+  settings,
+  onSettingsChange,
   onDownload,
   onCancelProcessing,
   onAdvancedMode,
@@ -57,6 +61,39 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const previewMockup = ['tee-front-full', 'hoodie-front', 'mug-wrap'].includes(selectedProduct.id)
     ? getSimpleMockupForItemType(selectedProduct.itemType)
     : undefined;
+  const updateSetting = <K extends keyof ProcessingSettings>(
+    key: K,
+    value: ProcessingSettings[K],
+    commit = true,
+  ) => onSettingsChange({ ...settings, [key]: value }, commit);
+  const resetPlacement = () => onSettingsChange({
+    ...settings,
+    resizeMode: ResizeMode.FIT,
+    designScalePercent: 100,
+    designOffsetXPercent: 0,
+    designOffsetYPercent: 0,
+    designRotationDegrees: 0,
+  }, true);
+  const setBackground = (mode: 'transparent' | 'white' | 'black') => {
+    if (mode === 'transparent') {
+      onSettingsChange({
+        ...settings,
+        format: OutputFormat.PNG,
+        preserveTransparency: true,
+        shirtColor: ShirtColor.NONE,
+        canvasBackground: 'transparent',
+      }, true);
+      return;
+    }
+
+    onSettingsChange({
+      ...settings,
+      format: OutputFormat.PNG,
+      preserveTransparency: false,
+      shirtColor: ShirtColor.NONE,
+      canvasBackground: mode,
+    }, true);
+  };
 
   useEffect(() => {
     setBackgroundChoice(null);
@@ -219,6 +256,145 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-slate-800 px-4 py-4">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-black text-white">Position and size</h2>
+                  <button type="button" onClick={resetPlacement} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+                    Reset
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('resizeMode', ResizeMode.FIT)}
+                    className={`rounded-lg border px-3 py-2 text-xs font-black ${settings.resizeMode === ResizeMode.FIT ? 'border-indigo-400 bg-indigo-500/15 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-white'}`}
+                  >
+                    Fit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('resizeMode', ResizeMode.COVER)}
+                    className={`rounded-lg border px-3 py-2 text-xs font-black ${settings.resizeMode === ResizeMode.COVER ? 'border-indigo-400 bg-indigo-500/15 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-white'}`}
+                  >
+                    Fill
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+                    <span className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-300">
+                      Scale
+                      <span className="font-mono text-slate-500">{settings.designScalePercent ?? 100}%</span>
+                    </span>
+                    <input
+                      aria-label="Scale"
+                      type="number"
+                      min={10}
+                      max={300}
+                      step={1}
+                      value={settings.designScalePercent ?? 100}
+                      onChange={(event) => updateSetting('designScalePercent', Number(event.target.value), false)}
+                      onBlur={(event) => updateSetting('designScalePercent', Number(event.currentTarget.value))}
+                      className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                    />
+                  </label>
+                  <label className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+                    <span className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-300">
+                      Rotate
+                      <span className="font-mono text-slate-500">{settings.designRotationDegrees ?? 0}°</span>
+                    </span>
+                    <input
+                      aria-label="Rotate"
+                      type="number"
+                      min={-180}
+                      max={180}
+                      step={1}
+                      value={settings.designRotationDegrees ?? 0}
+                      onChange={(event) => updateSetting('designRotationDegrees', Number(event.target.value), false)}
+                      onBlur={(event) => updateSetting('designRotationDegrees', Number(event.currentTarget.value))}
+                      className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                    />
+                  </label>
+                  <label className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+                    <span className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-300">
+                      Horizontal position
+                      <span className="font-mono text-slate-500">{settings.designOffsetXPercent ?? 0}%</span>
+                    </span>
+                    <input
+                      aria-label="Horizontal position"
+                      type="number"
+                      min={-50}
+                      max={50}
+                      step={1}
+                      value={settings.designOffsetXPercent ?? 0}
+                      onChange={(event) => updateSetting('designOffsetXPercent', Number(event.target.value), false)}
+                      onBlur={(event) => updateSetting('designOffsetXPercent', Number(event.currentTarget.value))}
+                      className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                    />
+                  </label>
+                  <label className="block rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+                    <span className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-300">
+                      Vertical position
+                      <span className="font-mono text-slate-500">{settings.designOffsetYPercent ?? 0}%</span>
+                    </span>
+                    <input
+                      aria-label="Vertical position"
+                      type="number"
+                      min={-50}
+                      max={50}
+                      step={1}
+                      value={settings.designOffsetYPercent ?? 0}
+                      onChange={(event) => updateSetting('designOffsetYPercent', Number(event.target.value), false)}
+                      onBlur={(event) => updateSetting('designOffsetYPercent', Number(event.currentTarget.value))}
+                      className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ['Top', 0],
+                    ['Center', null],
+                    ['Bottom', 25],
+                  ].map(([label, value]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        if (value === null) {
+                          onSettingsChange({ ...settings, designOffsetXPercent: 0, designOffsetYPercent: 0 }, true);
+                        } else {
+                          updateSetting('designOffsetYPercent', Number(value));
+                        }
+                      }}
+                      className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-white">Background</h2>
+                <div className="mt-3 grid gap-2">
+                  {[
+                    { id: 'transparent' as const, label: 'Transparent', active: settings.preserveTransparency },
+                    { id: 'white' as const, label: 'White', active: !settings.preserveTransparency && settings.canvasBackground === 'white' },
+                    { id: 'black' as const, label: 'Black', active: !settings.preserveTransparency && settings.canvasBackground === 'black' },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setBackground(option.id)}
+                      className={`rounded-lg border px-3 py-2 text-left text-xs font-black ${option.active ? 'border-indigo-400 bg-indigo-500/15 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-white'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

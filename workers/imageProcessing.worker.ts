@@ -13,6 +13,7 @@ import {
   planProgressiveResize,
   type UpscaleResultMetadata,
 } from '../services/upscaleEngine';
+import { calculateDesignPlacement } from '../services/designPlacement';
 // @ts-ignore
 import ImageTracer from 'imagetracerjs';
 // @ts-ignore
@@ -494,6 +495,10 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
   postProgress(id, 18, 'Sizing artwork');
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
+  if (!settings.preserveTransparency) {
+    context.fillStyle = settings.canvasBackground === 'black' ? '#000000' : '#ffffff';
+    context.fillRect(0, 0, targetWidth, targetHeight);
+  }
 
   if (settings.resizeMode === ResizeMode.TILE) {
     const pattern = context.createPattern(image, 'repeat');
@@ -504,49 +509,38 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
       context.drawImage(image, 0, 0, targetWidth, targetHeight);
     }
   } else {
-    let drawWidth: number;
-    let drawHeight: number;
-    let offsetX: number;
-    let offsetY: number;
-
     let sourceForDraw: DrawableImageSource = image;
     let shouldCloseSourceForDraw = false;
+    const placement = calculateDesignPlacement({
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+      targetWidth,
+      targetHeight,
+      resizeMode: settings.resizeMode,
+      allowUpscaling: settings.allowUpscaling,
+      edit: settings,
+    });
 
-    if (settings.resizeMode === ResizeMode.STRETCH) {
-      drawWidth = targetWidth;
-      drawHeight = targetHeight;
-      offsetX = 0;
-      offsetY = 0;
-    } else if (settings.resizeMode === ResizeMode.COVER) {
-      const scale = Math.max(targetWidth / image.width, targetHeight / image.height);
-      if (scale > 1.05 && settings.purpose !== 'preview') {
-        sourceForDraw = await progressivelyResize(id, image, scale);
-        shouldCloseSourceForDraw = sourceForDraw !== image;
-        drawWidth = sourceForDraw.width;
-        drawHeight = sourceForDraw.height;
-      } else {
-        drawWidth = image.width * scale;
-        drawHeight = image.height * scale;
-      }
-      offsetX = (targetWidth - drawWidth) / 2;
-      offsetY = (targetHeight - drawHeight) / 2;
-    } else {
-      let scale = Math.min(targetWidth / image.width, targetHeight / image.height);
-      if (!settings.allowUpscaling && scale > 1) scale = 1;
-      if (scale > 1.05 && settings.purpose !== 'preview') {
-        sourceForDraw = await progressivelyResize(id, image, scale);
-        shouldCloseSourceForDraw = sourceForDraw !== image;
-        drawWidth = sourceForDraw.width;
-        drawHeight = sourceForDraw.height;
-      } else {
-        drawWidth = image.width * scale;
-        drawHeight = image.height * scale;
-      }
-      offsetX = (targetWidth - drawWidth) / 2;
-      offsetY = (targetHeight - drawHeight) / 2;
+    if (
+      settings.resizeMode !== ResizeMode.STRETCH
+      && placement.scale > 1.05
+      && settings.purpose !== 'preview'
+    ) {
+      sourceForDraw = await progressivelyResize(id, image, placement.scale);
+      shouldCloseSourceForDraw = sourceForDraw !== image;
     }
 
-    context.drawImage(sourceForDraw, offsetX, offsetY, drawWidth, drawHeight);
+    context.save();
+    context.translate(placement.centerX, placement.centerY);
+    if (placement.rotationRadians !== 0) context.rotate(placement.rotationRadians);
+    context.drawImage(
+      sourceForDraw,
+      -placement.drawWidth / 2,
+      -placement.drawHeight / 2,
+      placement.drawWidth,
+      placement.drawHeight,
+    );
+    context.restore();
     if (shouldCloseSourceForDraw) closeImageSource(sourceForDraw);
   }
 

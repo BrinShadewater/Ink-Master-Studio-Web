@@ -13,6 +13,8 @@ export enum ShirtColor {
   NONE = 'NONE'
 }
 
+export type CanvasBackground = 'transparent' | 'white' | 'black';
+
 export enum ItemType {
   TSHIRT = 'TSHIRT',
   HOODIE = 'HOODIE',
@@ -346,6 +348,11 @@ export interface ProcessingSettings {
   targetHeight?: number;
   targetDpi?: number;
   purpose?: 'preview' | 'export';
+  designScalePercent?: number;
+  designOffsetXPercent?: number;
+  designOffsetYPercent?: number;
+  designRotationDegrees?: number;
+  canvasBackground?: CanvasBackground;
 
   // Smart Background Removal
   bgRemoval: boolean;

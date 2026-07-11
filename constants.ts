@@ -36,6 +36,11 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   targetWidth: TARGET_WIDTH,
   targetHeight: TARGET_HEIGHT,
   targetDpi: 300,
+  designScalePercent: 100,
+  designOffsetXPercent: 0,
+  designOffsetYPercent: 0,
+  designRotationDegrees: 0,
+  canvasBackground: 'transparent',
   
   // Smart Background Removal Defaults
   bgRemoval: false,

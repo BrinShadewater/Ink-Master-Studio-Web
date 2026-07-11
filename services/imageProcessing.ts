@@ -6,6 +6,7 @@ import {
   processImageInWorker,
   ProcessImageWorkerOptions,
 } from './imageProcessingWorkerClient';
+import { calculateDesignPlacement } from './designPlacement';
 import { buildUpscaleMetadata } from './upscaleEngine';
 // @ts-ignore
 import ImageTracer from 'imagetracerjs';
@@ -356,6 +357,10 @@ const processImageOnMainThread = async (
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  if (!settings.preserveTransparency) {
+    ctx.fillStyle = settings.canvasBackground === 'black' ? '#000000' : '#ffffff';
+    ctx.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+  }
 
   if (settings.resizeMode === ResizeMode.TILE) {
      const pattern = ctx.createPattern(img, 'repeat');
@@ -366,37 +371,26 @@ const processImageOnMainThread = async (
         ctx.drawImage(img, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
      }
   } else {
-      let drawWidth: number;
-      let drawHeight: number;
-      let offsetX: number;
-      let offsetY: number;
-
-      if (settings.resizeMode === ResizeMode.STRETCH) {
-        drawWidth = TARGET_WIDTH;
-        drawHeight = TARGET_HEIGHT;
-        offsetX = 0;
-        offsetY = 0;
-      } else if (settings.resizeMode === ResizeMode.COVER) {
-        const scaleX = TARGET_WIDTH / srcWidth;
-        const scaleY = TARGET_HEIGHT / srcHeight;
-        const scale = Math.max(scaleX, scaleY);
-        drawWidth = srcWidth * scale;
-        drawHeight = srcHeight * scale;
-        offsetX = (TARGET_WIDTH - drawWidth) / 2;
-        offsetY = (TARGET_HEIGHT - drawHeight) / 2;
-      } else {
-        // FIT
-        const scaleX = TARGET_WIDTH / srcWidth;
-        const scaleY = TARGET_HEIGHT / srcHeight;
-        let scale = Math.min(scaleX, scaleY);
-        if (!settings.allowUpscaling && scale > 1) scale = 1;
-        drawWidth = srcWidth * scale;
-        drawHeight = srcHeight * scale;
-        offsetX = (TARGET_WIDTH - drawWidth) / 2;
-        offsetY = (TARGET_HEIGHT - drawHeight) / 2;
-      }
-
-      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+      const placement = calculateDesignPlacement({
+        sourceWidth: srcWidth,
+        sourceHeight: srcHeight,
+        targetWidth: TARGET_WIDTH,
+        targetHeight: TARGET_HEIGHT,
+        resizeMode: settings.resizeMode,
+        allowUpscaling: settings.allowUpscaling,
+        edit: settings,
+      });
+      ctx.save();
+      ctx.translate(placement.centerX, placement.centerY);
+      if (placement.rotationRadians !== 0) ctx.rotate(placement.rotationRadians);
+      ctx.drawImage(
+        img,
+        -placement.drawWidth / 2,
+        -placement.drawHeight / 2,
+        placement.drawWidth,
+        placement.drawHeight,
+      );
+      ctx.restore();
   }
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
