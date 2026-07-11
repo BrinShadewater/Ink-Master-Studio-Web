@@ -1,47 +1,48 @@
-# Ink Master Studio Web 🖨️
+# InkMaster Studio Web
 
-Local-first DTG/DTF production workbench for print-shop operators.
+InkMaster Studio turns creator artwork into print-ready PNG files for Printify and print-on-demand shops. The default product flow is intentionally short: drop an image, pick a product preset, review plain-language checks, and download a compliant file.
 
-Ink Master Studio helps turn source artwork into usable previews and production assets: upload artwork, adjust mockup controls, generate exports, track history, and prepare client-facing visuals without leaving the browser. The goal is a practical workbench, not a shiny demo: fewer handoffs, fewer mystery steps, faster proofs.
+The app remains local-first. Uploaded artwork, saved designs, preview results, and export history stay in the browser unless the user downloads a file or chooses optional AI cleanup. Advanced mode keeps the older production suite available for shop workflows without putting that language in the default creator path.
 
-## 👕 What This App Does
+## What This App Does
 
-- Saves named production jobs, artwork, settings, placement, notes, versions, and exports in IndexedDB.
-- Runs deterministic preflight against actual print dimensions, effective DPI, transparency, backgrounds, upscaling, detail, and output format.
-- Stores garment placement in inches with full-front, chest, back, sleeve, youth, and oversized presets.
-- Generates portable `.inkmaster-job` backups, production ZIP packages, print/email proofs, PDFs, mockups, and manifests.
-- Supports multiple named production profiles for local DTG/DTF defaults, with a default profile for new jobs and explicit per-job override.
-- Supports guided batch processing with per-file recipes, preflight findings, warning acknowledgement, cancellation, and combined-order export.
-- Saves portable shop templates separately from artwork-treatment recipes.
-- Uses optional AI-assisted cleanup through a server-side route when configured; core preflight and export decisions remain deterministic.
+- Creates product-sized PNG exports for Printify presets such as t-shirts, hoodies, mugs, posters, and blankets.
+- Runs creator-facing checks for target pixels, DPI metadata, RGB output, transparency, file-size limits, and upscaling quality.
+- Builds a bounded preview first, then generates the full print file only when Download is pressed.
+- Applies local progressive upscaling in a Web Worker and reports honest warnings when artwork needs heavy enlargement.
+- Saves designs locally in IndexedDB for reopening, duplicating, exporting, and importing.
+- Routes optional AI cleanup through server-side APIs so provider keys never enter the browser bundle.
+- Keeps Advanced mode for mockups, proofs, batch prep, production profiles, handoff packages, and shop templates.
 
-## 🧰 Stack
+## Stack
 
 - Vite
 - React 19
 - TypeScript
-- Gemini API integration
-- Image processing utilities
-- PDF/ZIP export helpers
+- Web Workers and canvas image processing
+- PDF and ZIP export helpers
+- Vercel serverless API routes for optional AI cleanup
 
-## 🚦 Repository Status
+## Repository Status
 
-Production-oriented local-first tool. The completed beta focus is jobs → preflight → measured placement → proof/package handoff → batch/templates. Gemini requests remain behind the server-side `/api/edit-image` route; `GEMINI_API_KEY` must never be exposed through a browser-public environment variable.
+Creator-first Printify file prep is the primary product. Advanced production tools are preserved behind the Advanced mode toggle for users who need job libraries, customer proofs, batch exports, production profiles, and handoff packages.
 
-## ⚙️ Local Development
+Gemini requests remain behind the server-side `/api/edit-image` route. `GEMINI_API_KEY` must never be exposed through Vite `define`, `VITE_` variables, or any browser-public path.
+
+## Local Development
 
 Prerequisites:
 
-- Node.js
-- A Gemini API key
+- Node.js 22.12 or newer
+- A Gemini API key only if testing optional AI cleanup
 
-For local development, create `.env.local`:
+For local AI cleanup testing, create `.env.local`:
 
 ```text
 GEMINI_API_KEY=your_key_here
 ```
 
-For Vercel, add `GEMINI_API_KEY` as a server-side environment variable in Project Settings. Do not expose it as a `VITE_` or other public browser variable.
+For Vercel, add `GEMINI_API_KEY` as a server-side environment variable in Project Settings.
 
 Install and run:
 
@@ -62,79 +63,68 @@ Preview:
 npm run preview
 ```
 
-## 🗺️ Project Map
+## Project Map
 
 ```text
-App.tsx                 Main application and current-job orchestration
-components/             Guided workflow, job library, preflight, placement, batch, and export UI
-services/job*           Versioned job model, IndexedDB repository, and portable archives
-services/preflight.ts   Deterministic production checks and export gating
-services/placement.ts   Inch-based presets and calibrated preview conversion
-services/*Package.ts    Production package, proof, naming, and template services
-public/mockups/         Apparel mockup assets
-public/logo/            Brand assets
-PERFORMANCE_SEO_REPORT.md
-SECURITY.md
-nginx.conf
+App.tsx                       Main application and mode routing
+components/SimpleCreatorFlow  Default Drop -> Pick product -> Download flow
+components/WorkflowInspector  Advanced Goal -> Prepare -> Preview -> Export workflow
+components/StaticPages.tsx    Privacy, terms, contact, creator guides, and noindex fallback
+specs/printify.ts             Printify service and product preset data
+services/upscaleEngine.ts     Local upscaling policy, metadata, and resize planning
+services/imageProcessing*     Worker-backed image processing and export pipeline
+services/job*                 Versioned saved-design model, IndexedDB repository, and archives
+api/edit-image.ts             Server-side AI cleanup boundary
+public/mockups/               Product mockup assets
+public/logo/                  Brand assets
 ```
 
-## 🔦 Key Surfaces
+## Default Flow
 
-- `components/Dropzone.tsx` handles artwork intake.
-- `components/WorkflowInspector.tsx` owns the Goal → Prepare → Preview → Export workflow.
-- `components/JobLibrary.tsx` handles reopen, duplicate, archive, transfer, and import.
-- `components/PreflightPanel.tsx` and `components/PlacementPanel.tsx` expose production specifications.
-- `components/Preview.tsx` controls mockup review.
-- `components/BatchProcessor.tsx` applies shared recipe and preflight rules to many files.
-- `api/edit-image.ts`, `services/geminiService.ts`, and `services/imageProcessing.ts` are security- and cost-sensitive.
-- `nginx.conf` mirrors the production security headers for non-Vercel static hosting. Keep it aligned with `vercel.json`.
+1. Drop artwork.
+2. Pick a product preset.
+3. Review checks and download the print file.
 
-## 🏷️ Production Profiles
+The default interface avoids production jargon. It should not mention jobs, proofs, packages, handoff, recipes, or production profiles unless Advanced mode is enabled.
 
-Production profiles are local-first shop defaults for printer name, DTG/DTF method, thresholds, printable areas, package options, and proof defaults. New jobs use the selected default profile; operators can override the profile on a job before export.
+## Advanced Mode
 
-Each job stores an immutable profile snapshot and revision in its IndexedDB job record, so later profile edits do not silently change existing work. When the source profile changes, review the revision update before applying it to the job. Portable `.inkmaster-job` archives remain self-contained because they include the job snapshot.
+Advanced mode is for users who need print-shop workflows:
 
-Profiles can be backed up and imported as JSON from the localStorage key `inkmaster_production_profiles_v1`. Production packages and customer proofs include profile provenance — name, revision, printer when set, and method — while shop templates stay profile-independent operational defaults.
+- Saved jobs, portable `.inkmaster-job` archives, and export history
+- Production profiles and shop templates
+- Customer proof PDFs and local approval tracking
+- Batch prep ZIPs and handoff packages
+- Measured placement, preflight gates, mockup sets, underbase, manifests, and summaries
 
-Beta limitation: profiles do not sync to cloud accounts, printers, RIP queues, ICC profiles, or other workstations.
+These tools are intentionally secondary to the creator-first Printify workflow.
 
-## 📚 Documentation
+## Documentation
 
 - `SECURITY.md`
 - `PERFORMANCE_SEO_REPORT.md`
 - `docs/PROJECT-BRIEF.md`
 - `docs/MAINTENANCE.md`
-- `README.md`
 - `CONTRIBUTING.md`
 - `CHANGELOG.md`
 
-## 🔐 Security Note
+## Security Note
 
-Read `SECURITY.md` before deploying. Gemini is already routed through the server-side `/api/edit-image` function; keep that boundary intact and do not add browser-public key paths. The browser sends fixed cleanup action IDs, not arbitrary Gemini prompts.
+Read `SECURITY.md` before deploying. The browser sends fixed cleanup action IDs, not arbitrary model prompts. Keep AI provider keys server-side and keep upload limits, same-origin checks, and quota controls intact.
 
-## 🧭 Roadmap Boundaries
+## Roadmap Boundaries
 
-Current product scope is local-first DTG/DTF production. The following are intentionally deferred:
+- AI enhancement beyond local upscaling is deferred until provider selection, retention policy, cost controls, privacy copy, and failure fallback are designed.
+- Printful and Gelato preset files can share the same service-spec engine later; Printify is the current preset target.
+- Cloud sync, online comments, and shareable approval links need accounts, storage, permissions, moderation, and audit controls first.
+- Screen-print separations remain a distinct future production mode.
+- Printer, RIP, and ICC synchronization remain outside the local-first scope.
 
-- Cloud sync, online comments, and shareable approval links. Proof approvals are local-only until accounts, storage, permissions, moderation, and audit controls exist.
-- Expanded AI cleanup and edge repair. These require server-side configuration, rate limiting, quotas, billing alerts, and operator-visible failure states.
-- Screen-print separations. Treat this as a distinct future production mode rather than mixing separation controls into DTG/DTF export flows.
-- Printer/RIP/ICC synchronization. Profiles remain local shop defaults and do not connect to printers, RIP queues, or color-management systems.
-
-## 🧵 Working Style
-
-Keep the tool practical and production-minded. Every control should help someone move from artwork to proof faster, with fewer hidden steps.
-
-## ✅ Review Checklist
+## Review Checklist
 
 - Run `npm test`; it includes strict TypeScript checking, production build verification, and the Node test suite.
-- Run `npm run verify` before deployment; it adds the Chromium creator-flow acceptance suite, including export metadata, cancellation, and worker timeout recovery.
+- Run `npm run verify` before deployment; it adds the Chromium creator-flow acceptance suite, including export metadata, cancellation, timeout recovery, and Printify preset exports.
 - Run `npm audit --audit-level=high`.
-- Test uploads with safe sample files.
-- Create, reload, duplicate, archive, export, and import a local job.
-- Review profile manager create/edit/archive/default flows, profile JSON import/export, missing or archived source profile states, and revision update review.
-- Review measured placement, preflight gating, production packages, proofs, templates, and batch exclusions.
-- Confirm production package manifests, summaries, and proofs show profile provenance without embedding full profile snapshots.
+- Test a creator flow: drop artwork, pick a product, download a PNG, and inspect dimensions/DPI.
+- Test Advanced mode after workflow changes: saved design reopen, profile review, proof export, package gating, templates, and batch exclusions.
 - Check that no real client assets or secrets are committed.
-- Re-read `SECURITY.md` for any API, upload, or deployment change.
