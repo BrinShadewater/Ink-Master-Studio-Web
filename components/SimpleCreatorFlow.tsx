@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArtworkAnalysis, OutputFormat, ProcessedResult, ProcessingSettings, ResizeMode, ShirtColor } from '../types';
 import { MAX_FILE_SIZE_MB, MAX_SVG_SIZE_MB } from '../constants';
 import { PrintifyProductPreset, printify } from '../specs/printify';
@@ -6,6 +6,7 @@ import { ProcessingProgress } from '../services/imageProcessingWorkerClient';
 import { assessUpscaleQuality } from '../services/upscaleQuality';
 import { compositeMockup } from '../services/imageProcessing';
 import { getSimpleMockupForItemType } from '../services/mockups';
+import { calculateDesignPlacement } from '../services/designPlacement';
 
 interface SimpleCreatorFlowProps {
   originalImage: string;
@@ -27,6 +28,7 @@ interface SimpleCreatorFlowProps {
 }
 
 const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes > 10 * 1024 * 1024 ? 0 : 1)} MB`;
+const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
 
 export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   originalImage,
@@ -51,6 +53,18 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const [isMockupLoading, setIsMockupLoading] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
   const mockupRunRef = useRef(0);
+  const previewCanvasRef = useRef<HTMLDivElement | null>(null);
+  const interactionRef = useRef<null | {
+    mode: 'move' | 'resize' | 'rotate';
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startScale: number;
+    startOffsetX: number;
+    startOffsetY: number;
+    rotationDelta?: number;
+    lastPatch?: Partial<ProcessingSettings>;
+  }>(null);
   const targetWidth = selectedProduct.px[0];
   const targetHeight = selectedProduct.px[1];
   const sourceWidth = analysis?.width ?? 0;
@@ -61,6 +75,30 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const previewMockup = ['tee-front-full', 'hoodie-front', 'mug-wrap'].includes(selectedProduct.id)
     ? getSimpleMockupForItemType(selectedProduct.itemType)
     : undefined;
+  const designPlacement = useMemo(() => calculateDesignPlacement({
+    sourceWidth: sourceWidth || targetWidth,
+    sourceHeight: sourceHeight || targetHeight,
+    targetWidth,
+    targetHeight,
+    resizeMode: settings.resizeMode,
+    allowUpscaling: settings.allowUpscaling,
+    edit: settings,
+  }), [sourceWidth, sourceHeight, targetWidth, targetHeight, settings]);
+  const previewImageUrl = mockupUrl || originalImage;
+  const previewBackgroundClass = !settings.preserveTransparency && settings.canvasBackground === 'white'
+    ? 'bg-white'
+    : !settings.preserveTransparency && settings.canvasBackground === 'black'
+      ? 'bg-black'
+      : 'bg-[linear-gradient(45deg,#0f172a_25%,transparent_25%),linear-gradient(-45deg,#0f172a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#0f172a_75%),linear-gradient(-45deg,transparent_75%,#0f172a_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0]';
+  const artworkStyle = mockupUrl
+    ? undefined
+    : {
+        width: `${(designPlacement.drawWidth / targetWidth) * 100}%`,
+        height: `${(designPlacement.drawHeight / targetHeight) * 100}%`,
+        left: `${(designPlacement.centerX / targetWidth) * 100}%`,
+        top: `${(designPlacement.centerY / targetHeight) * 100}%`,
+        transform: `translate(-50%, -50%) rotate(${settings.designRotationDegrees ?? 0}deg)`,
+      };
   const updateSetting = <K extends keyof ProcessingSettings>(
     key: K,
     value: ProcessingSettings[K],
@@ -74,6 +112,23 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     designOffsetYPercent: 0,
     designRotationDegrees: 0,
   }, true);
+  const applyPlacementPreset = (preset: 'fit' | 'fill' | 'center' | 'top-chest' | 'full-front') => {
+    const next: ProcessingSettings = {
+      ...settings,
+      resizeMode: preset === 'fill' || preset === 'full-front' ? ResizeMode.COVER : ResizeMode.FIT,
+      designOffsetXPercent: 0,
+      designOffsetYPercent: preset === 'top-chest' ? -18 : 0,
+      designRotationDegrees: preset === 'center' ? 0 : settings.designRotationDegrees,
+      designScalePercent: preset === 'top-chest'
+        ? 58
+        : preset === 'full-front'
+          ? 112
+          : preset === 'center'
+            ? settings.designScalePercent ?? 100
+            : 100,
+    };
+    onSettingsChange(next, true);
+  };
   const setBackground = (mode: 'transparent' | 'white' | 'black') => {
     if (mode === 'transparent') {
       onSettingsChange({
@@ -93,6 +148,92 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
       shirtColor: ShirtColor.NONE,
       canvasBackground: mode,
     }, true);
+  };
+  const commitInteraction = () => {
+    const interaction = interactionRef.current;
+    interactionRef.current = null;
+    onSettingsChange({ ...settings, ...(interaction?.lastPatch ?? {}) }, true);
+  };
+  const updatePlacementDuringInteraction = (next: Partial<ProcessingSettings>) => {
+    if (interactionRef.current) interactionRef.current.lastPatch = next;
+    onSettingsChange({ ...settings, ...next }, false);
+  };
+  const getInteractionPatch = (clientX: number, clientY: number): Partial<ProcessingSettings> | null => {
+    const interaction = interactionRef.current;
+    const rect = previewCanvasRef.current?.getBoundingClientRect();
+    if (!interaction || !rect) return null;
+
+    if (interaction.mode === 'move') {
+      const nextX = clamp(interaction.startOffsetX + ((clientX - interaction.startX) / rect.width) * 100, -50, 50);
+      const nextY = clamp(interaction.startOffsetY + ((clientY - interaction.startY) / rect.height) * 100, -50, 50);
+      return {
+        designOffsetXPercent: Math.round(nextX),
+        designOffsetYPercent: Math.round(nextY),
+      };
+    }
+
+    if (interaction.mode === 'resize') {
+      const delta = ((clientX - interaction.startX) / rect.width + (clientY - interaction.startY) / rect.height) * 120;
+      return {
+        designScalePercent: Math.round(clamp(interaction.startScale + delta, 10, 300)),
+      };
+    }
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const angle = (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
+    return {
+      designRotationDegrees: Math.round(clamp(angle + (interaction.rotationDelta ?? 0), -180, 180)),
+    };
+  };
+  const handleArtworkPointerDown = (event: React.PointerEvent<HTMLDivElement>, mode: 'move' | 'resize' | 'rotate') => {
+    if (mockupUrl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = previewCanvasRef.current?.getBoundingClientRect();
+    const centerX = rect ? rect.left + rect.width / 2 : event.clientX;
+    const centerY = rect ? rect.top + rect.height / 2 : event.clientY;
+    const currentRotation = settings.designRotationDegrees ?? 0;
+    interactionRef.current = {
+      mode,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScale: settings.designScalePercent ?? 100,
+      startOffsetX: settings.designOffsetXPercent ?? 0,
+      startOffsetY: settings.designOffsetYPercent ?? 0,
+      rotationDelta: mode === 'rotate'
+        ? currentRotation - ((Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) / Math.PI)
+        : undefined,
+    };
+
+    const handleDocumentMove = (pointerEvent: PointerEvent) => {
+      if (interactionRef.current?.pointerId !== pointerEvent.pointerId) return;
+      const patch = getInteractionPatch(pointerEvent.clientX, pointerEvent.clientY);
+      if (patch) updatePlacementDuringInteraction(patch);
+    };
+    const handleDocumentUp = (pointerEvent: PointerEvent) => {
+      if (interactionRef.current?.pointerId !== pointerEvent.pointerId) return;
+      document.removeEventListener('pointermove', handleDocumentMove);
+      document.removeEventListener('pointerup', handleDocumentUp);
+      document.removeEventListener('pointercancel', handleDocumentUp);
+      const patch = getInteractionPatch(pointerEvent.clientX, pointerEvent.clientY);
+      if (patch) {
+        interactionRef.current.lastPatch = patch;
+        onSettingsChange({ ...settings, ...patch }, true);
+      } else {
+        commitInteraction();
+      }
+      interactionRef.current = null;
+    };
+    document.addEventListener('pointermove', handleDocumentMove);
+    document.addEventListener('pointerup', handleDocumentUp);
+    document.addEventListener('pointercancel', handleDocumentUp);
+  };
+  const handleArtworkPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (interactionRef.current?.pointerId !== event.pointerId) return;
+    const patch = getInteractionPatch(event.clientX, event.clientY);
+    if (patch) updatePlacementDuringInteraction(patch);
   };
 
   useEffect(() => {
@@ -205,11 +346,65 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
           </div>
           <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-lg bg-slate-950/80 p-4">
-              <img
-                src={mockupUrl || processedResult?.previewUrl || processedResult?.url || originalImage}
-                alt={mockupUrl ? `${selectedProduct.label} mockup preview` : 'Selected artwork preview'}
-                className="max-h-[68dvh] max-w-full object-contain"
-              />
+              <div
+                ref={previewCanvasRef}
+                aria-label="Interactive print placement preview"
+                className={`relative max-h-[68dvh] w-full max-w-[520px] overflow-hidden rounded-md border border-slate-700/80 shadow-2xl ${previewBackgroundClass}`}
+                style={{ aspectRatio: `${targetWidth} / ${targetHeight}` }}
+                onPointerMove={handleArtworkPointerMove}
+              >
+                {!mockupUrl && (
+                  <>
+                    <div className="pointer-events-none absolute inset-[6%] rounded border border-emerald-300/35" />
+                    <div className="pointer-events-none absolute left-1/2 top-0 h-full w-px bg-emerald-300/25" />
+                    <div className="pointer-events-none absolute left-0 top-1/2 h-px w-full bg-emerald-300/25" />
+                    <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-slate-950/80 px-2 py-1 text-[10px] font-black text-emerald-200">
+                      SAFE AREA
+                    </div>
+                  </>
+                )}
+                <div
+                  role="slider"
+                  aria-label="Drag artwork position"
+                  aria-valuetext={`X ${settings.designOffsetXPercent ?? 0} percent, Y ${settings.designOffsetYPercent ?? 0} percent`}
+                  tabIndex={0}
+                  onPointerDown={(event) => handleArtworkPointerDown(event, 'move')}
+                  className={mockupUrl
+                    ? 'absolute inset-0 cursor-default'
+                    : 'absolute cursor-move touch-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-300'}
+                  style={mockupUrl ? undefined : artworkStyle}
+                >
+                  <img
+                    src={previewImageUrl}
+                    alt={mockupUrl ? `${selectedProduct.label} mockup preview` : 'Selected artwork preview'}
+                    draggable={false}
+                    className={mockupUrl ? 'h-full w-full object-contain' : 'h-full w-full select-none object-contain'}
+                  />
+                  {!mockupUrl && (
+                    <>
+                      <span className="pointer-events-none absolute inset-0 border-2 border-indigo-300/80" />
+                    </>
+                  )}
+                </div>
+                {!mockupUrl && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Resize artwork"
+                      onPointerDown={(event) => handleArtworkPointerDown(event, 'resize')}
+                      onPointerMove={handleArtworkPointerMove}
+                      className="absolute bottom-3 right-3 h-7 w-7 cursor-nwse-resize rounded-full border-2 border-slate-950 bg-indigo-300 shadow"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Turn artwork handle"
+                      onPointerDown={(event) => handleArtworkPointerDown(event, 'rotate')}
+                      onPointerMove={handleArtworkPointerMove}
+                      className="absolute left-1/2 top-3 h-7 w-7 -translate-x-1/2 cursor-grab rounded-full border-2 border-slate-950 bg-emerald-300 shadow"
+                    />
+                  </>
+                )}
+              </div>
               {mockupUrl && (
                 <button
                   type="button"
@@ -271,17 +466,17 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => updateSetting('resizeMode', ResizeMode.FIT)}
+                    onClick={() => applyPlacementPreset('fit')}
                     className={`rounded-lg border px-3 py-2 text-xs font-black ${settings.resizeMode === ResizeMode.FIT ? 'border-indigo-400 bg-indigo-500/15 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-white'}`}
                   >
-                    Fit
+                    Fit entire design
                   </button>
                   <button
                     type="button"
-                    onClick={() => updateSetting('resizeMode', ResizeMode.COVER)}
+                    onClick={() => applyPlacementPreset('fill')}
                     className={`rounded-lg border px-3 py-2 text-xs font-black ${settings.resizeMode === ResizeMode.COVER ? 'border-indigo-400 bg-indigo-500/15 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:text-white'}`}
                   >
-                    Fill
+                    Fill print area
                   </button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -354,27 +549,35 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                     />
                   </label>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    ['Top', 0],
-                    ['Center', null],
-                    ['Bottom', 25],
-                  ].map(([label, value]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => {
-                        if (value === null) {
-                          onSettingsChange({ ...settings, designOffsetXPercent: 0, designOffsetYPercent: 0 }, true);
-                        } else {
-                          updateSetting('designOffsetYPercent', Number(value));
-                        }
-                      }}
-                      className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => applyPlacementPreset('center')}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
+                  >
+                    Center
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPlacementPreset('top-chest')}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
+                  >
+                    Top chest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPlacementPreset('full-front')}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
+                  >
+                    Full front
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('designOffsetYPercent', 25)}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-600 hover:text-white"
+                  >
+                    Lower
+                  </button>
                 </div>
               </div>
               <div>

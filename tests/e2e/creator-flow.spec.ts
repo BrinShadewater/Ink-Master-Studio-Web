@@ -201,7 +201,7 @@ test('offers creator placement controls before download', async ({ page }) => {
   await page.getByRole('button', { name: 'Keep as uploaded' }).click();
   await expect(page.getByText('Position and size')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Fill' }).click();
+  await page.getByRole('button', { name: 'Fill print area' }).click();
   await page.getByLabel('Scale').fill('125');
   await page.getByLabel('Horizontal position').fill('10');
   await page.getByLabel('Vertical position').fill('-8');
@@ -222,6 +222,83 @@ test('offers creator placement controls before download', async ({ page }) => {
     shirtColor: 'NONE',
     canvasBackground: 'black',
   });
+});
+
+test('supports visual print placement editing and quick presets', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#28384f';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: {
+            method: 'none',
+            ratio: 1,
+            sourceSize: [2500, 3000],
+            targetSize: [4500, 5400],
+          },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'visual-placement-art.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+  await expect(page.getByLabel('Interactive print placement preview')).toBeVisible();
+  await expect(page.getByText('SAFE AREA')).toBeVisible();
+
+  const resizeHandle = page.getByLabel('Resize artwork');
+  const resizeBox = await resizeHandle.boundingBox();
+  if (!resizeBox) throw new Error('Resize handle was not measurable.');
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 90, resizeBox.y + resizeBox.height / 2 + 90);
+  await page.mouse.up();
+  expect(Number(await page.getByLabel('Scale').inputValue())).toBeGreaterThan(100);
+
+  const rotateHandle = page.getByLabel('Turn artwork handle');
+  const rotateBox = await rotateHandle.boundingBox();
+  const previewBox = await page.getByLabel('Interactive print placement preview').boundingBox();
+  if (!rotateBox || !previewBox) throw new Error('Rotate controls were not measurable.');
+  await page.mouse.move(rotateBox.x + rotateBox.width / 2, rotateBox.y + rotateBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(previewBox.x + previewBox.width - 10, previewBox.y + previewBox.height / 2);
+  await page.mouse.up();
+  expect(Math.abs(Number(await page.getByLabel('Rotate').inputValue()))).toBeGreaterThan(10);
+
+  const artwork = page.getByLabel('Drag artwork position');
+  const artworkBox = await artwork.boundingBox();
+  if (!artworkBox) throw new Error('Artwork preview was not measurable.');
+  await page.mouse.move(artworkBox.x + artworkBox.width / 2, artworkBox.y + artworkBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(artworkBox.x + artworkBox.width / 2 + 80, artworkBox.y + artworkBox.height / 2 + 50);
+  await page.mouse.up();
+  expect(Number(await page.getByLabel('Horizontal position').inputValue())).toBeGreaterThan(0);
+  expect(Number(await page.getByLabel('Vertical position').inputValue())).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Full front' }).click();
+  await expect(page.getByLabel('Scale')).toHaveValue('112');
+  await page.getByRole('button', { name: 'Top chest' }).click();
+  await expect(page.getByLabel('Scale')).toHaveValue('58');
+  await expect(page.getByLabel('Vertical position')).toHaveValue('-18');
+  await page.getByRole('button', { name: 'Center' }).click();
+  await expect(page.getByLabel('Horizontal position')).toHaveValue('0');
+  await expect(page.getByLabel('Vertical position')).toHaveValue('0');
+  await expect(page.getByLabel('Rotate')).toHaveValue('0');
 });
 
 test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
