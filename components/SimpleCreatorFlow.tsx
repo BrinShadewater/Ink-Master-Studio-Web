@@ -22,6 +22,10 @@ interface SimpleCreatorFlowProps {
   onProductChange: (product: PrintifyProductPreset) => void;
   settings: ProcessingSettings;
   onSettingsChange: (settings: ProcessingSettings, commit: boolean) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onDownload: () => void | Promise<void>;
   onCancelProcessing: () => void;
   onAdvancedMode: () => void;
@@ -44,6 +48,10 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   onProductChange,
   settings,
   onSettingsChange,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onDownload,
   onCancelProcessing,
   onAdvancedMode,
@@ -52,6 +60,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const [mockupUrl, setMockupUrl] = useState<string | null>(null);
   const [isMockupLoading, setIsMockupLoading] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'edit' | 'print'>('edit');
   const mockupRunRef = useRef(0);
   const previewCanvasRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<null | {
@@ -84,7 +93,9 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     allowUpscaling: settings.allowUpscaling,
     edit: settings,
   }), [sourceWidth, sourceHeight, targetWidth, targetHeight, settings]);
-  const previewImageUrl = mockupUrl || originalImage;
+  const showingPrintPreview = previewMode === 'print' && Boolean(processedResult) && !mockupUrl;
+  const previewImageUrl = mockupUrl
+    || (showingPrintPreview ? processedResult?.previewUrl || processedResult?.url || originalImage : originalImage);
   const previewBackgroundClass = !settings.preserveTransparency && settings.canvasBackground === 'white'
     ? 'bg-white'
     : !settings.preserveTransparency && settings.canvasBackground === 'black'
@@ -92,6 +103,8 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
       : 'bg-[linear-gradient(45deg,#0f172a_25%,transparent_25%),linear-gradient(-45deg,#0f172a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#0f172a_75%),linear-gradient(-45deg,transparent_75%,#0f172a_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0]';
   const artworkStyle = mockupUrl
     ? undefined
+    : showingPrintPreview
+      ? { inset: 0 }
     : {
         width: `${(designPlacement.drawWidth / targetWidth) * 100}%`,
         height: `${(designPlacement.drawHeight / targetHeight) * 100}%`,
@@ -99,6 +112,18 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
         top: `${(designPlacement.centerY / targetHeight) * 100}%`,
         transform: `translate(-50%, -50%) rotate(${settings.designRotationDegrees ?? 0}deg)`,
       };
+  const artworkFilter = showingPrintPreview || mockupUrl
+    ? undefined
+    : {
+        filter: `brightness(${settings.adjustmentBrightness ?? 100}%) contrast(${settings.adjustmentContrast ?? 100}%) saturate(${settings.adjustmentSaturation ?? 100}%)`,
+        opacity: (settings.adjustmentOpacity ?? 100) / 100,
+      };
+  const cropInsetStyle = {
+    left: `${settings.cropLeftPercent ?? 0}%`,
+    top: `${settings.cropTopPercent ?? 0}%`,
+    right: `${settings.cropRightPercent ?? 0}%`,
+    bottom: `${settings.cropBottomPercent ?? 0}%`,
+  };
   const updateSetting = <K extends keyof ProcessingSettings>(
     key: K,
     value: ProcessingSettings[K],
@@ -111,6 +136,28 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     designOffsetXPercent: 0,
     designOffsetYPercent: 0,
     designRotationDegrees: 0,
+  }, true);
+  const resetCrop = () => onSettingsChange({
+    ...settings,
+    cropLeftPercent: 0,
+    cropTopPercent: 0,
+    cropRightPercent: 0,
+    cropBottomPercent: 0,
+  }, true);
+  const trimEdges = () => onSettingsChange({
+    ...settings,
+    cropLeftPercent: 5,
+    cropTopPercent: 5,
+    cropRightPercent: 5,
+    cropBottomPercent: 5,
+  }, true);
+  const resetAdjustments = () => onSettingsChange({
+    ...settings,
+    adjustmentBrightness: 100,
+    adjustmentContrast: 100,
+    adjustmentSaturation: 100,
+    sharpness: 0,
+    adjustmentOpacity: 100,
   }, true);
   const applyPlacementPreset = (preset: 'fit' | 'fill' | 'center' | 'top-chest' | 'full-front') => {
     const next: ProcessingSettings = {
@@ -187,7 +234,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     };
   };
   const handleArtworkPointerDown = (event: React.PointerEvent<HTMLDivElement>, mode: 'move' | 'resize' | 'rotate') => {
-    if (mockupUrl) return;
+    if (mockupUrl || showingPrintPreview) return;
     event.preventDefault();
     event.stopPropagation();
     const rect = previewCanvasRef.current?.getBoundingClientRect();
@@ -340,12 +387,37 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">Printify file</p>
               <h1 className="truncate text-lg font-black text-white">{sourceName}</h1>
             </div>
-            <button type="button" onClick={onAdvancedMode} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
-              Advanced
-            </button>
+            <div className="flex flex-none items-center gap-2">
+              <button type="button" onClick={onUndo} disabled={!canUndo} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
+                Undo
+              </button>
+              <button type="button" onClick={onRedo} disabled={!canRedo} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
+                Redo
+              </button>
+              <button type="button" onClick={onAdvancedMode} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+                Advanced
+              </button>
+            </div>
           </div>
           <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-lg bg-slate-950/80 p-4">
+              <div className="absolute left-3 top-3 z-10 grid grid-cols-2 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/90 text-[11px] font-black">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('edit')}
+                  className={`px-3 py-2 ${previewMode === 'edit' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Original
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('print')}
+                  disabled={!processedResult}
+                  className={`px-3 py-2 ${previewMode === 'print' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white disabled:text-slate-600'}`}
+                >
+                  Print file
+                </button>
+              </div>
               <div
                 ref={previewCanvasRef}
                 aria-label="Interactive print placement preview"
@@ -353,11 +425,12 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                 style={{ aspectRatio: `${targetWidth} / ${targetHeight}` }}
                 onPointerMove={handleArtworkPointerMove}
               >
-                {!mockupUrl && (
+                {!mockupUrl && !showingPrintPreview && (
                   <>
                     <div className="pointer-events-none absolute inset-[6%] rounded border border-emerald-300/35" />
                     <div className="pointer-events-none absolute left-1/2 top-0 h-full w-px bg-emerald-300/25" />
                     <div className="pointer-events-none absolute left-0 top-1/2 h-px w-full bg-emerald-300/25" />
+                    <div className="pointer-events-none absolute rounded border-2 border-dashed border-amber-300/60 bg-amber-300/5" style={cropInsetStyle} />
                     <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-slate-950/80 px-2 py-1 text-[10px] font-black text-emerald-200">
                       SAFE AREA
                     </div>
@@ -371,6 +444,8 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                   onPointerDown={(event) => handleArtworkPointerDown(event, 'move')}
                   className={mockupUrl
                     ? 'absolute inset-0 cursor-default'
+                    : showingPrintPreview
+                      ? 'absolute cursor-default'
                     : 'absolute cursor-move touch-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-300'}
                   style={mockupUrl ? undefined : artworkStyle}
                 >
@@ -378,15 +453,16 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                     src={previewImageUrl}
                     alt={mockupUrl ? `${selectedProduct.label} mockup preview` : 'Selected artwork preview'}
                     draggable={false}
-                    className={mockupUrl ? 'h-full w-full object-contain' : 'h-full w-full select-none object-contain'}
+                    style={artworkFilter}
+                    className={mockupUrl || showingPrintPreview ? 'h-full w-full object-contain' : 'h-full w-full select-none object-contain'}
                   />
-                  {!mockupUrl && (
+                  {!mockupUrl && !showingPrintPreview && (
                     <>
                       <span className="pointer-events-none absolute inset-0 border-2 border-indigo-300/80" />
                     </>
                   )}
                 </div>
-                {!mockupUrl && (
+                {!mockupUrl && !showingPrintPreview && (
                   <>
                     <button
                       type="button"
@@ -578,6 +654,74 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                   >
                     Lower
                   </button>
+                </div>
+                <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-black text-white">Crop</h2>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={trimEdges} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+                        Trim edges
+                      </button>
+                      <button type="button" onClick={resetCrop} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+                        Reset crop
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    {[
+                      ['Crop left', 'cropLeftPercent'],
+                      ['Crop top', 'cropTopPercent'],
+                      ['Crop right', 'cropRightPercent'],
+                      ['Crop bottom', 'cropBottomPercent'],
+                    ].map(([label, key]) => (
+                      <label key={key} className="block">
+                        <span className="text-[11px] font-black text-slate-300">{label}</span>
+                        <input
+                          aria-label={label}
+                          type="number"
+                          min={0}
+                          max={45}
+                          step={1}
+                          value={Number(settings[key as keyof ProcessingSettings] ?? 0)}
+                          onChange={(event) => updateSetting(key as keyof ProcessingSettings, Number(event.target.value) as never, false)}
+                          onBlur={(event) => updateSetting(key as keyof ProcessingSettings, Number(event.currentTarget.value) as never)}
+                          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-black text-white">Image</h2>
+                    <button type="button" onClick={resetAdjustments} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+                      Reset image
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-5">
+                    {[
+                      ['Brightness', 'adjustmentBrightness', 0, 200],
+                      ['Contrast', 'adjustmentContrast', 0, 200],
+                      ['Saturation', 'adjustmentSaturation', 0, 200],
+                      ['Sharpness', 'sharpness', 0, 100],
+                      ['Opacity', 'adjustmentOpacity', 0, 100],
+                    ].map(([label, key, minimum, maximum]) => (
+                      <label key={key} className="block">
+                        <span className="text-[11px] font-black text-slate-300">{label}</span>
+                        <input
+                          aria-label={String(label)}
+                          type="number"
+                          min={Number(minimum)}
+                          max={Number(maximum)}
+                          step={1}
+                          value={Number(settings[key as keyof ProcessingSettings] ?? (key === 'sharpness' ? 0 : 100))}
+                          onChange={(event) => updateSetting(key as keyof ProcessingSettings, Number(event.target.value) as never, false)}
+                          onBlur={(event) => updateSetting(key as keyof ProcessingSettings, Number(event.currentTarget.value) as never)}
+                          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-indigo-400"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div>

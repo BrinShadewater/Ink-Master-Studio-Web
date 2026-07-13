@@ -353,6 +353,14 @@ export interface ProcessingSettings {
   designOffsetYPercent?: number;
   designRotationDegrees?: number;
   canvasBackground?: CanvasBackground;
+  cropLeftPercent?: number;
+  cropTopPercent?: number;
+  cropRightPercent?: number;
+  cropBottomPercent?: number;
+  adjustmentBrightness?: number;
+  adjustmentContrast?: number;
+  adjustmentSaturation?: number;
+  adjustmentOpacity?: number;
 
   // Smart Background Removal
   bgRemoval: boolean;

@@ -60,6 +60,25 @@ const closeImageSource = (source: DrawableImageSource) => {
   if ('close' in source) source.close();
 };
 
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.max(minimum, Math.min(maximum, value));
+
+const finiteOr = (value: number | undefined, fallback: number) =>
+  Number.isFinite(value) ? Number(value) : fallback;
+
+const normalizeCrop = (settings: ProcessingSettings) => {
+  const left = clamp(finiteOr(settings.cropLeftPercent, 0), 0, 45);
+  const top = clamp(finiteOr(settings.cropTopPercent, 0), 0, 45);
+  const right = clamp(finiteOr(settings.cropRightPercent, 0), 0, 45);
+  const bottom = clamp(finiteOr(settings.cropBottomPercent, 0), 0, 45);
+  return {
+    left,
+    top,
+    right: clamp(right, 0, 90 - left),
+    bottom: clamp(bottom, 0, 90 - top),
+  };
+};
+
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
   const clean = hex.replace('#', '');
   return {
@@ -123,6 +142,41 @@ const applyColorReplacements = async (
 
     if (index > 0 && index % chunkSize === 0) {
       postProgress(id, 34 + (index / data.length) * 6, 'Applying color changes');
+      await yieldToWorker();
+    }
+  }
+};
+
+const applyImageAdjustments = async (
+  id: string,
+  data: Uint8ClampedArray,
+  settings: ProcessingSettings,
+) => {
+  const brightness = clamp(finiteOr(settings.adjustmentBrightness, 100), 0, 200) / 100;
+  const contrast = clamp(finiteOr(settings.adjustmentContrast, 100), 0, 200) / 100;
+  const saturation = clamp(finiteOr(settings.adjustmentSaturation, 100), 0, 200) / 100;
+  const opacity = clamp(finiteOr(settings.adjustmentOpacity, 100), 0, 100) / 100;
+  if (brightness === 1 && contrast === 1 && saturation === 1 && opacity === 1) return;
+
+  const contrastFactor = contrast;
+  const chunkSize = 240_000;
+  for (let index = 0; index < data.length; index += 4) {
+    let r = ((data[index] - 128) * contrastFactor + 128) * brightness;
+    let g = ((data[index + 1] - 128) * contrastFactor + 128) * brightness;
+    let b = ((data[index + 2] - 128) * contrastFactor + 128) * brightness;
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    r = luminance + (r - luminance) * saturation;
+    g = luminance + (g - luminance) * saturation;
+    b = luminance + (b - luminance) * saturation;
+
+    data[index] = clamp(Math.round(r), 0, 255);
+    data[index + 1] = clamp(Math.round(g), 0, 255);
+    data[index + 2] = clamp(Math.round(b), 0, 255);
+    data[index + 3] = clamp(Math.round(data[index + 3] * opacity), 0, 255);
+
+    if (index > 0 && index % chunkSize === 0) {
+      postProgress(id, 42 + (index / data.length) * 8, 'Adjusting artwork');
       await yieldToWorker();
     }
   }
@@ -439,7 +493,7 @@ const exportRaster = async (
 
 const progressivelyResize = async (
   id: string,
-  source: ImageBitmap,
+  source: DrawableImageSource,
   scale: number,
 ): Promise<DrawableImageSource> => {
   const passes = planProgressiveResize(source.width, source.height, scale);
@@ -475,6 +529,19 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
 
   postProgress(id, 5, 'Loading artwork');
   const image = await createImageBitmap(source);
+  const crop = normalizeCrop(settings);
+  const cropX = Math.round((crop.left / 100) * image.width);
+  const cropY = Math.round((crop.top / 100) * image.height);
+  const cropWidth = Math.max(1, Math.round(image.width * (1 - (crop.left + crop.right) / 100)));
+  const cropHeight = Math.max(1, Math.round(image.height * (1 - (crop.top + crop.bottom) / 100)));
+  let sourceImage: DrawableImageSource = image;
+  if (crop.left > 0 || crop.top > 0 || crop.right > 0 || crop.bottom > 0) {
+    const cropCanvas = new OffscreenCanvas(cropWidth, cropHeight);
+    const cropContext = cropCanvas.getContext('2d');
+    if (!cropContext) throw new Error('Could not crop artwork.');
+    cropContext.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+    sourceImage = cropCanvas;
+  }
   const target = getProcessingTargetSize({
     settings,
     defaultWidth: TARGET_WIDTH,
@@ -483,8 +550,8 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
   const targetWidth = target.processingWidth;
   const targetHeight = target.processingHeight;
   const upscale = buildUpscaleMetadata(
-    image.width,
-    image.height,
+    sourceImage.width,
+    sourceImage.height,
     target.metadataWidth,
     target.metadataHeight,
   );
@@ -501,19 +568,19 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
   }
 
   if (settings.resizeMode === ResizeMode.TILE) {
-    const pattern = context.createPattern(image, 'repeat');
+    const pattern = context.createPattern(sourceImage, 'repeat');
     if (pattern) {
       context.fillStyle = pattern;
       context.fillRect(0, 0, targetWidth, targetHeight);
     } else {
-      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+      context.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
     }
   } else {
-    let sourceForDraw: DrawableImageSource = image;
+    let sourceForDraw: DrawableImageSource = sourceImage;
     let shouldCloseSourceForDraw = false;
     const placement = calculateDesignPlacement({
-      sourceWidth: image.width,
-      sourceHeight: image.height,
+      sourceWidth: sourceImage.width,
+      sourceHeight: sourceImage.height,
       targetWidth,
       targetHeight,
       resizeMode: settings.resizeMode,
@@ -526,8 +593,8 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
       && placement.scale > 1.05
       && settings.purpose !== 'preview'
     ) {
-      sourceForDraw = await progressivelyResize(id, image, placement.scale);
-      shouldCloseSourceForDraw = sourceForDraw !== image;
+      sourceForDraw = await progressivelyResize(id, sourceImage, placement.scale);
+      shouldCloseSourceForDraw = sourceForDraw !== sourceImage;
     }
 
     context.save();
@@ -547,12 +614,13 @@ const processImage = async ({ id, source, settings }: ProcessRequest) => {
   postProgress(id, 30, 'Reading pixels');
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
+  await applyImageAdjustments(id, data, settings);
   await applyColorReplacements(id, data, settings.colorReplacements);
 
   if (settings.bgRemoval) {
     let targetColor: { r: number; g: number; b: number };
     if (settings.bgColorOverride) targetColor = hexToRgb(settings.bgColorOverride);
-    else if (settings.bgAutoDetect) targetColor = await getDominantColor(image);
+    else if (settings.bgAutoDetect) targetColor = 'close' in sourceImage ? await getDominantColor(sourceImage) : await getDominantColor(image);
     else targetColor = settings.shirtColor === ShirtColor.WHITE ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
 
     await applyFloodFill(

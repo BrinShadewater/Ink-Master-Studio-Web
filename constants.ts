@@ -41,6 +41,14 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   designOffsetYPercent: 0,
   designRotationDegrees: 0,
   canvasBackground: 'transparent',
+  cropLeftPercent: 0,
+  cropTopPercent: 0,
+  cropRightPercent: 0,
+  cropBottomPercent: 0,
+  adjustmentBrightness: 100,
+  adjustmentContrast: 100,
+  adjustmentSaturation: 100,
+  adjustmentOpacity: 100,
   
   // Smart Background Removal Defaults
   bgRemoval: false,

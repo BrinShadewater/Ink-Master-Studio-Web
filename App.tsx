@@ -1344,6 +1344,10 @@ const App: React.FC = () => {
           onProductChange={handleProductChange}
           settings={settings}
           onSettingsChange={handleSettingsChange}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={() => canUndo && setHistoryIndex((index) => index - 1)}
+          onRedo={() => canRedo && setHistoryIndex((index) => index + 1)}
           onDownload={handleDownloadPrintFile}
           onCancelProcessing={handleCancelProcessing}
           onAdvancedMode={() => setAdvancedMode(true)}

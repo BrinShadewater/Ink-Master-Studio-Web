@@ -301,6 +301,89 @@ test('supports visual print placement editing and quick presets', async ({ page 
   await expect(page.getByLabel('Rotate')).toHaveValue('0');
 });
 
+test('supports crop adjustments undo redo and before-after preview', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  const exportSettings: Array<Record<string, unknown>> = [];
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith('export-settings:')) exportSettings.push(JSON.parse(text.replace('export-settings:', '')));
+  });
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        if (settings.purpose === 'export') console.log('export-settings:' + JSON.stringify(settings));
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#46566f';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: {
+            method: 'none',
+            ratio: 1,
+            sourceSize: [2500, 3000],
+            targetSize: [4500, 5400],
+          },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'crop-adjust-art.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+
+  await page.getByRole('button', { name: 'Trim edges' }).click();
+  await expect(page.getByLabel('Crop left')).toHaveValue('5');
+  await expect(page.getByLabel('Crop top')).toHaveValue('5');
+  await page.getByRole('button', { name: 'Reset crop' }).click();
+  await expect(page.getByLabel('Crop left')).toHaveValue('0');
+
+  await page.getByLabel('Crop left').fill('7');
+  await page.getByLabel('Crop top').fill('8');
+  await page.getByLabel('Crop right').fill('9');
+  await page.getByLabel('Crop bottom').fill('10');
+  await page.getByLabel('Brightness').fill('125');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByLabel('Brightness')).toHaveValue('100');
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(page.getByLabel('Brightness')).toHaveValue('125');
+  await page.getByLabel('Contrast').fill('115');
+  await page.getByLabel('Saturation').fill('85');
+  await page.getByLabel('Sharpness').fill('30');
+  await page.getByLabel('Opacity').fill('80');
+
+  await page.getByRole('button', { name: 'Print file', exact: true }).click();
+  await expect(page.getByLabel('Interactive print placement preview')).toBeVisible();
+  await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByText('SAFE AREA')).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download print file' }).click();
+  await downloadPromise;
+
+  expect(exportSettings.at(-1)).toMatchObject({
+    cropLeftPercent: 7,
+    cropTopPercent: 8,
+    cropRightPercent: 9,
+    cropBottomPercent: 10,
+    adjustmentBrightness: 125,
+    adjustmentContrast: 115,
+    adjustmentSaturation: 85,
+    sharpness: 30,
+    adjustmentOpacity: 80,
+  });
+});
+
 test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
