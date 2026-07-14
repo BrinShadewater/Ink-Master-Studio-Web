@@ -148,7 +148,7 @@ test('allows extreme enlargement after showing a strong warning', async ({ page 
 
   await page.goto('/');
   await uploadFixture(page, 900, 1080, 'tiny-art.png');
-  await expect(page.getByText('This image needs 5x enlargement. Download is allowed, but fine detail may look soft or artificial.')).toBeVisible();
+  await expect(page.getByText('This image needs 5x enlargement. Download is allowed, but fine detail may look soft or artificial.').first()).toBeVisible();
   const downloadButton = page.getByRole('button', { name: 'Download print file' });
   await expect(downloadButton).toBeEnabled();
 
@@ -384,6 +384,97 @@ test('supports crop adjustments undo redo and before-after preview', async ({ pa
   });
 });
 
+test('applies creator presets saved setups and shows export summary', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#536174';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: { method: 'none', ratio: 1, sourceSize: [2500, 3000], targetSize: [4500, 5400] },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'preset-art.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+
+  await page.getByRole('button', { name: 'Bold merch' }).click();
+  await expect(page.getByLabel('Scale')).toHaveValue('112');
+  await expect(page.getByLabel('Contrast')).toHaveValue('125');
+  await expect(page.getByText('Export summary')).toBeVisible();
+  await expect(page.getByText('Transparent background.')).toBeVisible();
+  await expect(page.getByText(/Image adjusted: brightness 110%, contrast 125%/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save this setup' }).click();
+  await page.getByRole('button', { name: 'Photo tee' }).click();
+  await expect(page.getByLabel('Scale')).toHaveValue('105');
+  await page.getByRole('button', { name: 'Apply saved setup' }).click();
+  await expect(page.getByLabel('Scale')).toHaveValue('112');
+  await expect(page.getByLabel('Contrast')).toHaveValue('125');
+});
+
+test('keeps the creator editor usable on mobile', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Worker interception is local-only.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(/imageProcessing\.worker/, (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      self.onmessage = async (event) => {
+        const { id, settings } = event.data;
+        const width = settings.purpose === 'preview' ? 1333 : 4500;
+        const height = settings.purpose === 'preview' ? 1600 : 5400;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#384960';
+        context.fillRect(0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        self.postMessage({
+          id,
+          type: 'complete',
+          blob,
+          width,
+          height,
+          upscale: { method: 'none', ratio: 1, sourceSize: [2500, 3000], targetSize: [4500, 5400] },
+        });
+      };
+    `,
+  }));
+
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'mobile-art.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+  await expect(page.getByLabel('Interactive print placement preview')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sticker logo' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download print file' })).toBeVisible();
+
+  const resizeBox = await page.getByLabel('Resize artwork').boundingBox();
+  const rotateBox = await page.getByLabel('Turn artwork handle').boundingBox();
+  if (!resizeBox || !rotateBox) throw new Error('Mobile editor handles were not measurable.');
+  expect(resizeBox.width).toBeGreaterThanOrEqual(38);
+  expect(resizeBox.height).toBeGreaterThanOrEqual(38);
+  expect(rotateBox.width).toBeGreaterThanOrEqual(38);
+  expect(rotateBox.height).toBeGreaterThanOrEqual(38);
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(hasHorizontalOverflow).toBe(false);
+});
+
 test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -395,7 +486,7 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
   const startedAt = Date.now();
   await uploadFixture(page, 2500, 3000, 'acceptance-art.png');
 
-  await expect(page.getByText('Upscaled 1.8x from 2500 x 3000px. Good for this selected size.')).toBeVisible();
+  await expect(page.getByText('Upscaled 1.8x from 2500 x 3000px. Good for this selected size.').first()).toBeVisible();
   await expect(page.getByText('Background detected')).toBeVisible();
   await page.getByRole('button', { name: 'Keep as uploaded' }).click();
 
@@ -459,7 +550,7 @@ for (const preset of presetCases) {
       preset.source[1],
       `matrix-${preset.button.toLowerCase()}.png`,
     );
-    await page.getByRole('button', { name: new RegExp(preset.button) }).click();
+    await page.getByRole('button', { name: new RegExp(`^${preset.button[0]} ${preset.button} `) }).click();
     await page.getByRole('button', { name: 'Keep as uploaded' }).click();
 
     const downloadButton = page.getByRole('button', { name: 'Download print file' });

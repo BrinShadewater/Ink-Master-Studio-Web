@@ -33,6 +33,35 @@ interface SimpleCreatorFlowProps {
 
 const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes > 10 * 1024 * 1024 ? 0 : 1)} MB`;
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+const SAVED_CREATOR_SETUP_KEY = 'inkmaster_creator_setup_v1';
+
+const creatorSetupKeys = [
+  'resizeMode',
+  'designScalePercent',
+  'designOffsetXPercent',
+  'designOffsetYPercent',
+  'designRotationDegrees',
+  'cropLeftPercent',
+  'cropTopPercent',
+  'cropRightPercent',
+  'cropBottomPercent',
+  'adjustmentBrightness',
+  'adjustmentContrast',
+  'adjustmentSaturation',
+  'adjustmentOpacity',
+  'sharpness',
+  'preserveTransparency',
+  'canvasBackground',
+] as const;
+
+type CreatorSetupKey = typeof creatorSetupKeys[number];
+type CreatorSetup = Partial<Pick<ProcessingSettings, CreatorSetupKey>>;
+
+const pickCreatorSetup = (settings: ProcessingSettings): CreatorSetup =>
+  creatorSetupKeys.reduce<CreatorSetup>((setup, key) => ({
+    ...setup,
+    [key]: settings[key],
+  }), {});
 
 export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   originalImage,
@@ -61,6 +90,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const [isMockupLoading, setIsMockupLoading] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'edit' | 'print'>('edit');
+  const [savedSetupAvailable, setSavedSetupAvailable] = useState(false);
   const mockupRunRef = useRef(0);
   const previewCanvasRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<null | {
@@ -159,6 +189,96 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
     sharpness: 0,
     adjustmentOpacity: 100,
   }, true);
+  const applyCreatorPreset = (preset: 'transparent-logo' | 'photo-tee' | 'bold-merch' | 'poster-art') => {
+    const presetSettings: Record<typeof preset, Partial<ProcessingSettings>> = {
+      'transparent-logo': {
+        resizeMode: ResizeMode.FIT,
+        designScalePercent: 92,
+        designOffsetXPercent: 0,
+        designOffsetYPercent: 0,
+        designRotationDegrees: 0,
+        cropLeftPercent: 3,
+        cropTopPercent: 3,
+        cropRightPercent: 3,
+        cropBottomPercent: 3,
+        adjustmentBrightness: 105,
+        adjustmentContrast: 115,
+        adjustmentSaturation: 110,
+        sharpness: 18,
+        adjustmentOpacity: 100,
+        preserveTransparency: true,
+        canvasBackground: 'transparent',
+      },
+      'photo-tee': {
+        resizeMode: ResizeMode.COVER,
+        designScalePercent: 105,
+        designOffsetXPercent: 0,
+        designOffsetYPercent: 2,
+        designRotationDegrees: 0,
+        cropLeftPercent: 0,
+        cropTopPercent: 0,
+        cropRightPercent: 0,
+        cropBottomPercent: 0,
+        adjustmentBrightness: 105,
+        adjustmentContrast: 108,
+        adjustmentSaturation: 105,
+        sharpness: 8,
+        adjustmentOpacity: 100,
+      },
+      'bold-merch': {
+        resizeMode: ResizeMode.FIT,
+        designScalePercent: 112,
+        designOffsetXPercent: 0,
+        designOffsetYPercent: 0,
+        designRotationDegrees: 0,
+        cropLeftPercent: 4,
+        cropTopPercent: 4,
+        cropRightPercent: 4,
+        cropBottomPercent: 4,
+        adjustmentBrightness: 110,
+        adjustmentContrast: 125,
+        adjustmentSaturation: 120,
+        sharpness: 24,
+        adjustmentOpacity: 100,
+        preserveTransparency: true,
+        canvasBackground: 'transparent',
+      },
+      'poster-art': {
+        resizeMode: ResizeMode.COVER,
+        designScalePercent: 100,
+        designOffsetXPercent: 0,
+        designOffsetYPercent: 0,
+        designRotationDegrees: 0,
+        cropLeftPercent: 0,
+        cropTopPercent: 0,
+        cropRightPercent: 0,
+        cropBottomPercent: 0,
+        adjustmentBrightness: 100,
+        adjustmentContrast: 112,
+        adjustmentSaturation: 110,
+        sharpness: 10,
+        adjustmentOpacity: 100,
+        preserveTransparency: false,
+        canvasBackground: 'white',
+      },
+    };
+    onSettingsChange({ ...settings, ...presetSettings[preset], format: OutputFormat.PNG, shirtColor: ShirtColor.NONE }, true);
+  };
+  const saveCreatorSetup = () => {
+    localStorage.setItem(SAVED_CREATOR_SETUP_KEY, JSON.stringify(pickCreatorSetup(settings)));
+    setSavedSetupAvailable(true);
+  };
+  const applySavedCreatorSetup = () => {
+    const raw = localStorage.getItem(SAVED_CREATOR_SETUP_KEY);
+    if (!raw) return;
+    try {
+      const setup = JSON.parse(raw) as CreatorSetup;
+      onSettingsChange({ ...settings, ...setup, format: OutputFormat.PNG, shirtColor: ShirtColor.NONE }, true);
+    } catch {
+      localStorage.removeItem(SAVED_CREATOR_SETUP_KEY);
+      setSavedSetupAvailable(false);
+    }
+  };
   const applyPlacementPreset = (preset: 'fit' | 'fill' | 'center' | 'top-chest' | 'full-front') => {
     const next: ProcessingSettings = {
       ...settings,
@@ -288,6 +408,10 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   }, [originalImage]);
 
   useEffect(() => {
+    setSavedSetupAvailable(localStorage.getItem(SAVED_CREATOR_SETUP_KEY) !== null);
+  }, []);
+
+  useEffect(() => {
     mockupRunRef.current += 1;
     setMockupUrl((current) => {
       if (current) URL.revokeObjectURL(current);
@@ -377,30 +501,57 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
       state: simpleExportError ? 'stop' : 'ready',
     },
   ];
+  const cropSummary = [
+    settings.cropLeftPercent ?? 0,
+    settings.cropTopPercent ?? 0,
+    settings.cropRightPercent ?? 0,
+    settings.cropBottomPercent ?? 0,
+  ].some((value) => value > 0)
+    ? `Cropped ${settings.cropLeftPercent ?? 0}/${settings.cropTopPercent ?? 0}/${settings.cropRightPercent ?? 0}/${settings.cropBottomPercent ?? 0}% from left/top/right/bottom.`
+    : 'No crop applied.';
+  const adjustmentSummary = [
+    settings.adjustmentBrightness ?? 100,
+    settings.adjustmentContrast ?? 100,
+    settings.adjustmentSaturation ?? 100,
+    settings.sharpness,
+    settings.adjustmentOpacity ?? 100,
+  ].some((value, index) => value !== [100, 100, 100, 0, 100][index])
+    ? `Image adjusted: brightness ${settings.adjustmentBrightness ?? 100}%, contrast ${settings.adjustmentContrast ?? 100}%, saturation ${settings.adjustmentSaturation ?? 100}%, sharpness ${settings.sharpness}, opacity ${settings.adjustmentOpacity ?? 100}%.`
+    : 'No image adjustments applied.';
+  const backgroundSummary = settings.preserveTransparency
+    ? 'Transparent background.'
+    : `${settings.canvasBackground === 'black' ? 'Black' : 'White'} background.`;
+  const exportSummary = [
+    `${targetWidth} x ${targetHeight}px at ${selectedProduct.dpi} DPI.`,
+    backgroundSummary,
+    cropSummary,
+    adjustmentSummary,
+    sizingDetail,
+  ];
 
   return (
-    <main className="min-h-0 flex-1 overflow-y-auto bg-slate-950 px-4 py-5 text-slate-200 lg:px-6">
-      <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[minmax(0,1.1fr)_420px]">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-slate-950 px-3 py-3 text-slate-200 sm:px-4 sm:py-5 lg:px-6">
+      <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:gap-5">
         <section className="min-h-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-3 py-3 sm:px-4">
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">Printify file</p>
               <h1 className="truncate text-lg font-black text-white">{sourceName}</h1>
             </div>
-            <div className="flex flex-none items-center gap-2">
-              <button type="button" onClick={onUndo} disabled={!canUndo} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
+            <div className="flex flex-none flex-wrap items-center gap-2">
+              <button type="button" onClick={onUndo} disabled={!canUndo} className="min-h-10 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
                 Undo
               </button>
-              <button type="button" onClick={onRedo} disabled={!canRedo} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
+              <button type="button" onClick={onRedo} disabled={!canRedo} className="min-h-10 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600">
                 Redo
               </button>
-              <button type="button" onClick={onAdvancedMode} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
+              <button type="button" onClick={onAdvancedMode} className="min-h-10 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-500 hover:text-white">
                 Advanced
               </button>
             </div>
           </div>
-          <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-lg bg-slate-950/80 p-4">
+          <div className="grid gap-4 p-3 sm:p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="relative flex min-h-[360px] items-center justify-center overflow-hidden rounded-lg bg-slate-950/80 p-3 sm:min-h-[420px] sm:p-4">
               <div className="absolute left-3 top-3 z-10 grid grid-cols-2 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/90 text-[11px] font-black">
                 <button
                   type="button"
@@ -421,7 +572,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
               <div
                 ref={previewCanvasRef}
                 aria-label="Interactive print placement preview"
-                className={`relative max-h-[68dvh] w-full max-w-[520px] overflow-hidden rounded-md border border-slate-700/80 shadow-2xl ${previewBackgroundClass}`}
+                className={`relative max-h-[62dvh] w-full max-w-[520px] overflow-hidden rounded-md border border-slate-700/80 shadow-2xl sm:max-h-[68dvh] ${previewBackgroundClass}`}
                 style={{ aspectRatio: `${targetWidth} / ${targetHeight}` }}
                 onPointerMove={handleArtworkPointerMove}
               >
@@ -469,14 +620,14 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                       aria-label="Resize artwork"
                       onPointerDown={(event) => handleArtworkPointerDown(event, 'resize')}
                       onPointerMove={handleArtworkPointerMove}
-                      className="absolute bottom-3 right-3 h-7 w-7 cursor-nwse-resize rounded-full border-2 border-slate-950 bg-indigo-300 shadow"
+                      className="absolute bottom-3 right-3 h-10 w-10 cursor-nwse-resize rounded-full border-2 border-slate-950 bg-indigo-300 shadow sm:h-8 sm:w-8"
                     />
                     <button
                       type="button"
                       aria-label="Turn artwork handle"
                       onPointerDown={(event) => handleArtworkPointerDown(event, 'rotate')}
                       onPointerMove={handleArtworkPointerMove}
-                      className="absolute left-1/2 top-3 h-7 w-7 -translate-x-1/2 cursor-grab rounded-full border-2 border-slate-950 bg-emerald-300 shadow"
+                      className="absolute left-1/2 top-3 h-10 w-10 -translate-x-1/2 cursor-grab rounded-full border-2 border-slate-950 bg-emerald-300 shadow sm:h-8 sm:w-8"
                     />
                   </>
                 )}
@@ -527,6 +678,26 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                     </button>
                   );
                 })}
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                <h2 className="text-sm font-black text-white">Creator presets</h2>
+                <div className="mt-3 grid gap-2">
+                  {[
+                    { id: 'transparent-logo' as const, label: 'Sticker logo' },
+                    { id: 'photo-tee' as const, label: 'Photo tee' },
+                    { id: 'bold-merch' as const, label: 'Bold merch' },
+                    { id: 'poster-art' as const, label: 'Poster art' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyCreatorPreset(preset.id)}
+                      className="min-h-10 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-black text-slate-300 hover:border-slate-600 hover:text-white"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -742,6 +913,26 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
                     </button>
                   ))}
                 </div>
+                <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                  <h2 className="text-sm font-black text-white">Reusable setup</h2>
+                  <div className="mt-3 grid gap-2">
+                    <button
+                      type="button"
+                      onClick={saveCreatorSetup}
+                      className="min-h-10 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-black text-slate-300 hover:border-slate-600 hover:text-white"
+                    >
+                      Save this setup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applySavedCreatorSetup}
+                      disabled={!savedSetupAvailable}
+                      className="min-h-10 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-black text-slate-300 hover:border-slate-600 hover:text-white disabled:cursor-not-allowed disabled:text-slate-600"
+                    >
+                      Apply saved setup
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -753,6 +944,15 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
             Ready for {selectedProduct.label}
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedProduct.note}. Product Creator requirements can vary by provider, so this preset targets the common safe upload shape.</p>
+
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs font-black text-white">Export summary</p>
+            <div className="mt-2 space-y-1">
+              {exportSummary.map((item) => (
+                <p key={item} className="text-[11px] leading-relaxed text-slate-400">{item}</p>
+              ))}
+            </div>
+          </div>
 
           {!hasTransparency && (
             <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
