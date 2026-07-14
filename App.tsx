@@ -108,6 +108,7 @@ import {
 } from './services/templateStorage';
 import { sanitizeFilenameSegment } from './services/naming';
 import { revokeExportHistoryUrls, revokeObjectUrl, revokeRemovedExportHistoryUrls } from './services/objectUrls';
+import { PrintFileReceipt, validatePrintFile } from './services/printFileValidation';
 import { DEFAULT_PRINTIFY_PRODUCT_ID, PrintifyProductPreset, printify, printifyProductToSpecification } from './specs/printify';
 
 const BatchProcessor = lazy(() => import('./components/BatchProcessor').then((module) => ({ default: module.BatchProcessor })));
@@ -191,6 +192,7 @@ const App: React.FC = () => {
   const [processedResult, setProcessedResult] = useState<ProcessedResult | null>(null);
   const [simpleExportResult, setSimpleExportResult] = useState<ProcessedResult | null>(null);
   const [simpleExportError, setSimpleExportError] = useState<string | null>(null);
+  const [lastDownloadReceipt, setLastDownloadReceipt] = useState<PrintFileReceipt | null>(null);
   const [analysis, setAnalysis] = useState<ArtworkAnalysis | null>(null);
   const [recommendation, setRecommendation] = useState<RecipeRecommendation | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<RecipeId | null>(null);
@@ -444,6 +446,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setSimpleExportError(null);
+    setLastDownloadReceipt(null);
     setSimpleExportResult((current) => {
       revokeProcessedResultUrls(current);
       return null;
@@ -824,6 +827,7 @@ const App: React.FC = () => {
     const next = { image: null, settings: DEFAULT_SETTINGS, hasUsedAi: false };
     addToHistory(next);
     setProcessedResult(null);
+    setLastDownloadReceipt(null);
     setAnalysis(null);
     setRecommendation(null);
     setSelectedRecipeId(null);
@@ -1148,13 +1152,16 @@ const App: React.FC = () => {
       if (exportResult.blob.size > printify.maxBytes.png) {
         revokeProcessedResultUrls(exportResult);
         setSimpleExportError("The generated PNG is over Printify's 100 MB limit. Try a smaller product or simpler artwork.");
+        setLastDownloadReceipt(null);
         return;
       }
 
+      const receipt = await validatePrintFile(exportResult.blob, filename, selectedPrintifyProduct, printify);
       setSimpleExportResult((current) => {
         revokeProcessedResultUrls(current);
         return exportResult;
       });
+      setLastDownloadReceipt(receipt);
       downloadBlob(exportResult.blob, filename);
       addToExportHistory({ filename, format: settings.format, timestamp: Date.now(), url: URL.createObjectURL(exportResult.blob), blob: exportResult.blob, metadata: { kind: 'print-master', placementSummary: formatPlacementSummary(activePlacement), jobRevision: currentJob?.revision } });
     } catch (exportError) {
@@ -1337,6 +1344,7 @@ const App: React.FC = () => {
           processedResult={processedResult}
           simpleExportResult={simpleExportResult}
           simpleExportError={simpleExportError}
+          lastDownloadReceipt={lastDownloadReceipt}
           isProcessing={isProcessing}
           processingProgress={processingProgress}
           selectedProduct={selectedPrintifyProduct}

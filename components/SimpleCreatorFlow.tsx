@@ -7,6 +7,7 @@ import { assessUpscaleQuality } from '../services/upscaleQuality';
 import { compositeMockup } from '../services/imageProcessing';
 import { getSimpleMockupForItemType } from '../services/mockups';
 import { calculateDesignPlacement } from '../services/designPlacement';
+import { PrintFileReceipt, PrintFileValidationItem } from '../services/printFileValidation';
 
 interface SimpleCreatorFlowProps {
   originalImage: string;
@@ -15,6 +16,7 @@ interface SimpleCreatorFlowProps {
   processedResult: ProcessedResult | null;
   simpleExportResult: ProcessedResult | null;
   simpleExportError: string | null;
+  lastDownloadReceipt: PrintFileReceipt | null;
   isProcessing: boolean;
   processingProgress: ProcessingProgress | null;
   selectedProduct: PrintifyProductPreset;
@@ -70,6 +72,7 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   processedResult,
   simpleExportResult,
   simpleExportError,
+  lastDownloadReceipt,
   isProcessing,
   processingProgress,
   selectedProduct,
@@ -462,43 +465,54 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const sizingDetail = simpleExportResult?.upscale.method === 'local-progressive'
     ? `Enhanced locally ${simpleExportResult.upscale.ratio}x from ${simpleExportResult.upscale.sourceSize[0]} x ${simpleExportResult.upscale.sourceSize[1]}px. Fine detail was smoothed, not recreated.`
     : upscaleQuality.detail;
+  const downloadReceipt = lastDownloadReceipt?.productId === selectedProduct.id ? lastDownloadReceipt : null;
+  const receiptItem = (id: PrintFileValidationItem['id']) => downloadReceipt?.items.find((item) => item.id === id);
+  const receiptDimensions = receiptItem('dimensions');
+  const receiptDpi = receiptItem('dpi');
+  const receiptFileSize = receiptItem('file-size');
+  const receiptColor = receiptItem('color');
+  const receiptBackground = receiptItem('background');
+  const stateFromReceipt = (state: 'pass' | 'warn' | 'fail' | undefined) =>
+    state === 'fail' ? 'stop' : state === 'warn' ? 'caution' : 'ready';
 
   const checks = [
     {
-      label: `Sized to ${targetWidth} x ${targetHeight}px`,
-      detail: sizingDetail,
-      state: upscaleQuality.level === 'caution' || upscaleQuality.level === 'extreme'
+      label: receiptDimensions?.label ?? `Sized to ${targetWidth} x ${targetHeight}px`,
+      detail: receiptDimensions?.detail ?? sizingDetail,
+      state: receiptDimensions
+        ? stateFromReceipt(receiptDimensions.state)
+        : upscaleQuality.level === 'caution' || upscaleQuality.level === 'extreme'
           ? 'caution'
           : 'ready',
     },
     {
-      label: `${selectedProduct.dpi} DPI PNG`,
-      detail: selectedProduct.dpi >= 300
+      label: receiptDpi?.label ?? `${selectedProduct.dpi} DPI PNG`,
+      detail: receiptDpi?.detail ?? (selectedProduct.dpi >= 300
         ? 'Standard Printify raster resolution.'
-        : 'Large-format preset uses a lower DPI target.',
-      state: 'ready',
+        : 'Large-format preset uses a lower DPI target.'),
+      state: stateFromReceipt(receiptDpi?.state),
     },
     {
-      label: 'sRGB color',
-      detail: 'PNG export stays RGB for Printify upload.',
-      state: 'ready',
+      label: receiptColor?.label ?? 'sRGB color',
+      detail: receiptColor?.detail ?? 'PNG export stays RGB for Printify upload.',
+      state: stateFromReceipt(receiptColor?.state),
     },
     {
-      label: hasTransparency ? 'Transparent background kept' : 'Background kept as uploaded',
-      detail: hasTransparency
+      label: receiptBackground?.label ?? (hasTransparency ? 'Transparent background kept' : 'Background kept as uploaded'),
+      detail: receiptBackground?.detail ?? (hasTransparency
         ? 'Alpha is preserved in the print file.'
         : backgroundChoice === 'keep'
           ? 'You chose to keep the uploaded background.'
-          : 'Choose whether to keep it or open Advanced cleanup.',
-      state: 'ready',
+          : 'Choose whether to keep it or open Advanced cleanup.'),
+      state: stateFromReceipt(receiptBackground?.state),
     },
     {
-      label: `Under ${MAX_FILE_SIZE_MB} MB PNG limit`,
-      detail: simpleExportError
+      label: receiptFileSize?.label ?? `Under ${MAX_FILE_SIZE_MB} MB PNG limit`,
+      detail: receiptFileSize?.detail ?? (simpleExportError
         ?? (simpleExportResult
           ? `${formatBytes(finalFileBytes)} generated. SVG limit is ${MAX_SVG_SIZE_MB} MB.`
-          : 'Final file size is checked during download.'),
-      state: simpleExportError ? 'stop' : 'ready',
+          : 'Final file size is checked during download.')),
+      state: simpleExportError ? 'stop' : stateFromReceipt(receiptFileSize?.state),
     },
   ];
   const cropSummary = [
@@ -950,6 +964,54 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
             <div className="mt-2 space-y-1">
               {exportSummary.map((item) => (
                 <p key={item} className="text-[11px] leading-relaxed text-slate-400">{item}</p>
+              ))}
+            </div>
+          </div>
+
+          {downloadReceipt && (
+            <div className={`mt-4 rounded-lg border p-3 ${downloadReceipt.readyForUpload ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-amber-500/30 bg-amber-950/20'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-white">Downloaded file</p>
+                  <p className="mt-1 break-all text-[11px] leading-relaxed text-slate-400">{downloadReceipt.filename}</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-black ${downloadReceipt.readyForUpload ? 'bg-emerald-400 text-slate-950' : 'bg-amber-300 text-slate-950'}`}>
+                  {downloadReceipt.readyForUpload ? 'READY' : 'CHECK'}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-md bg-slate-950/60 p-2">
+                  <p className="font-black text-slate-300">Size</p>
+                  <p className="mt-1 text-slate-500">{downloadReceipt.metadata.width} x {downloadReceipt.metadata.height} px</p>
+                </div>
+                <div className="rounded-md bg-slate-950/60 p-2">
+                  <p className="font-black text-slate-300">DPI</p>
+                  <p className="mt-1 text-slate-500">{downloadReceipt.metadata.dpi ? `${downloadReceipt.metadata.dpi[0]} x ${downloadReceipt.metadata.dpi[1]}` : 'Missing'}</p>
+                </div>
+                <div className="rounded-md bg-slate-950/60 p-2">
+                  <p className="font-black text-slate-300">File</p>
+                  <p className="mt-1 text-slate-500">{formatBytes(downloadReceipt.metadata.byteLength)}</p>
+                </div>
+                <div className="rounded-md bg-slate-950/60 p-2">
+                  <p className="font-black text-slate-300">Color</p>
+                  <p className="mt-1 text-slate-500">{downloadReceipt.metadata.colorLabel}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs font-black text-white">Printify upload checklist</p>
+            <div className="mt-2 space-y-2">
+              {[
+                downloadReceipt ? 'Upload the downloaded PNG, not the browser preview.' : 'Download the print file to validate the final PNG.',
+                `${selectedProduct.shortLabel} preset targets ${selectedProduct.validation.product} with ${selectedProduct.validation.provider}.`,
+                'If Printify shows a provider-specific warning, try the same product with Printify Choice or choose the closest matching preset here.',
+              ].map((item) => (
+                <div key={item} className="flex gap-2 text-[11px] leading-relaxed text-slate-400">
+                  <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-emerald-400" />
+                  <span>{item}</span>
+                </div>
               ))}
             </div>
           </div>

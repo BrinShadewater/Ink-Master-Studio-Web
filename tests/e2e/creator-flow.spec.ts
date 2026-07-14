@@ -522,7 +522,49 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
     colorType: 6,
     pixelsPerMeter: [11811, 11811],
   });
+  await expect(page.getByText('Downloaded file')).toBeVisible();
+  await expect(page.getByText('acceptance-art_tee-front-full.png')).toBeVisible();
+  await expect(page.getByText('4500 x 5400 px')).toBeVisible();
   expect(browserErrors).toEqual([]);
+});
+
+test('validates an edited tee export against the downloaded PNG bytes', async ({ page }) => {
+  await page.goto('/');
+  await uploadFixture(page, 2500, 3000, 'edited-tee.png');
+  await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+
+  await page.getByRole('button', { name: 'Bold merch' }).click();
+  await page.getByLabel('Scale').fill('125');
+  await page.getByLabel('Rotate').fill('12');
+  await page.getByLabel('Horizontal position').fill('8');
+  await page.getByLabel('Vertical position').fill('-6');
+  await page.getByLabel('Crop left').fill('4');
+  await page.getByLabel('Crop right').fill('4');
+  await page.getByLabel('Contrast').fill('125');
+  await page.getByLabel('Saturation').fill('115');
+  await page.getByRole('button', { name: 'Center' }).click();
+
+  const downloadButton = page.getByRole('button', { name: 'Download print file' });
+  await expect(downloadButton).toBeEnabled({ timeout: 60_000 });
+
+  const downloadPromise = page.waitForEvent('download');
+  await downloadButton.click();
+  const download = await downloadPromise;
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const output = Buffer.concat(chunks);
+  const png = readPng(output);
+
+  expect(download.suggestedFilename()).toMatch(/edited-tee_tee-front-full\.png$/);
+  expect(output.byteLength).toBeLessThan(100_000_000);
+  expect(png.width).toBe(4500);
+  expect(png.height).toBe(5400);
+  expect([2, 6]).toContain(png.colorType);
+  expect(png.pixelsPerMeter).toEqual([11811, 11811]);
+  await expect(page.getByText('Downloaded file')).toBeVisible();
+  await expect(page.getByText('READY', { exact: true })).toBeVisible();
+  await expect(page.getByText('RGB color file')).toBeVisible();
 });
 
 const expectedPixelsPerMeter = (dpi: number): [number, number] => {
