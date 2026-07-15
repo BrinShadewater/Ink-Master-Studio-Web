@@ -8,6 +8,7 @@ import { compositeMockup } from '../services/imageProcessing';
 import { getSimpleMockupForItemType } from '../services/mockups';
 import { calculateDesignPlacement } from '../services/designPlacement';
 import { PrintFileReceipt, PrintFileValidationItem } from '../services/printFileValidation';
+import { buildQualityConfidence } from '../services/qualityConfidence';
 
 interface SimpleCreatorFlowProps {
   originalImage: string;
@@ -474,6 +475,21 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
   const receiptBackground = receiptItem('background');
   const stateFromReceipt = (state: 'pass' | 'warn' | 'fail' | undefined) =>
     state === 'fail' ? 'stop' : state === 'warn' ? 'caution' : 'ready';
+  const qualityConfidence = buildQualityConfidence(analysis, upscaleQuality, selectedProduct, backgroundChoice);
+  const qualityToneClass = qualityConfidence.tone === 'strong-warning'
+    ? 'border-rose-500/40 bg-rose-950/25'
+    : qualityConfidence.tone === 'caution'
+      ? 'border-amber-500/35 bg-amber-950/20'
+      : qualityConfidence.tone === 'good'
+        ? 'border-sky-500/30 bg-sky-950/20'
+        : 'border-emerald-500/30 bg-emerald-950/20';
+  const qualityBadgeClass = qualityConfidence.tone === 'strong-warning'
+    ? 'bg-rose-400 text-slate-950'
+    : qualityConfidence.tone === 'caution'
+      ? 'bg-amber-300 text-slate-950'
+      : qualityConfidence.tone === 'good'
+        ? 'bg-sky-300 text-slate-950'
+        : 'bg-emerald-400 text-slate-950';
 
   const checks = [
     {
@@ -958,6 +974,34 @@ export const SimpleCreatorFlow: React.FC<SimpleCreatorFlowProps> = ({
             Ready for {selectedProduct.label}
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedProduct.note}. Product Creator requirements can vary by provider, so this preset targets the common safe upload shape.</p>
+
+          <div className={`mt-4 rounded-lg border p-3 ${qualityToneClass}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-white">Quality confidence</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{qualityConfidence.detail}</p>
+              </div>
+              <span className={`flex-none rounded-full px-2 py-1 text-[10px] font-black ${qualityBadgeClass}`}>
+                {qualityConfidence.label}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {qualityConfidence.items.map((item) => (
+                <div key={item.id} className="flex gap-2 text-[11px] leading-relaxed text-slate-400">
+                  <span className={`mt-1 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-black ${
+                    item.state === 'strong-warning'
+                      ? 'bg-rose-400 text-slate-950'
+                      : item.state === 'warn'
+                        ? 'bg-amber-300 text-slate-950'
+                        : 'bg-emerald-400 text-slate-950'
+                  }`}>
+                    {item.state === 'pass' ? '✓' : '!'}
+                  </span>
+                  <span><strong className="text-slate-200">{item.label}:</strong> {item.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-xs font-black text-white">Export summary</p>

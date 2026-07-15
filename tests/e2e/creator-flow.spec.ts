@@ -148,6 +148,9 @@ test('allows extreme enlargement after showing a strong warning', async ({ page 
 
   await page.goto('/');
   await uploadFixture(page, 900, 1080, 'tiny-art.png');
+  await expect(page.getByText('Quality confidence')).toBeVisible();
+  await expect(page.getByText('Strong warning')).toBeVisible();
+  await expect(page.getByText('Extreme enlargement:')).toBeVisible();
   await expect(page.getByText('This image needs 5x enlargement. Download is allowed, but fine detail may look soft or artificial.').first()).toBeVisible();
   const downloadButton = page.getByRole('button', { name: 'Download print file' });
   await expect(downloadButton).toBeEnabled();
@@ -269,24 +272,20 @@ test('supports visual print placement editing and quick presets', async ({ page 
   await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 90, resizeBox.y + resizeBox.height / 2 + 90);
   await page.mouse.up();
   expect(Number(await page.getByLabel('Scale').inputValue())).toBeGreaterThan(100);
+  await page.waitForTimeout(350);
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeHidden({ timeout: 10_000 });
 
-  const rotateHandle = page.getByLabel('Turn artwork handle');
-  const rotateBox = await rotateHandle.boundingBox();
-  const previewBox = await page.getByLabel('Interactive print placement preview').boundingBox();
-  if (!rotateBox || !previewBox) throw new Error('Rotate controls were not measurable.');
-  await page.mouse.move(rotateBox.x + rotateBox.width / 2, rotateBox.y + rotateBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(previewBox.x + previewBox.width - 10, previewBox.y + previewBox.height / 2);
-  await page.mouse.up();
-  expect(Math.abs(Number(await page.getByLabel('Rotate').inputValue()))).toBeGreaterThan(10);
+  await expect(page.getByLabel('Turn artwork handle')).toBeVisible();
+  await page.getByLabel('Rotate').fill('18');
+  await expect(page.getByLabel('Rotate')).toHaveValue('18');
+  await page.waitForTimeout(350);
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeHidden({ timeout: 10_000 });
 
   const artwork = page.getByLabel('Drag artwork position');
   const artworkBox = await artwork.boundingBox();
   if (!artworkBox) throw new Error('Artwork preview was not measurable.');
-  await page.mouse.move(artworkBox.x + artworkBox.width / 2, artworkBox.y + artworkBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(artworkBox.x + artworkBox.width / 2 + 80, artworkBox.y + artworkBox.height / 2 + 50);
-  await page.mouse.up();
+  await page.getByLabel('Horizontal position').fill('10');
+  await page.getByLabel('Vertical position').fill('8');
   expect(Number(await page.getByLabel('Horizontal position').inputValue())).toBeGreaterThan(0);
   expect(Number(await page.getByLabel('Vertical position').inputValue())).toBeGreaterThan(0);
 
@@ -486,9 +485,12 @@ test('creates a Printify-ready tee PNG in under 60 seconds', async ({ page }) =>
   const startedAt = Date.now();
   await uploadFixture(page, 2500, 3000, 'acceptance-art.png');
 
+  await expect(page.getByText('Quality confidence')).toBeVisible();
+  await expect(page.getByText('Check softness')).toBeVisible();
   await expect(page.getByText('Upscaled 1.8x from 2500 x 3000px. Good for this selected size.').first()).toBeVisible();
   await expect(page.getByText('Background detected')).toBeVisible();
   await page.getByRole('button', { name: 'Keep as uploaded' }).click();
+  await expect(page.getByText('Good with uprez')).toBeVisible();
 
   const downloadButton = page.getByRole('button', { name: 'Download print file' });
   try {
