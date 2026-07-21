@@ -1,39 +1,46 @@
 import { migrateStudioJob } from './jobModel';
 import { StudioJob } from '../types';
+import { hasIndexedDb, JOB_STORE, openInkMasterDatabase } from './inkmasterDatabase';
 
-const DB_NAME = 'inkmaster-studio';
-const STORE_NAME = 'jobs';
-const DB_VERSION = 1;
 const memoryJobs = new Map<string, StudioJob>();
-
-const hasIndexedDb = () => typeof indexedDB !== 'undefined';
-
-const openDatabase = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
-  const request = indexedDB.open(DB_NAME, DB_VERSION);
-  request.onupgradeneeded = () => {
-    const db = request.result;
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      store.createIndex('updatedAt', 'updatedAt');
-      store.createIndex('archivedAt', 'archivedAt');
-    }
-  };
-  request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error ?? new Error('Could not open job storage.'));
-});
 
 const runRequest = async <T>(
   mode: IDBTransactionMode,
   operation: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> => {
-  const db = await openDatabase();
+  const database = await openInkMasterDatabase();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode);
-    const request = operation(transaction.objectStore(STORE_NAME));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Job storage request failed.'));
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => reject(transaction.error ?? new Error('Job storage transaction failed.'));
+    let settled = false;
+    let result: T;
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      database.close();
+      resolve(result);
+    };
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      database.close();
+      reject(error);
+    };
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction(JOB_STORE, mode);
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Job storage transaction failed.'));
+      return;
+    }
+    transaction.oncomplete = resolveOnce;
+    transaction.onerror = () => rejectOnce(transaction.error ?? new Error('Job storage transaction failed.'));
+    transaction.onabort = () => rejectOnce(transaction.error ?? new Error('Job storage transaction aborted.'));
+    try {
+      const request = operation(transaction.objectStore(JOB_STORE));
+      request.onsuccess = () => { result = request.result; };
+      request.onerror = () => rejectOnce(request.error ?? new Error('Job storage request failed.'));
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Job storage request failed.'));
+    }
   });
 };
 

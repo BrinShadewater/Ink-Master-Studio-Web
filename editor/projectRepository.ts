@@ -1,49 +1,52 @@
 import { EditorAsset, EditorProject, migrateEditorProject } from './model';
+import {
+  EDITOR_ASSET_STORE,
+  EDITOR_PROJECT_STORE,
+  hasIndexedDb,
+  openInkMasterDatabase,
+} from '../services/inkmasterDatabase';
 
-const DB_NAME = 'inkmaster-studio';
-const DB_VERSION = 2;
-const PROJECT_STORE = 'editor-projects';
-const ASSET_STORE = 'editor-assets';
 const memoryProjects = new Map<string, EditorProject>();
 const memoryAssets = new Map<string, EditorAsset>();
-
-const hasIndexedDb = () => typeof indexedDB !== 'undefined';
-
-const openDatabase = () => new Promise<IDBDatabase>((resolve, reject) => {
-  const request = indexedDB.open(DB_NAME, DB_VERSION);
-  request.onupgradeneeded = () => {
-    const database = request.result;
-    if (!database.objectStoreNames.contains(PROJECT_STORE)) {
-      const projects = database.createObjectStore(PROJECT_STORE, { keyPath: 'id' });
-      projects.createIndex('updatedAt', 'updatedAt');
-    }
-    if (!database.objectStoreNames.contains(ASSET_STORE)) {
-      const assets = database.createObjectStore(ASSET_STORE, { keyPath: 'id' });
-      assets.createIndex('projectId', 'projectId');
-    }
-  };
-  request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error ?? new Error('Could not open editor storage.'));
-});
 
 const runRequest = async <T>(
   storeName: string,
   mode: IDBTransactionMode,
   operation: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> => {
-  const database = await openDatabase();
+  const database = await openInkMasterDatabase();
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(storeName, mode);
-    const request = operation(transaction.objectStore(storeName));
+    let settled = false;
     let result: T;
-    request.onsuccess = () => { result = request.result; };
-    request.onerror = () => reject(request.error ?? new Error('Editor storage request failed.'));
-    transaction.oncomplete = () => {
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
       database.close();
       resolve(result);
     };
-    transaction.onerror = () => reject(transaction.error ?? new Error('Editor storage transaction failed.'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('Editor storage transaction aborted.'));
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      database.close();
+      reject(error);
+    };
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction(storeName, mode);
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Editor storage transaction failed.'));
+      return;
+    }
+    transaction.oncomplete = resolveOnce;
+    transaction.onerror = () => rejectOnce(transaction.error ?? new Error('Editor storage transaction failed.'));
+    transaction.onabort = () => rejectOnce(transaction.error ?? new Error('Editor storage transaction aborted.'));
+    try {
+      const request = operation(transaction.objectStore(storeName));
+      request.onsuccess = () => { result = request.result; };
+      request.onerror = () => rejectOnce(request.error ?? new Error('Editor storage request failed.'));
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Editor storage request failed.'));
+    }
   });
 };
 
@@ -57,7 +60,7 @@ export const saveEditorProject = async (project: EditorProject): Promise<EditorP
     memoryProjects.set(normalized.id, cloneProject(normalized));
     return cloneProject(normalized);
   }
-  await runRequest(PROJECT_STORE, 'readwrite', (store) => store.put(normalized));
+  await runRequest(EDITOR_PROJECT_STORE, 'readwrite', (store) => store.put(normalized));
   return normalized;
 };
 
@@ -66,13 +69,13 @@ export const getEditorProject = async (id: string): Promise<EditorProject | null
     const project = memoryProjects.get(id);
     return project ? cloneProject(project) : null;
   }
-  const result = await runRequest<EditorProject | undefined>(PROJECT_STORE, 'readonly', (store) => store.get(id));
+  const result = await runRequest<EditorProject | undefined>(EDITOR_PROJECT_STORE, 'readonly', (store) => store.get(id));
   return result ? migrateEditorProject(result) : null;
 };
 
 export const listEditorProjects = async (): Promise<EditorProject[]> => {
   const projects = hasIndexedDb()
-    ? await runRequest<EditorProject[]>(PROJECT_STORE, 'readonly', (store) => store.getAll())
+    ? await runRequest<EditorProject[]>(EDITOR_PROJECT_STORE, 'readonly', (store) => store.getAll())
     : [...memoryProjects.values()].map(cloneProject);
   return projects.map(migrateEditorProject).sort((a, b) => b.updatedAt - a.updatedAt);
 };
@@ -82,7 +85,7 @@ export const saveEditorAsset = async (asset: EditorAsset): Promise<EditorAsset> 
     memoryAssets.set(asset.id, cloneAsset(asset));
     return cloneAsset(asset);
   }
-  await runRequest(ASSET_STORE, 'readwrite', (store) => store.put(asset));
+  await runRequest(EDITOR_ASSET_STORE, 'readwrite', (store) => store.put(asset));
   return asset;
 };
 
@@ -91,7 +94,7 @@ export const getEditorAsset = async (id: string): Promise<EditorAsset | null> =>
     const asset = memoryAssets.get(id);
     return asset ? cloneAsset(asset) : null;
   }
-  return await runRequest<EditorAsset | undefined>(ASSET_STORE, 'readonly', (store) => store.get(id)) ?? null;
+  return await runRequest<EditorAsset | undefined>(EDITOR_ASSET_STORE, 'readonly', (store) => store.get(id)) ?? null;
 };
 
 export const deleteEditorProject = async (id: string): Promise<void> => {
@@ -103,33 +106,48 @@ export const deleteEditorProject = async (id: string): Promise<void> => {
     return;
   }
 
-  const database = await openDatabase();
+  const database = await openInkMasterDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([PROJECT_STORE, ASSET_STORE], 'readwrite');
-    const projects = transaction.objectStore(PROJECT_STORE);
-    const assets = transaction.objectStore(ASSET_STORE);
-    const assetIds = assets.index('projectId').getAllKeys(id);
-    let requestError: Error | null = null;
-
-    const rejectRequest = (request: IDBRequest<unknown>) => {
-      request.onerror = () => {
-        requestError = request.error ?? new Error('Editor storage request failed.');
-        reject(requestError);
-      };
-    };
-
-    rejectRequest(assetIds);
-    assetIds.onsuccess = () => {
-      for (const assetId of assetIds.result) {
-        rejectRequest(assets.delete(assetId));
-      }
-      rejectRequest(projects.delete(id));
-    };
-    transaction.oncomplete = () => {
+    let settled = false;
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
       database.close();
       resolve();
     };
-    transaction.onerror = () => reject(transaction.error ?? requestError ?? new Error('Editor storage transaction failed.'));
-    transaction.onabort = () => reject(transaction.error ?? requestError ?? new Error('Editor storage transaction aborted.'));
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      database.close();
+      reject(error);
+    };
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction([EDITOR_PROJECT_STORE, EDITOR_ASSET_STORE], 'readwrite');
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Editor storage transaction failed.'));
+      return;
+    }
+    transaction.oncomplete = resolveOnce;
+    transaction.onerror = () => rejectOnce(transaction.error ?? new Error('Editor storage transaction failed.'));
+    transaction.onabort = () => rejectOnce(transaction.error ?? new Error('Editor storage transaction aborted.'));
+    try {
+      const projects = transaction.objectStore(EDITOR_PROJECT_STORE);
+      const assets = transaction.objectStore(EDITOR_ASSET_STORE);
+      const assetIds = assets.index('projectId').getAllKeys(id);
+      const rejectRequest = (request: IDBRequest<unknown>) => {
+        request.onerror = () => rejectOnce(request.error ?? new Error('Editor storage request failed.'));
+      };
+
+      rejectRequest(assetIds);
+      assetIds.onsuccess = () => {
+        for (const assetId of assetIds.result) {
+          rejectRequest(assets.delete(assetId));
+        }
+        rejectRequest(projects.delete(id));
+      };
+    } catch (error) {
+      rejectOnce(error instanceof Error ? error : new Error('Editor storage request failed.'));
+    }
   });
 };
