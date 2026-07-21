@@ -1,6 +1,11 @@
 import { Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { getActiveVariation, getSelectedImageLayer } from '../../editor/history';
+import {
+  canRedoActiveVariation,
+  canUndoActiveVariation,
+  getActiveVariation,
+  getSelectedImageLayer,
+} from '../../editor/history';
 import type { EditorTool } from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
@@ -59,20 +64,31 @@ export const EditorApp = () => {
   };
 
   return (
-    <main className="relative grid h-dvh min-w-0 grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100">
+    <main className="relative grid h-dvh min-w-0 grid-rows-[96px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100 md:grid-rows-[56px_minmax(0,1fr)]">
       <EditorTopBar
         projectId={project?.id ?? null}
         projectName={project?.name ?? 'Untitled design'}
         activeVariationId={project?.activeVariationId ?? ''}
         variations={project?.variations.map(({ id, name }) => ({ id, name })) ?? []}
         saveStatus={workspace.saveStatus}
-        canUndo={Boolean(workspace.history?.past.length)}
-        canRedo={Boolean(workspace.history?.future.length)}
+        canUndo={canUndoActiveVariation(workspace.history)}
+        canRedo={canRedoActiveVariation(workspace.history)}
+        canDeleteVariation={Boolean(project && project.variations.length > 1)}
         onProjectNameChange={(name) => workspace.dispatch({ type: 'rename-project', name })}
         onVariationChange={(variationId) => workspace.dispatch({ type: 'select-variation', variationId })}
+        onVariationNameChange={(name) => {
+          if (variation) workspace.dispatch({ type: 'rename-variation', variationId: variation.id, name });
+        }}
         onDuplicateVariation={() => workspace.dispatch({ type: 'duplicate-variation', name: `${variation?.name ?? 'Variation'} copy` })}
+        onDeleteVariation={() => {
+          if (variation && project && project.variations.length > 1 &&
+            window.confirm(`Delete variation "${variation.name}"?`)) {
+            workspace.dispatch({ type: 'delete-variation', variationId: variation.id });
+          }
+        }}
         onUndo={() => workspace.dispatch({ type: 'undo' })}
         onRedo={() => workspace.dispatch({ type: 'redo' })}
+        onRetrySave={() => { void workspace.retrySave(); }}
         onImport={() => fileInputRef.current?.click()}
         onOpenProjects={() => setProjectsOpen(true)}
       />
@@ -128,7 +144,7 @@ export const EditorApp = () => {
       />
 
       <div
-        className={`pointer-events-none absolute left-1/2 top-16 z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 border px-3 py-2 text-center text-xs shadow-lg ${workspace.error ? 'border-red-800 bg-red-950 text-red-200' : 'sr-only'}`}
+        className={`pointer-events-none absolute left-1/2 top-28 z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 border px-3 py-2 text-center text-xs shadow-lg md:top-16 ${workspace.error ? 'border-red-800 bg-red-950 text-red-200' : 'sr-only'}`}
         aria-live="polite"
         role="status"
       >

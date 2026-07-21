@@ -76,7 +76,7 @@ const expectCanvasPainted = async (canvas: Locator) => {
 };
 
 const readPersistedEditorState = async (page: Page, projectName: string) => page.evaluate((name) => (
-  new Promise<{ variation: string; contrast: number } | null>((resolve, reject) => {
+  new Promise<{ variation: string; variationNames: string[]; contrast: number; x: number } | null>((resolve, reject) => {
     const openRequest = indexedDB.open('inkmaster-studio');
     openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
     openRequest.onsuccess = () => {
@@ -96,7 +96,12 @@ const readPersistedEditorState = async (page: Page, projectName: string) => page
         );
         database.close();
         resolve(variation && layer
-          ? { variation: variation.name, contrast: layer.adjustments.contrast }
+          ? {
+              variation: variation.name,
+              variationNames: project.variations.map((candidate: { name: string }) => candidate.name),
+              contrast: layer.adjustments.contrast,
+              x: layer.transform.x,
+            }
           : null);
       };
     };
@@ -116,10 +121,14 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
   await page.getByRole('button', { name: 'Adjust' }).click();
   await page.getByLabel('Contrast').fill('25');
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
-  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original copy');
+  await page.getByLabel('Variation name').fill('Print B');
+  await page.getByLabel('Variation name').press('Enter');
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Print B');
   await expect.poll(() => readPersistedEditorState(page, 'film-still')).toEqual({
-    variation: 'Original copy',
+    variation: 'Print B',
+    variationNames: ['Original', 'Print B'],
     contrast: 25,
+    x: 0.5,
   });
   await expect(page.getByText('Saved locally')).toBeVisible();
 
@@ -152,7 +161,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 
   await openProjects.click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: 'film-still' }).click();
-  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original copy');
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Print B');
   await page.getByRole('button', { name: 'Adjust' }).click();
   await expect(page.getByLabel('Contrast')).toHaveValue('25');
   await expectCanvasPainted(canvas);
@@ -171,7 +180,90 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
   await expect(page.getByLabel('Contrast')).toHaveValue('40');
   await page.keyboard.press('Control+z');
   await expect(page.getByLabel('Contrast')).toHaveValue('25');
-  await expect(page.getByText('Saved locally')).toBeVisible();
+  await expect.poll(async () => (await readPersistedEditorState(page, 'film-still'))?.contrast).toBe(25);
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects' }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: 'film-still' }).click();
+  await page.getByRole('button', { name: 'Adjust' }).click();
+  await expect(page.getByLabel('Contrast')).toHaveValue('25');
+});
+
+test('keeps undo and redo independent while alternating between variations', async ({ page }) => {
+  await page.goto('/');
+  await uploadFixture(page, 1200, 800, 'history-scope.png');
+  await page.getByLabel('X position').fill('0.7');
+  await page.getByLabel('X position').blur();
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await page.getByLabel('X position').fill('0.9');
+  await page.getByLabel('X position').blur();
+
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original' });
+  await page.getByLabel('Y position').fill('0.2');
+  await page.getByLabel('Y position').blur();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original');
+  await expect(page.getByLabel('Y position')).toHaveValue('0.5');
+
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original copy' });
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original copy');
+  await expect(page.getByLabel('X position')).toHaveValue('0.7');
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(page.getByLabel('X position')).toHaveValue('0.9');
+
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original' });
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original');
+  await expect(page.getByLabel('Y position')).toHaveValue('0.2');
+});
+
+test('renames and deletes variations with deterministic persisted fallback', async ({ page }) => {
+  await page.goto('/');
+  await uploadFixture(page, 800, 800, 'variation-management.png');
+  await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await page.getByLabel('Variation name').fill('Back print');
+  await page.getByLabel('Variation name').press('Enter');
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Back print copy');
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete variation' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Back print');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete variation' }).click();
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original');
+  await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
+  await expect.poll(async () => (await readPersistedEditorState(page, 'variation-management'))?.variationNames)
+    .toEqual(['Original']);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects' }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: 'variation-management' }).click();
+  await expect(page.getByLabel('Variation').locator('option')).toHaveCount(1);
+  await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original');
+});
+
+test('normalizes direct drag against landscape and portrait viewport dimensions', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/');
+
+  for (const fixture of [
+    { width: 1600, height: 900, name: 'drag-landscape.png' },
+    { width: 900, height: 1600, name: 'drag-portrait.png' },
+  ]) {
+    await uploadFixture(page, fixture.width, fixture.height, fixture.name);
+    const canvas = page.getByLabel('Design canvas');
+    await expectCanvasPainted(canvas);
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error('Canvas bounds are unavailable.');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4);
+    await page.mouse.up();
+    await expect(page.getByLabel('X position')).toHaveValue('0.6');
+    await expect(page.getByLabel('Y position')).toHaveValue('0.4');
+  }
 });
 
 test('keeps the editor usable at 390 by 844 and captures the mobile layout', async ({ page }) => {
@@ -185,6 +277,10 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   await expect(select).toBeVisible();
   await expect(crop).toBeVisible();
   await expect(adjust).toBeVisible();
+  await expect(page.getByLabel('Variation name')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Duplicate variation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete variation' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
   const layout = await page.evaluate(() => {
@@ -217,6 +313,39 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
     path: artifactPath('mobile-390x844.png'),
     animations: 'disabled',
   });
+});
+
+test('keeps save failure status and retry accessible on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 900, 1200, 'retry-save.png');
+  await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.5);
+  await page.waitForTimeout(500);
+
+  await page.evaluate(() => {
+    const originalPut = IDBObjectStore.prototype.put;
+    let failNextProjectSave = true;
+    IDBObjectStore.prototype.put = function (value: unknown, key?: IDBValidKey) {
+      if (this.name === 'editor-projects' && failNextProjectSave) {
+        failNextProjectSave = false;
+        throw new Error('Simulated local save failure.');
+      }
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    };
+  });
+
+  await page.getByLabel('X position').fill('0.65');
+  await page.getByLabel('X position').blur();
+  await expect(page.getByRole('status').filter({ hasText: 'Local save failed' })).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Retry save' });
+  await expect(retry).toBeVisible();
+  await page.screenshot({
+    path: artifactPath('mobile-save-failure-390x844.png'),
+    animations: 'disabled',
+  });
+  await retry.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.65);
 });
 
 test('does not expose the retired workflow surface and preserves static routes', async ({ page }) => {
