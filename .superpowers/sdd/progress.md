@@ -21,3 +21,4 @@ Final review: complete (range 275c919..ac61072, ready to merge; no critical or i
 Phase 2A creative layers (plan commit ff34879)
 
 Execution location: current checkout on main (continuing the owner-approved phase-one workflow).
+Task 1: complete (commits 7ac3390..fea3d1b, spec compliant and quality approved after typecheck and save-normalization fixes; 26 focused tests and typecheck reported passing).
