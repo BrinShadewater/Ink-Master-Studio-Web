@@ -14,6 +14,7 @@ import {
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
 import {
+  EditorInspector,
   controlBounds,
   cropToEdgePercentages,
   edgePercentagesToCrop,
@@ -37,6 +38,7 @@ import {
   createEditorAsset,
   createEditorProject,
   createTextLayer,
+  type DesignLayer,
   type DesignVariation,
 } from '../editor/model';
 import {
@@ -188,6 +190,21 @@ test('mobile toolbar exposes a stable Layers command', () => {
 
   assert.match(markup, /aria-label="Layers"/);
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
+});
+
+test('toolbar disables image-only tools with an accessible explanation for text selection', () => {
+  const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    layerType: 'text',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+
+  assert.match(markup, /id="editor-image-tools-disabled-reason"/);
+  assert.match(markup, /Crop and Adjust are available only for image layers\./);
+  assert.match(markup, /aria-label="Crop"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
+  assert.match(markup, /aria-label="Adjust"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Select"[^>]*disabled=""/);
 });
 
 test('mobile layer drawer keeps its close control inside the panel header', () => {
@@ -364,6 +381,80 @@ test('inspector controls keep deterministic bounds and normalized crop dimension
   );
 });
 
+const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' = 'select') => {
+  const source = createEditorAsset('project-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Inspector', source);
+  return renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    layer,
+    tool,
+    dispatch: () => undefined,
+  }));
+};
+
+test('text inspector exposes complete editable text and shared transform controls', () => {
+  const layer = {
+    ...createTextLayer('First line\nSecond line'),
+    id: 'layer-text-inspector',
+  };
+  const markup = renderInspector(layer);
+
+  assert.match(markup, /<h2[^>]*>Text<\/h2>/);
+  assert.match(markup, /<textarea[^>]*id="editor-text-content"[^>]*maxLength="500"[^>]*>[\s\S]*First line\nSecond line[\s\S]*<\/textarea>/);
+  assert.match(markup, /<select[^>]*id="editor-font-family"/);
+  for (const font of ['Arial', 'Georgia', 'Impact', 'Trebuchet MS']) {
+    assert.match(markup, new RegExp(`<option value="${font}"`));
+  }
+  assert.match(markup, /id="editor-font-size"[^>]*min="8"[^>]*max="400"/);
+  assert.match(markup, /id="editor-fill-color"[^>]*type="color"/);
+  for (const alignment of ['left', 'center', 'right']) {
+    assert.match(markup, new RegExp(`aria-label="Align ${alignment}"`));
+  }
+  assert.match(markup, /id="editor-letter-spacing"[^>]*min="-2"[^>]*max="40"/);
+  assert.match(markup, /id="editor-outline-width"[^>]*min="0"[^>]*max="20"/);
+  assert.match(markup, /id="editor-outline-color"[^>]*type="color"/);
+  for (const id of [
+    'editor-opacity',
+    'editor-position-x',
+    'editor-position-y',
+    'editor-scale',
+    'editor-rotation',
+  ]) {
+    assert.match(markup, new RegExp(`id="${id}"`));
+  }
+  assert.match(markup, />Horizontal<\/label>/);
+  assert.match(markup, />Vertical<\/label>/);
+  assert.doesNotMatch(markup, /editor-crop-left|editor-brightness/);
+});
+
+test('image inspector retains phase-one control ids, bounds, and image-only sections', () => {
+  const source = createEditorAsset('project-image-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Image inspector', source);
+  const layer = project.variations[0].layers[0];
+  assert.equal(layer.type, 'image');
+
+  const transformMarkup = renderInspector(layer);
+  assert.match(transformMarkup, /id="editor-position-x"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
+  assert.match(transformMarkup, /id="editor-position-y"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
+  assert.match(transformMarkup, /id="editor-scale"[^>]*min="5"[^>]*max="400"[^>]*step="1"/);
+  assert.match(transformMarkup, /id="editor-rotation"[^>]*min="-180"[^>]*max="180"[^>]*step="1"/);
+  assert.match(transformMarkup, /id="editor-opacity"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
+
+  const cropMarkup = renderInspector(layer, 'crop');
+  for (const edge of ['left', 'top', 'right', 'bottom']) {
+    assert.match(cropMarkup, new RegExp(`id="editor-crop-${edge}"[^>]*min="0"[^>]*max="45"[^>]*step="1"`));
+  }
+
+  const adjustmentsMarkup = renderInspector(layer, 'adjust');
+  for (const adjustment of ['brightness', 'contrast', 'saturation']) {
+    assert.match(adjustmentsMarkup, new RegExp(`id="editor-${adjustment}"[^>]*min="-100"[^>]*max="100"[^>]*step="1"`));
+  }
+});
+
 test('project drawer closes only after the requested project opens successfully', async () => {
   let closeCount = 0;
   assert.equal(
@@ -379,7 +470,7 @@ test('project drawer closes only after the requested project opens successfully'
   assert.equal(closeCount, 1);
 });
 
-test('image-only inspector follows image selection and stays empty for text selection', () => {
+test('selected layer helpers follow image and text selection', () => {
   const source = createEditorAsset('project-source-render', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
   });

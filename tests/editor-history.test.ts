@@ -209,6 +209,40 @@ test('edits text content and style with normalized values and undo support', () 
   assert.equal(getSelectedTextLayer(transformed.present)?.transform.scale, 1.5);
 });
 
+test('coalesces text content and continuous style edits until each history group ends', () => {
+  let history = makeHistory();
+  const textLayer = { ...createTextLayer('Caption'), id: 'text_grouped' };
+  history = reduceEditorHistory(history, { type: 'add-text-layer', layer: textLayer });
+  const variationId = history.present.activeVariationId;
+  const initialPastLength = history.variationHistory[variationId].past.length;
+
+  for (const text of ['C', 'Ca', 'Canvas']) {
+    history = reduceEditorHistory(history, {
+      type: 'set-text-content', layerId: textLayer.id, text, historyGroup: 'inspector-text-content',
+    });
+  }
+  assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 1);
+
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+  for (const fontSize of [64, 72, 80]) {
+    const layer = getSelectedTextLayer(history.present);
+    if (!layer) throw new Error('Expected a selected text layer.');
+    history = reduceEditorHistory(history, {
+      type: 'set-text-style',
+      layerId: textLayer.id,
+      style: { ...layer, fontSize },
+      historyGroup: 'inspector-font-size',
+    });
+  }
+  assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 2);
+
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+  history = reduceEditorHistory(history, {
+    type: 'set-text-content', layerId: textLayer.id, text: 'Canvas text', historyGroup: 'inspector-text-content',
+  });
+  assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 3);
+});
+
 test('ends a history group and caps past states at 100', () => {
   let history = makeHistory();
   const layerId = getSelectedImageLayer(history.present).id;

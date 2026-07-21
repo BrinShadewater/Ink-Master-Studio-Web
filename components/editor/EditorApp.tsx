@@ -4,7 +4,6 @@ import {
   canRedoActiveVariation,
   canUndoActiveVariation,
   getActiveVariation,
-  getSelectedImageLayer,
   getSelectedLayer,
 } from '../../editor/history';
 import type { EditorCommand } from '../../editor/history';
@@ -72,7 +71,6 @@ export const EditorApp = () => {
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
   const selectedLayer = project ? getSelectedLayer(project) : null;
-  const selectedImageLayer = project ? getSelectedImageLayer(project) : null;
   const selectedLayerId = selectedLayer?.id ?? null;
   const selectedLayerType = selectedLayer?.type ?? null;
 
@@ -165,6 +163,7 @@ export const EditorApp = () => {
       <section className="grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1">
         <EditorToolbar
           tool={tool}
+          layerType={selectedLayerType}
           onToolChange={setTool}
           onOpenLayers={openLayers}
           layersButtonRef={layersButtonRef}
@@ -217,7 +216,7 @@ export const EditorApp = () => {
             onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
             dispatch={workspace.dispatch}
           />
-          <EditorInspector project={project} layer={selectedImageLayer} tool={tool} dispatch={workspace.dispatch} />
+          <EditorInspector project={project} layer={selectedLayer} tool={tool} dispatch={workspace.dispatch} />
         </div>
       </section>
 

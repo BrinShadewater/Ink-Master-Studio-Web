@@ -1,9 +1,10 @@
 import { Crop, Layers, MousePointer2, SlidersHorizontal, type LucideIcon } from 'lucide-react';
 import type { Ref } from 'react';
-import type { EditorTool } from '../../editor/model';
+import type { DesignLayer, EditorTool } from '../../editor/model';
 
 export interface EditorToolbarProps {
   tool: EditorTool;
+  layerType?: DesignLayer['type'] | null;
   onToolChange: (tool: EditorTool) => void;
   onOpenLayers: () => void;
   layersButtonRef?: Ref<HTMLButtonElement>;
@@ -19,6 +20,7 @@ const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center transition f
 
 export const EditorToolbar = ({
   tool,
+  layerType = null,
   onToolChange,
   onOpenLayers,
   layersButtonRef,
@@ -27,16 +29,24 @@ export const EditorToolbar = ({
     className="order-3 flex h-16 min-w-0 items-center justify-center gap-4 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
+    {layerType === 'text' ? (
+      <p id="editor-image-tools-disabled-reason" className="sr-only">
+        Crop and Adjust are available only for image layers.
+      </p>
+    ) : null}
     {tools.map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
+      const disabled = layerType === 'text' && id !== 'select';
       return (
         <button
           key={id}
           type="button"
-          className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
+          className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
           aria-label={label}
           aria-pressed={selected}
-          title={label}
+          aria-describedby={disabled ? 'editor-image-tools-disabled-reason' : undefined}
+          title={disabled ? `${label} is available only for image layers` : label}
+          disabled={disabled}
           onClick={() => onToolChange(id)}
         >
           <Icon aria-hidden="true" size={19} strokeWidth={1.8} />

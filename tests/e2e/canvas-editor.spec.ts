@@ -377,7 +377,7 @@ test('keeps dedicated file inputs hidden while preserving labeled imports', asyn
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 });
 
-test('normalizes tools after text duplicate and delete fallback selection paths', async ({ page }) => {
+test('edits text layers and gates image tools across selection fallback paths', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/');
   await uploadFixture(page, 640, 480, 'tool-paths.png');
@@ -387,9 +387,30 @@ test('normalizes tools after text duplicate and delete fallback selection paths'
   const adjust = page.getByRole('button', { name: 'Adjust', exact: true });
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
+  await expect(crop).toBeDisabled();
+  await expect(adjust).toBeDisabled();
+  await expect(crop).toHaveAccessibleDescription('Crop and Adjust are available only for image layers.');
+  await expect(page.getByRole('heading', { name: 'Text', exact: true })).toBeVisible();
 
-  await adjust.click();
-  await expect(adjust).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Content', { exact: true }).fill('First line\nSecond line');
+  await page.getByLabel('Font', { exact: true }).selectOption('Georgia');
+  await page.getByLabel('Size', { exact: true }).fill('72');
+  await page.getByLabel('Size', { exact: true }).blur();
+  await page.getByLabel('Fill color', { exact: true }).fill('#336699');
+  await page.getByRole('button', { name: 'Align center', exact: true }).click();
+  await page.getByLabel('Letter spacing', { exact: true }).fill('4');
+  await page.getByLabel('Outline width', { exact: true }).fill('2');
+  await page.getByLabel('Outline color', { exact: true }).fill('#ffffff');
+  await page.getByLabel('Opacity', { exact: true }).fill('75');
+  await page.getByLabel('X position', { exact: true }).fill('0.6');
+  await page.getByLabel('X position', { exact: true }).blur();
+
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('First line\nSecond line');
+  await expect(page.getByLabel('Font', { exact: true })).toHaveValue('Georgia');
+  await expect(page.getByLabel('Size', { exact: true })).toHaveValue('72');
+  await expect(page.getByRole('button', { name: 'Align center', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
+
   await page.getByRole('button', { name: 'Duplicate layer' }).click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
@@ -398,6 +419,35 @@ test('normalizes tools after text duplicate and delete fallback selection paths'
   await expect(crop).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Delete layer' }).click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileLayout = await page.evaluate(() => {
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const canvas = document.querySelector('canvas[aria-label="Design canvas"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!(inspector instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(toolbar instanceof HTMLElement)) {
+      throw new Error('Expected the mobile editor regions.');
+    }
+    const inspectorBounds = inspector.getBoundingClientRect();
+    const canvasBounds = canvas.getBoundingClientRect();
+    const toolbarBounds = toolbar.getBoundingClientRect();
+    return {
+      pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      inspectorOverflows: inspector.scrollWidth > inspector.clientWidth + 1,
+      inspectorScrolls: inspector.scrollHeight > inspector.clientHeight,
+      canvasBottom: canvasBounds.bottom,
+      inspectorTop: inspectorBounds.top,
+      inspectorBottom: inspectorBounds.bottom,
+      toolbarTop: toolbarBounds.top,
+    };
+  });
+  expect(mobileLayout.pageOverflows).toBe(false);
+  expect(mobileLayout.inspectorOverflows).toBe(false);
+  expect(mobileLayout.inspectorScrolls).toBe(true);
+  expect(mobileLayout.canvasBottom).toBeLessThanOrEqual(mobileLayout.inspectorTop + 1);
+  expect(mobileLayout.inspectorBottom).toBeLessThanOrEqual(mobileLayout.toolbarTop + 1);
+  await page.getByLabel('X position', { exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByLabel('X position', { exact: true })).toBeVisible();
 });
 
 test('keeps save failure status and retry accessible on mobile', async ({ page }) => {
