@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDecodedImageController } from '../components/editor/EditorCanvas';
+import {
+  createDecodedImageController,
+  getCurrentDecodedImages,
+  type DecodedImageEntry,
+} from '../components/editor/EditorCanvas';
 import {
   getTextLayerBounds,
   hitTestDesignLayers,
@@ -102,8 +106,13 @@ class RecordingContext {
   }
   measureText(value: string) {
     this.measured.push(value);
-    const widths: Record<string, number> = { A: 20, B: 30, C: 25 };
-    return { width: widths[value] ?? value.length * 10 } as TextMetrics;
+    const widths: Record<string, number> = { A: 20, B: 30, C: 25, i: 1 };
+    const width = widths[value] ?? value.length * 10;
+    return {
+      width,
+      actualBoundingBoxLeft: value === 'i' ? 0.25 : 0,
+      actualBoundingBoxRight: value === 'i' ? 0.75 : width,
+    } as TextMetrics;
   }
   fillText(value: string, x: number, y: number) {
     this.textDraws.push({
@@ -184,10 +193,10 @@ test('measures and renders multiline text with reference scaling, outline, align
   const viewport = { width: 500, height: 800 };
 
   assert.deepEqual(getTextLayerBounds(asContext(context), viewport, layer), {
-    x: 191,
-    y: 76,
-    width: 118,
-    height: 248,
+    x: 193,
+    y: 78,
+    width: 114,
+    height: 244,
   });
   context.measured = [];
   renderDesignLayers(asContext(context), viewport, [layer], { metadataById: {}, imagesById: {} });
@@ -218,6 +227,50 @@ test('measures and renders multiline text with reference scaling, outline, align
   assert.ok(context.textDraws.filter(({ kind }) => kind === 'fill')
     .every(({ color }) => color === '#123456'));
 });
+
+const negativeSpacingCases: Array<{ align: TextLayer['align']; firstX: number }> = [
+  { align: 'left', firstX: -10.25 },
+  { align: 'center', firstX: 0.75 },
+  { align: 'right', firstX: 11.75 },
+];
+
+for (const { align, firstX } of negativeSpacingCases) {
+  test(`keeps narrow negative-spaced multiline glyphs inside ${align}-aligned bounds`, () => {
+    const context = new RecordingContext();
+    const layer = textLayer(`negative-${align}`, {
+      text: 'iii\nC',
+      fontSize: 100,
+      letterSpacing: -2,
+      outlineWidth: 2,
+      align,
+    });
+    const viewport = { width: 1000, height: 1000 };
+
+    assert.deepEqual(getTextLayerBounds(asContext(context), viewport, layer), {
+      x: 486.5,
+      y: 379,
+      width: 27,
+      height: 242,
+    });
+    renderDesignLayers(asContext(context), viewport, [layer], { metadataById: {}, imagesById: {} });
+
+    assert.deepEqual(
+      context.textDraws.filter(({ kind }) => kind === 'fill').map(({ text, x, y }) => ({ text, x, y })),
+      [
+        { text: 'i', x: firstX, y: -60 },
+        { text: 'i', x: firstX - 1, y: -60 },
+        { text: 'i', x: firstX - 2, y: -60 },
+        { text: 'C', x: -12.5, y: 60 },
+      ],
+    );
+    assert.equal(hitTestDesignLayers(
+      asContext(context), { x: 486.5, y: 500 }, viewport, [layer], { metadataById: {}, imagesById: {} },
+    )?.id, layer.id);
+    assert.equal(hitTestDesignLayers(
+      asContext(context), { x: 486.4, y: 500 }, viewport, [layer], { metadataById: {}, imagesById: {} },
+    ), null);
+  });
+}
 
 test('hit tests visible layers in reverse paint order and ignores missing image assets', () => {
   const context = new RecordingContext();
@@ -256,13 +309,24 @@ test('moves the topmost hit layer using viewport-normalized drag deltas', () => 
   });
 });
 
-test('decodes each active URL once and ignores stale load callbacks without revoking borrowed URLs', () => {
+test('filters decoded entries against current prop URLs before controller synchronization', () => {
+  const oldImage = image('old');
+  const decoded: Record<string, DecodedImageEntry> = {
+    asset: { url: 'blob:first', image: oldImage },
+  };
+
+  assert.deepEqual(getCurrentDecodedImages(decoded, { asset: 'blob:first' }), { asset: oldImage });
+  assert.deepEqual(getCurrentDecodedImages(decoded, { asset: 'blob:second' }), {});
+  assert.deepEqual(getCurrentDecodedImages(decoded, {}), {});
+});
+
+test('decodes each active URL once and keeps old callbacks unusable across prop and lifecycle replay windows', () => {
   const created: Array<{
     src: string;
     onload: (() => void) | null;
     onerror: (() => void) | null;
   }> = [];
-  const publications: Array<Record<string, CanvasImageSource>> = [];
+  const publications: Array<Record<string, DecodedImageEntry>> = [];
   const controller = createDecodedImageController(
     () => {
       const next = { src: '', onload: null, onerror: null };
@@ -274,20 +338,32 @@ test('decodes each active URL once and ignores stale load callbacks without revo
 
   controller.sync({ asset: 'blob:first' });
   const staleLoad = created[0].onload!;
+  staleLoad();
+  assert.equal(publications.at(-1)?.asset.url, 'blob:first');
+  assert.equal(publications.at(-1)?.asset.image, created[0] as unknown as CanvasImageSource);
+
+  const replacementProps = { asset: 'blob:second' };
+  assert.deepEqual(getCurrentDecodedImages(publications.at(-1)!, replacementProps), {});
+  staleLoad();
+  assert.deepEqual(getCurrentDecodedImages(publications.at(-1)!, replacementProps), {});
+
   controller.sync({ asset: 'blob:first' });
   assert.equal(created.length, 1);
 
   controller.sync({ asset: 'blob:second' });
   assert.equal(created.length, 2);
+  const publicationsAfterReplacementSync = publications.length;
   staleLoad();
-  assert.deepEqual(publications.at(-1), {});
+  assert.equal(publications.length, publicationsAfterReplacementSync);
 
   created[1].onload!();
-  assert.equal(publications.at(-1)?.asset, created[1] as unknown as CanvasImageSource);
+  assert.equal(publications.at(-1)?.asset.url, 'blob:second');
+  assert.equal(publications.at(-1)?.asset.image, created[1] as unknown as CanvasImageSource);
   controller.dispose();
 
   controller.sync({ asset: 'blob:second' });
   assert.equal(created.length, 3);
   created[2].onload!();
-  assert.equal(publications.at(-1)?.asset, created[2] as unknown as CanvasImageSource);
+  assert.equal(publications.at(-1)?.asset.url, 'blob:second');
+  assert.equal(publications.at(-1)?.asset.image, created[2] as unknown as CanvasImageSource);
 });

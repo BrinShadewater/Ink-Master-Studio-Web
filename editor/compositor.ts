@@ -14,15 +14,25 @@ export interface CompositorAssets {
   imagesById: Record<string, CanvasImageSource>;
 }
 
-interface MeasuredTextBlock {
-  characterWidths: number[][];
-  fontPixels: number;
-  letterSpacingPixels: number;
-  lineHeight: number;
-  lineWidths: number[];
-  lines: string[][];
+interface MeasuredGlyph {
+  character: string;
+  penX: number;
+}
+
+interface MeasuredTextLine {
+  glyphs: MeasuredGlyph[];
+  minX: number;
+  maxX: number;
   width: number;
+}
+
+interface MeasuredTextBlock {
+  contentHeight: number;
+  fontPixels: number;
   height: number;
+  lineHeight: number;
+  lines: MeasuredTextLine[];
+  width: number;
   outlinePixels: number;
 }
 
@@ -43,22 +53,41 @@ const measureTextLayer = (
   const fontPixels = layer.fontSize * designScale;
   const letterSpacingPixels = layer.letterSpacing * designScale;
   const outlinePixels = layer.outlineWidth * designScale;
-  const lines = layer.text.split('\n').map((line) => Array.from(line));
   context.font = `${fontPixels}px ${layer.fontFamily}`;
-  const characterWidths = lines.map((characters) => characters.map((character) => context.measureText(character).width));
-  const lineWidths = characterWidths.map((widths) => widths.reduce((width, characterWidth, index) => (
-    width + characterWidth + (index === widths.length - 1 ? 0 : letterSpacingPixels)
-  ), 0));
+  const outlineExtent = outlinePixels / 2;
+  let hasVisibleGlyph = false;
+  const lines = layer.text.split('\n').map((line): MeasuredTextLine => {
+    let penX = 0;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    const glyphs = Array.from(line).map((character) => {
+      const metrics = context.measureText(character);
+      const hasActualBounds = Number.isFinite(metrics.actualBoundingBoxLeft) &&
+        Number.isFinite(metrics.actualBoundingBoxRight);
+      const left = hasActualBounds ? metrics.actualBoundingBoxLeft : 0;
+      const right = hasActualBounds ? metrics.actualBoundingBoxRight : metrics.width;
+      if (!hasActualBounds || left !== 0 || right !== 0) {
+        minX = Math.min(minX, penX - left - outlineExtent);
+        maxX = Math.max(maxX, penX + right + outlineExtent);
+        hasVisibleGlyph = true;
+      }
+      const glyph = { character, penX };
+      penX += metrics.width + letterSpacingPixels;
+      return glyph;
+    });
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { glyphs, minX: 0, maxX: 0, width: 0 };
+    return { glyphs, minX, maxX, width: maxX - minX };
+  });
+  const lineHeight = fontPixels * TEXT_LINE_HEIGHT;
+  const contentHeight = lines.length * lineHeight;
 
   return {
-    characterWidths,
+    contentHeight,
     fontPixels,
-    letterSpacingPixels,
-    lineHeight: fontPixels * TEXT_LINE_HEIGHT,
-    lineWidths,
+    height: contentHeight + (hasVisibleGlyph ? outlinePixels : 0),
+    lineHeight,
     lines,
-    width: Math.max(0, ...lineWidths),
-    height: lines.length * fontPixels * TEXT_LINE_HEIGHT,
+    width: Math.max(0, ...lines.map((line) => line.width)),
     outlinePixels,
   };
 };
@@ -69,8 +98,8 @@ export const getTextLayerBounds = (
   layer: TextLayer,
 ): Rect => {
   const measurement = measureTextLayer(context, viewport, layer);
-  const width = (measurement.width + measurement.outlinePixels * 2) * layer.transform.scale;
-  const height = (measurement.height + measurement.outlinePixels * 2) * layer.transform.scale;
+  const width = measurement.width * layer.transform.scale;
+  const height = measurement.height * layer.transform.scale;
   const centerX = viewport.width * layer.transform.x;
   const centerY = viewport.height * layer.transform.y;
   return {
@@ -115,10 +144,10 @@ const renderImageLayer = (
   context.restore();
 };
 
-const getLineStart = (align: TextLayer['align'], blockWidth: number, lineWidth: number) => {
-  if (align === 'center') return -lineWidth / 2;
-  if (align === 'right') return blockWidth / 2 - lineWidth;
-  return -blockWidth / 2;
+const getLineOrigin = (align: TextLayer['align'], blockWidth: number, line: MeasuredTextLine) => {
+  if (align === 'center') return -(line.minX + line.maxX) / 2;
+  if (align === 'right') return blockWidth / 2 - line.maxX;
+  return -blockWidth / 2 - line.minX;
 };
 
 const renderTextLayer = (
@@ -146,13 +175,13 @@ const renderTextLayer = (
   context.strokeStyle = layer.outlineColor;
   context.lineWidth = measurement.outlinePixels;
 
-  measurement.lines.forEach((characters, lineIndex) => {
-    let x = getLineStart(layer.align, measurement.width, measurement.lineWidths[lineIndex]);
-    const y = -measurement.height / 2 + measurement.lineHeight * (lineIndex + 0.5);
-    characters.forEach((character, characterIndex) => {
+  measurement.lines.forEach((line, lineIndex) => {
+    const originX = getLineOrigin(layer.align, measurement.width, line);
+    const y = -measurement.contentHeight / 2 + measurement.lineHeight * (lineIndex + 0.5);
+    line.glyphs.forEach(({ character, penX }) => {
+      const x = originX + penX;
       if (measurement.outlinePixels > 0) context.strokeText(character, x, y);
       context.fillText(character, x, y);
-      x += measurement.characterWidths[lineIndex][characterIndex] + measurement.letterSpacingPixels;
     });
   });
   context.restore();

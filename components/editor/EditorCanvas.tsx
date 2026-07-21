@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { hitTestDesignLayers, renderDesignLayers, type CompositorAssets } from '../../editor/compositor';
 import { moveTransformByViewportDelta, type Size } from '../../editor/geometry';
 import type { EditorAsset, EditorTool, DesignLayer, LayerTransform } from '../../editor/model';
@@ -38,6 +38,11 @@ interface DecodeEntry {
   url: string;
 }
 
+export interface DecodedImageEntry {
+  url: string;
+  image: CanvasImageSource;
+}
+
 export interface DecodedImageController {
   sync: (assetUrlsById: Record<string, string>) => void;
   dispose: () => void;
@@ -45,7 +50,7 @@ export interface DecodedImageController {
 
 export const createDecodedImageController = (
   createImage: () => HTMLImageElement,
-  publish: (imagesById: Record<string, CanvasImageSource>) => void,
+  publish: (imagesById: Record<string, DecodedImageEntry>) => void,
 ): DecodedImageController => {
   const entriesByUrl = new Map<string, DecodeEntry>();
   let currentUrlsById: Record<string, string> = {};
@@ -53,10 +58,10 @@ export const createDecodedImageController = (
 
   const publishCurrent = () => {
     if (disposed) return;
-    const imagesById: Record<string, CanvasImageSource> = {};
+    const imagesById: Record<string, DecodedImageEntry> = {};
     for (const [assetId, url] of Object.entries(currentUrlsById)) {
       const entry = entriesByUrl.get(url);
-      if (entry?.active && entry.loaded) imagesById[assetId] = entry.image;
+      if (entry?.active && entry.loaded) imagesById[assetId] = { url, image: entry.image };
     }
     publish(imagesById);
   };
@@ -69,7 +74,7 @@ export const createDecodedImageController = (
 
   return {
     sync(nextUrlsById) {
-      // React StrictMode replays effects after cleanup with the same component state.
+      // A cleanup/setup lifecycle replay may reuse this controller instance.
       disposed = false;
       currentUrlsById = { ...nextUrlsById };
       const activeUrls = new Set(Object.values(currentUrlsById));
@@ -108,6 +113,18 @@ export const createDecodedImageController = (
   };
 };
 
+export const getCurrentDecodedImages = (
+  decodedImagesById: Record<string, DecodedImageEntry>,
+  assetUrlsById: Record<string, string>,
+): Record<string, CanvasImageSource> => {
+  const imagesById: Record<string, CanvasImageSource> = {};
+  for (const [assetId, url] of Object.entries(assetUrlsById)) {
+    const decoded = decodedImagesById[assetId];
+    if (decoded?.url === url) imagesById[assetId] = decoded.image;
+  }
+  return imagesById;
+};
+
 const initialViewport: ViewportState = {
   size: { width: 0, height: 0 },
   pixelRatio: 1,
@@ -125,13 +142,17 @@ export const EditorCanvas = ({
 }: EditorCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [imagesById, setImagesById] = useState<Record<string, CanvasImageSource>>({});
+  const [decodedImagesById, setDecodedImagesById] = useState<Record<string, DecodedImageEntry>>({});
   const [viewport, setViewport] = useState<ViewportState>(initialViewport);
   const decoderRef = useRef<DecodedImageController | null>(null);
   if (!decoderRef.current) {
-    decoderRef.current = createDecodedImageController(() => new Image(), setImagesById);
+    decoderRef.current = createDecodedImageController(() => new Image(), setDecodedImagesById);
   }
   const decoder = decoderRef.current;
+  const imagesById = useMemo(
+    () => getCurrentDecodedImages(decodedImagesById, assetUrlsById),
+    [assetUrlsById, decodedImagesById],
+  );
 
   useEffect(() => {
     decoder.sync(assetUrlsById);
