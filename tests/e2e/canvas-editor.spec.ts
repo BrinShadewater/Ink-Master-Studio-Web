@@ -394,8 +394,31 @@ test('edits text layers and gates image tools across selection fallback paths', 
 
   await page.getByLabel('Content', { exact: true }).fill('First line\nSecond line');
   await page.getByLabel('Font', { exact: true }).selectOption('Georgia');
-  await page.getByLabel('Size', { exact: true }).fill('72');
-  await page.getByLabel('Size', { exact: true }).blur();
+  const fontSize = page.getByLabel('Size', { exact: true });
+  await fontSize.click();
+  await fontSize.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await fontSize.pressSequentially('72');
+  await expect(fontSize).toHaveValue('72');
+  await fontSize.press('Enter');
+  await expect(fontSize).toHaveValue('72');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(fontSize).toHaveValue('48');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(fontSize).toHaveValue('72');
+  await fontSize.fill('');
+  await fontSize.blur();
+  await expect(fontSize).toHaveValue('72');
+  await fontSize.fill('96');
+  await fontSize.press('Escape');
+  await expect(fontSize).toHaveValue('72');
+  await fontSize.fill('96');
+  await page.getByRole('button', { name: 'Select layer tool-paths.png' }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
+  await page.getByRole('button', { name: 'Select layer Text' }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByLabel('Size', { exact: true })).toHaveValue('72');
   await page.getByLabel('Fill color', { exact: true }).fill('#336699');
   await page.getByRole('button', { name: 'Align center', exact: true }).click();
   await page.getByLabel('Letter spacing', { exact: true }).fill('4');
@@ -415,6 +438,19 @@ test('edits text layers and gates image tools across selection fallback paths', 
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
+  await page.getByLabel('X position', { exact: true }).fill('0.7');
+  await page.getByLabel('X position', { exact: true }).blur();
+  await page.getByLabel('Opacity', { exact: true }).fill('40');
+  await page.getByLabel('Opacity', { exact: true }).blur();
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.5');
+  await expect(page.getByLabel('Opacity', { exact: true })).toHaveValue('100');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.7');
+  await expect(page.getByLabel('Opacity', { exact: true })).toHaveValue('40');
+  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+  await page.getByLabel('Horizontal', { exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
   await crop.click();
   await expect(crop).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Delete layer' }).click();
@@ -448,6 +484,66 @@ test('edits text layers and gates image tools across selection fallback paths', 
   expect(mobileLayout.inspectorBottom).toBeLessThanOrEqual(mobileLayout.toolbarTop + 1);
   await page.getByLabel('X position', { exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByLabel('X position', { exact: true })).toBeVisible();
+});
+
+test('separates text content sessions when selection unmounts the focused inspector', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 640, 480, 'content-sessions.png');
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+
+  const selectImageWithoutFocus = async () => {
+    await page.getByRole('button', { name: 'Select layer content-sessions.png' }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+    });
+  };
+  const selectTextWithoutFocus = async () => {
+    await page.getByRole('button', { name: 'Select layer Text' }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+    });
+  };
+
+  await page.getByLabel('Content', { exact: true }).fill('First session');
+  await selectImageWithoutFocus();
+  await selectTextWithoutFocus();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('First session');
+
+  await page.getByLabel('Content', { exact: true }).fill('Second session');
+  await selectImageWithoutFocus();
+  await selectTextWithoutFocus();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('First session');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('Text');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('First session');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('Second session');
+});
+
+test('groups text color control changes separately from discrete alignment', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 640, 480, 'color-groups.png');
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+
+  const fillColor = page.getByLabel('Fill color', { exact: true });
+  await fillColor.fill('#112233');
+  await fillColor.fill('#445566');
+  await fillColor.fill('#778899');
+  await fillColor.blur();
+  await page.getByRole('button', { name: 'Align center', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Align left', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(fillColor).toHaveValue('#778899');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(fillColor).toHaveValue('#000000');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(fillColor).toHaveValue('#778899');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Align center', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('keeps save failure status and retry accessible on mobile', async ({ page }) => {

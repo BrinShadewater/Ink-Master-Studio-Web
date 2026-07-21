@@ -20,6 +20,11 @@ import {
   edgePercentagesToCrop,
 } from '../components/editor/EditorInspector';
 import {
+  createFontSizeDraftState,
+  fontSizeDraftReducer,
+  normalizeFontSizeDraft,
+} from '../components/editor/TextInspector';
+import {
   LayerPanel,
   LayerDrawer,
   createLayerNameDraftState,
@@ -427,6 +432,25 @@ test('text inspector exposes complete editable text and shared transform control
   assert.match(markup, />Horizontal<\/label>/);
   assert.match(markup, />Vertical<\/label>/);
   assert.doesNotMatch(markup, /editor-crop-left|editor-brightness/);
+});
+
+test('font-size draft preserves sequential input and normalizes commit, restore, and layer sync', () => {
+  let state = createFontSizeDraftState('text-a', 48);
+  state = fontSizeDraftReducer(state, { type: 'input', value: '7' });
+  state = fontSizeDraftReducer(state, { type: 'sync', layerId: 'text-a', fontSize: 48 });
+  state = fontSizeDraftReducer(state, { type: 'input', value: '72' });
+  assert.equal(state.draft, '72');
+  assert.equal(normalizeFontSizeDraft(state.draft, state.externalValue), 72);
+  assert.equal(normalizeFontSizeDraft('', 48), 48);
+  assert.equal(normalizeFontSizeDraft('not-a-number', 48), 48);
+  assert.equal(normalizeFontSizeDraft('2', 48), 8);
+  assert.equal(normalizeFontSizeDraft('900', 48), 400);
+
+  state = fontSizeDraftReducer(state, { type: 'restore' });
+  assert.equal(state.draft, '48');
+  state = fontSizeDraftReducer(state, { type: 'input', value: '96' });
+  state = fontSizeDraftReducer(state, { type: 'sync', layerId: 'text-b', fontSize: 120 });
+  assert.deepEqual(state, { layerId: 'text-b', externalValue: 120, draft: '120' });
 });
 
 test('image inspector retains phase-one control ids, bounds, and image-only sections', () => {

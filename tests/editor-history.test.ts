@@ -243,6 +243,75 @@ test('coalesces text content and continuous style edits until each history group
   assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 3);
 });
 
+test('keeps image reset atomic and invalidates its redo after a discrete transform edit', () => {
+  let history = makeHistory();
+  const layer = getSelectedImageLayer(history.present);
+  const variationId = history.present.activeVariationId;
+  history = reduceEditorHistory(history, {
+    type: 'set-transform', layerId: layer.id,
+    transform: { ...layer.transform, scale: 2, rotation: 30 },
+  });
+  history = reduceEditorHistory(history, { type: 'set-opacity', layerId: layer.id, opacity: 0.4 });
+  const beforeResetLength = history.variationHistory[variationId].past.length;
+
+  history = reduceEditorHistory(history, {
+    type: 'set-transform', layerId: layer.id,
+    transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+    historyGroup: 'inspector-select-reset',
+  });
+  history = reduceEditorHistory(history, {
+    type: 'set-opacity', layerId: layer.id, opacity: 1, historyGroup: 'inspector-select-reset',
+  });
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+  assert.equal(history.variationHistory[variationId].past.length, beforeResetLength + 1);
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getSelectedImageLayer(history.present).transform.scale, 2);
+  assert.equal(getSelectedImageLayer(history.present).opacity, 0.4);
+  assert.equal(canRedoActiveVariation(history), true);
+  const restored = getSelectedImageLayer(history.present);
+  history = reduceEditorHistory(history, {
+    type: 'set-transform', layerId: restored.id,
+    transform: { ...restored.transform, flipX: true },
+  });
+  assert.equal(canRedoActiveVariation(history), false);
+});
+
+test('groups color edits and keeps a later discrete style edit separate across undo and redo', () => {
+  let history = makeHistory();
+  const textLayer = { ...createTextLayer('Color'), id: 'text_color_group' };
+  history = reduceEditorHistory(history, { type: 'add-text-layer', layer: textLayer });
+  const variationId = history.present.activeVariationId;
+  const initialPastLength = history.variationHistory[variationId].past.length;
+
+  for (const color of ['#112233', '#445566', '#778899']) {
+    const layer = getSelectedTextLayer(history.present);
+    if (!layer) throw new Error('Expected a selected text layer.');
+    history = reduceEditorHistory(history, {
+      type: 'set-text-style', layerId: layer.id,
+      style: { ...layer, color }, historyGroup: 'inspector-fill-color',
+    });
+  }
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+  assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 1);
+
+  const colored = getSelectedTextLayer(history.present);
+  if (!colored) throw new Error('Expected a selected text layer.');
+  history = reduceEditorHistory(history, {
+    type: 'set-text-style', layerId: colored.id, style: { ...colored, align: 'center' },
+  });
+  assert.equal(history.variationHistory[variationId].past.length, initialPastLength + 2);
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getSelectedTextLayer(history.present)?.align, 'left');
+  assert.equal(getSelectedTextLayer(history.present)?.color, '#778899');
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getSelectedTextLayer(history.present)?.color, '#000000');
+  history = reduceEditorHistory(history, { type: 'redo' });
+  assert.equal(getSelectedTextLayer(history.present)?.color, '#778899');
+  history = reduceEditorHistory(history, { type: 'redo' });
+  assert.equal(getSelectedTextLayer(history.present)?.align, 'center');
+});
+
 test('ends a history group and caps past states at 100', () => {
   let history = makeHistory();
   const layerId = getSelectedImageLayer(history.present).id;

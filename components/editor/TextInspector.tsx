@@ -1,4 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight, type LucideIcon } from 'lucide-react';
+import { useEffect, useReducer, useRef, type KeyboardEvent } from 'react';
 import type { EditorCommand } from '../../editor/history';
 import {
   TEXT_FONT_FAMILIES,
@@ -6,7 +7,6 @@ import {
   type TextLayerStyle,
 } from '../../editor/model';
 import {
-  NumberControl,
   RangeControl,
   TransformControls,
 } from './TransformControls';
@@ -23,12 +23,108 @@ const alignments: Array<{ value: TextLayer['align']; label: string; icon: Lucide
   { value: 'right', label: 'Align right', icon: AlignRight },
 ];
 
+export interface FontSizeDraftState {
+  layerId: string;
+  externalValue: number;
+  draft: string;
+}
+
+export type FontSizeDraftAction =
+  | { type: 'input'; value: string }
+  | { type: 'restore' }
+  | { type: 'sync'; layerId: string; fontSize: number };
+
+export const createFontSizeDraftState = (
+  layerId: string,
+  fontSize: number,
+): FontSizeDraftState => ({ layerId, externalValue: fontSize, draft: String(fontSize) });
+
+export const fontSizeDraftReducer = (
+  state: FontSizeDraftState,
+  action: FontSizeDraftAction,
+): FontSizeDraftState => {
+  if (action.type === 'input') return { ...state, draft: action.value };
+  if (action.type === 'restore') return { ...state, draft: String(state.externalValue) };
+  if (state.layerId === action.layerId && state.externalValue === action.fontSize) return state;
+  return createFontSizeDraftState(action.layerId, action.fontSize);
+};
+
+export const normalizeFontSizeDraft = (draft: string, fallback: number): number => {
+  const trimmed = draft.trim();
+  if (!trimmed) return fallback;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(textControlBounds.fontSize.min, Math.min(textControlBounds.fontSize.max, parsed));
+};
+
 export interface TextInspectorProps {
   layer: TextLayer;
   dispatch: (command: EditorCommand) => void;
 }
 
+interface FontSizeControlProps {
+  layer: TextLayer;
+  onCommit: (fontSize: number) => void;
+  onEnd: () => void;
+}
+
+const FontSizeControl = ({ layer, onCommit, onEnd }: FontSizeControlProps) => {
+  const [state, updateState] = useReducer(
+    fontSizeDraftReducer,
+    createFontSizeDraftState(layer.id, layer.fontSize),
+  );
+  const restoreOnBlurRef = useRef(false);
+
+  useEffect(() => {
+    updateState({ type: 'sync', layerId: layer.id, fontSize: layer.fontSize });
+  }, [layer.id, layer.fontSize]);
+
+  const commit = () => {
+    if (restoreOnBlurRef.current) {
+      restoreOnBlurRef.current = false;
+      onEnd();
+      return;
+    }
+    const fontSize = normalizeFontSizeDraft(state.draft, state.externalValue);
+    updateState({ type: 'input', value: String(fontSize) });
+    if (fontSize !== state.externalValue) onCommit(fontSize);
+    onEnd();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      restoreOnBlurRef.current = true;
+      updateState({ type: 'restore' });
+      event.currentTarget.blur();
+    }
+  };
+
+  return (
+    <div className="grid gap-2">
+      <label className="text-xs font-medium text-neutral-300" htmlFor="editor-font-size">Size</label>
+      <input
+        id="editor-font-size"
+        className="h-9 w-full border border-neutral-700 bg-neutral-950 px-2 text-sm tabular-nums text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+        type="number"
+        min={textControlBounds.fontSize.min}
+        max={textControlBounds.fontSize.max}
+        step={textControlBounds.fontSize.step}
+        value={state.draft}
+        onChange={(event) => updateState({ type: 'input', value: event.currentTarget.value })}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+      />
+    </div>
+  );
+};
+
 export const TextInspector = ({ layer, dispatch }: TextInspectorProps) => {
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
   const endHistoryGroup = () => dispatch({ type: 'end-history-group' });
   const style: TextLayerStyle = {
     fontFamily: layer.fontFamily,
@@ -45,6 +141,10 @@ export const TextInspector = ({ layer, dispatch }: TextInspectorProps) => {
     style: { ...style, ...next },
     historyGroup,
   });
+
+  useEffect(() => () => {
+    dispatchRef.current({ type: 'end-history-group' });
+  }, [layer.id]);
 
   return (
     <div className="grid min-w-0 gap-5 p-4">
@@ -78,12 +178,9 @@ export const TextInspector = ({ layer, dispatch }: TextInspectorProps) => {
             {TEXT_FONT_FAMILIES.map((font) => <option key={font} value={font}>{font}</option>)}
           </select>
         </div>
-        <NumberControl
-          id="editor-font-size"
-          label="Size"
-          value={layer.fontSize}
-          bounds={textControlBounds.fontSize}
-          onChange={(value) => updateStyle({ fontSize: value }, 'inspector-font-size')}
+        <FontSizeControl
+          layer={layer}
+          onCommit={(fontSize) => updateStyle({ fontSize }, 'inspector-font-size')}
           onEnd={endHistoryGroup}
         />
       </div>
