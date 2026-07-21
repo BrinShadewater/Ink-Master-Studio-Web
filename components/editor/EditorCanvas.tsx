@@ -11,6 +11,10 @@ import {
 import type { EditorTool, ImageLayer, LayerTransform } from '../../editor/model';
 
 export interface EditorCanvasProps {
+  /**
+   * Borrowed source URL. Its creator owns URL lifecycle and revocation;
+   * EditorCanvas consumes it without revoking it.
+   */
   sourceUrl: string | null;
   sourceSize: Size | null;
   layer: ImageLayer | null;
@@ -68,18 +72,17 @@ export const EditorCanvas = ({
   const [viewport, setViewport] = useState<ViewportState>(initialViewport);
 
   useEffect(() => {
-    if (!sourceUrl) {
-      setImage(null);
-      return;
-    }
-
+    // Clear only this component's decoded-image state when its borrowed URL changes.
     setImage(null);
+    if (!sourceUrl) return;
+
     const nextImage = new Image();
     nextImage.onload = () => setImage(nextImage);
     nextImage.onerror = () => setImage(null);
     nextImage.src = sourceUrl;
 
     return () => {
+      // Stop stale image callbacks only. The borrowed URL remains owned by its creator.
       nextImage.onload = null;
       nextImage.onerror = null;
     };

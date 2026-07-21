@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   buildCanvasFilter,
@@ -38,4 +39,11 @@ test('derives a cropped draw rectangle around the normalized layer center', () =
     ),
     { x: -260, y: -80, width: 1120, height: 560 },
   );
+});
+
+test('keeps source URL lifecycle with its creator', () => {
+  const editorCanvasSource = readFileSync(new URL('../components/editor/EditorCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(editorCanvasSource, /Borrowed source URL/);
+  assert.match(editorCanvasSource, /creator owns URL lifecycle and revocation/);
+  assert.doesNotMatch(editorCanvasSource, /\bURL\.revokeObjectURL\s*\(/);
 });
