@@ -203,7 +203,7 @@ export const EditorTopBar = ({
           {saveStatus === 'error' ? (
             <button
               type="button"
-              className="grid h-4 w-4 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+              className="-my-1 grid h-6 w-6 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
               aria-label="Retry save"
               title="Retry save"
               onClick={onRetrySave}

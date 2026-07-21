@@ -339,6 +339,9 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
   await expect(page.getByRole('status').filter({ hasText: 'Local save failed' })).toBeVisible();
   const retry = page.getByRole('button', { name: 'Retry save' });
   await expect(retry).toBeVisible();
+  const retryBounds = await retry.boundingBox();
+  expect(retryBounds?.width).toBeGreaterThanOrEqual(24);
+  expect(retryBounds?.height).toBeGreaterThanOrEqual(24);
   await page.screenshot({
     path: artifactPath('mobile-save-failure-390x844.png'),
     animations: 'disabled',
