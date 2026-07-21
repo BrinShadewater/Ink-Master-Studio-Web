@@ -226,3 +226,103 @@ Running 8 tests using 1 worker
 
 - No known functional concerns remain from the three review findings.
 - Multi-layer rendering remains intentionally deferred to Task 4; the compatibility path is explicitly source-only until then.
+
+## Restoration Race Fix Review
+
+### Finding Addressed
+
+The one-time restoration path now captures the current workspace generation before restoring a referenced asset. After `saveAsset(asset)` resolves, retention requires all of the following to remain true: the hook is mounted, the captured authority generation still owns the workspace, the same project is active, no deletion lease blocks that project, and the current project still references the asset.
+
+If any condition changed during restoration, the workflow performs one final bounded isolated cleanup and reconciles workspace state only through the current-generation helper. The state machine permits at most one restoration and never returns to restoration after final cleanup. Final cleanup or reconciliation failure reports the deterministic terminal error `Could not converge cleanup for the failed image import. Reopen the project and try again.`
+
+### Files
+
+- `editor/useEditorWorkspace.ts`: added restoration generation capture, post-restore lifecycle/reference validation, one final bounded cleanup, and the terminal convergence error.
+- `tests/editor-workspace.test.ts`: added a real repository/registry delayed-restoration race and a bounded terminal-failure test.
+- `.superpowers/sdd/task-3-report.md`: appended this evidence and self-review.
+
+The progress ledger was not edited.
+
+### Red Evidence
+
+Command:
+
+```powershell
+npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
+```
+
+Exit code: `1`
+
+```text
+tests 44
+pass 42
+fail 2
+cancelled 0
+skipped 0
+todo 0
+
+a delayed restoration is cleaned again after its reference and workspace authority disappear
+AssertionError: 1 !== 2
+
+restoration convergence failure has bounded cleanup and no restore oscillation
+AssertionError: 1 !== 4
+```
+
+Both failures were expected: the old path performed only the initial deletion and never revalidated or cleaned the completed restoration.
+
+### Green Evidence
+
+Focused command:
+
+```powershell
+npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
+```
+
+Exit code: `0`
+
+```text
+tests 44
+pass 44
+fail 0
+cancelled 0
+skipped 0
+todo 0
+```
+
+Typecheck command:
+
+```powershell
+npm run typecheck
+```
+
+Exit code: `0`
+
+```text
+> inkmaster-studio@0.0.0 typecheck
+> tsc --noEmit
+```
+
+Whitespace verification command:
+
+```powershell
+git diff --check
+```
+
+Exit code: `0`; no whitespace errors were reported.
+
+### Commit
+
+- `0316bc52b85817708892db64c264a997f23bf297` `fix: bound editor asset restoration cleanup`
+
+### Self-Review
+
+- The real repository regression persists the imported asset, deletes it once, introduces a current-project reference during deletion, and blocks the single restoration. Before restoration resolves, it changes authority generation, active project, deletion blocking, mount state, and the current reference.
+- The invalid restoration is deleted a second time. The test proves the imported record is absent, the replacement workspace maps and URL map do not retain it, its URL is revoked exactly once, and both projects' source assets plus the sibling asset remain persisted.
+- Restoration acceptance is centralized in `isRestorationCurrent`, which checks mount state, captured generation ownership, active project identity, deletion lease state, and current project references after the asynchronous save.
+- Cleanup has a fixed transition bound: one initial cleanup, zero or one restoration, then zero or one final cleanup with three delete attempts. No branch can restore twice or loop.
+- Initial cleanup failure retains the existing cleanup-failure message. Restore/final-cleanup failure uses the terminal convergence message, so users receive one deterministic outcome for a workflow that cannot settle.
+
+### Concerns
+
+- No known functional concerns remain for the restoration race.
+- The terminal error intentionally stops after bounded attempts; it does not oscillate between save and delete when storage remains unavailable.
