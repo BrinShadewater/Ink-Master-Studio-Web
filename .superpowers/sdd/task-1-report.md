@@ -93,3 +93,75 @@ fail 0
 ## Concerns
 
 - `npm run typecheck` currently fails in the intentionally untouched `editor/history.ts` because Task 2 must update its image-only assumptions for `DesignLayer`. Reported errors are at lines 51, 95, 107, and 170. No later-task file was edited for this Task 1 implementation.
+
+## Fix Review
+
+### Findings Addressed
+
+1. Restored a clean typecheck by widening history edit-state and update helpers to `DesignLayer[]` while guarding image-only crop and adjustment mutations with `isImageLayer`. `getSelectedImageLayer` now rejects selected non-image layers with its existing stable error instead of returning an invalid type.
+2. Changed `saveEditorProject` to hydrate its stored project assets and call `migrateEditorProject` before persistence. Malformed schema-2 metadata, variations, selections, and text layers are normalized; projects without a stored source asset are rejected.
+
+### Files
+
+- `editor/history.ts`
+- `editor/projectRepository.ts`
+- `tests/editor-history.test.ts`
+- `tests/editor-repository.test.ts`
+
+### Commands And Results
+
+Red command before the fixes:
+
+```powershell
+npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts tests/editor-history.test.ts
+```
+
+```text
+tests 26
+pass 23
+fail 3
+Missing expected exception.
+Expected malformed source metadata to normalize from the stored asset.
+Missing expected rejection for an unstored source asset.
+```
+
+Green command after the fixes:
+
+```powershell
+npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts tests/editor-history.test.ts
+```
+
+```text
+tests 26
+pass 26
+fail 0
+```
+
+Typecheck:
+
+```powershell
+npm run typecheck
+```
+
+```text
+> inkmaster-studio@0.0.0 typecheck
+> tsc --noEmit
+```
+
+Exit code: `0`.
+
+### Commit
+
+- `fc006433e863dfef93cccd4bfede87c183660a9d` - `fix: validate layered editor project saves`
+
+### Self-Review
+
+- Confirmed existing image-only history behavior remains unchanged for image layers.
+- Confirmed crop and adjustment commands do not mutate text layers, while transform and opacity retain their existing generic update path.
+- Confirmed valid schema-2 saves still round-trip and malformed saves are normalized before both memory and IndexedDB persistence.
+- Confirmed missing source assets reject before a project record is written.
+- Ran `git diff --check`; no whitespace errors were reported.
+
+### Concerns
+
+- None.
