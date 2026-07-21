@@ -7,6 +7,8 @@ import {
   applyImportedProjectIfCurrent,
   applyNavigationIfCurrent,
   cleanupImportedProject,
+  getAutosaveRetryGeneration,
+  runAutosaveAttempt,
   validateRasterImport,
 } from '../editor/useEditorWorkspace';
 
@@ -90,7 +92,8 @@ test('a delayed delete of A cannot clear a newer open of B', async () => {
   const save = persistence.enqueueSave('project-a', async () => { await saveGate.promise; });
   await flushMicrotasks();
   const deleteOperation = authority.begin();
-  const deletion = persistence.enqueueDelete('project-a', async () => {
+  const deleteLease = persistence.beginDelete('project-a');
+  const deletion = persistence.enqueueDelete(deleteLease, async () => {
     if (authority.owns(deleteOperation) && activeProject === 'project-a') activeProject = 'none';
   });
 
@@ -112,7 +115,8 @@ test('deleting a project excludes pending and later autosaves from recreating it
     storedProjects.add('project-a');
   });
   await flushMicrotasks();
-  const deletion = persistence.enqueueDelete('project-a', async () => { storedProjects.delete('project-a'); });
+  const deleteLease = persistence.beginDelete('project-a');
+  const deletion = persistence.enqueueDelete(deleteLease, async () => { storedProjects.delete('project-a'); });
   const laterSave = persistence.enqueueSave('project-a', async () => { storedProjects.add('project-a'); });
 
   saveGate.resolve();
@@ -139,15 +143,77 @@ test('source URL ownership revokes each owned URL once on replacement and unmoun
   assert.deepEqual(events, ['revoke:blob:1', 'revoke:blob:2']);
 });
 
-test('autosave failure leaves the caller-owned in-memory project unchanged', async () => {
+test('autosave failure reports the hook-facing error transition and keeps the queue usable', async () => {
   const persistence = new WorkspacePersistenceController();
-  const inMemoryProject = { id: 'project-a', name: 'Unsaved edit', updatedAt: 2 };
-
-  await assert.rejects(
-    persistence.enqueueSave(inMemoryProject.id, async () => { throw new Error('Disk unavailable.'); }),
-    /Disk unavailable/,
+  assert.deepEqual(
+    await runAutosaveAttempt(persistence, 'project-a', async () => { throw new Error('Disk unavailable.'); }),
+    { status: 'error', error: 'Disk unavailable.' },
   );
-  assert.deepEqual(inMemoryProject, { id: 'project-a', name: 'Unsaved edit', updatedAt: 2 });
+  assert.deepEqual(
+    await runAutosaveAttempt(persistence, 'project-a', async () => undefined),
+    { status: 'saved', error: null },
+  );
+});
+
+test('a failed delete superseded by opening B releases A for a later save', async () => {
+  const authority = new WorkspaceOperationAuthority();
+  const persistence = new WorkspacePersistenceController();
+  let activeProject = 'project-a';
+  const deleteOperation = authority.begin();
+  const deleteLease = persistence.beginDelete('project-a');
+  const deletion = persistence.enqueueDelete(deleteLease, async () => { throw new Error('Delete failed.'); });
+
+  const openOperation = authority.begin();
+  applyNavigationIfCurrent(authority, openOperation, () => { activeProject = 'project-b'; });
+  await assert.rejects(deletion, /Delete failed/);
+
+  assert.equal(authority.owns(deleteOperation), false);
+  assert.equal(activeProject, 'project-b');
+  assert.equal(persistence.isBlocked('project-a'), false);
+  assert.deepEqual(
+    await runAutosaveAttempt(persistence, 'project-a', async () => undefined),
+    { status: 'saved', error: null },
+  );
+});
+
+test('a failed delete of active edited A releases and retries its stranded revision', async () => {
+  const persistence = new WorkspacePersistenceController();
+  const editedRevision = 2;
+  let persistedRevision = 1;
+  const deleteLease = persistence.beginDelete('project-a');
+
+  assert.deepEqual(
+    await runAutosaveAttempt(persistence, 'project-a', async () => { persistedRevision = editedRevision; }),
+    { status: 'blocked', error: null },
+  );
+  await assert.rejects(
+    persistence.enqueueDelete(deleteLease, async () => { throw new Error('Delete failed.'); }),
+    /Delete failed/,
+  );
+
+  const retryGeneration = getAutosaveRetryGeneration(0, 'project-a', 'project-a');
+  assert.equal(retryGeneration, 1);
+  assert.deepEqual(
+    await runAutosaveAttempt(persistence, 'project-a', async () => { persistedRevision = editedRevision; }),
+    { status: 'saved', error: null },
+  );
+  assert.equal(persistedRevision, editedRevision);
+  assert.equal(getAutosaveRetryGeneration(retryGeneration, 'project-b', 'project-a'), retryGeneration);
+});
+
+test('overlapping delete leases do not prematurely allow project saves', async () => {
+  const persistence = new WorkspacePersistenceController();
+  const firstLease = persistence.beginDelete('project-a');
+  const secondLease = persistence.beginDelete('project-a');
+  const secondGate = deferred<void>();
+  const firstDeletion = persistence.enqueueDelete(firstLease, async () => { throw new Error('First delete failed.'); });
+  const secondDeletion = persistence.enqueueDelete(secondLease, async () => { await secondGate.promise; });
+
+  await assert.rejects(firstDeletion, /First delete failed/);
+  assert.equal(persistence.isBlocked('project-a'), true);
+  secondGate.reject(new Error('Second delete failed.'));
+  await assert.rejects(secondDeletion, /Second delete failed/);
+  assert.equal(persistence.isBlocked('project-a'), false);
 });
 
 test('cleanup failure after a project save failure is surfaced after bounded retries', async () => {

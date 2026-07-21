@@ -118,38 +118,85 @@ export class SourceUrlOwner {
   }
 }
 
+export interface DeleteLease {
+  projectId: string;
+  id: number;
+}
+
+export type AutosaveAttempt =
+  | { status: 'saved' | 'blocked'; error: null }
+  | { status: 'error'; error: string };
+
 export class WorkspacePersistenceController {
   private chain: Promise<void> = Promise.resolve();
-  private excludedProjectIds = new Set<string>();
+  private nextLeaseId = 0;
+  private deleteLeases = new Map<string, Set<number>>();
+  private deletedProjectIds = new Set<string>();
 
-  exclude(projectId: string) {
-    this.excludedProjectIds.add(projectId);
+  beginDelete(projectId: string): DeleteLease {
+    const id = this.nextLeaseId + 1;
+    this.nextLeaseId = id;
+    const leases = this.deleteLeases.get(projectId) ?? new Set<number>();
+    leases.add(id);
+    this.deleteLeases.set(projectId, leases);
+    return { projectId, id };
   }
 
-  allow(projectId: string) {
-    this.excludedProjectIds.delete(projectId);
+  private releaseDelete(lease: DeleteLease) {
+    const leases = this.deleteLeases.get(lease.projectId);
+    if (!leases) return;
+    leases.delete(lease.id);
+    if (leases.size === 0) this.deleteLeases.delete(lease.projectId);
   }
 
-  isExcluded(projectId: string) {
-    return this.excludedProjectIds.has(projectId);
+  isBlocked(projectId: string) {
+    return this.deletedProjectIds.has(projectId) || Boolean(this.deleteLeases.get(projectId)?.size);
   }
 
   enqueueSave(projectId: string, save: () => Promise<void>) {
     const task = this.chain.then(async () => {
-      if (this.isExcluded(projectId)) return;
+      if (this.isBlocked(projectId)) return 'blocked' as const;
       await save();
+      return 'saved' as const;
     });
-    this.chain = task.catch(() => undefined);
+    this.chain = task.then(() => undefined, () => undefined);
     return task;
   }
 
-  enqueueDelete(projectId: string, remove: () => Promise<void>) {
-    this.exclude(projectId);
-    const task = this.chain.then(remove);
-    this.chain = task.catch(() => undefined);
+  enqueueDelete(lease: DeleteLease, remove: () => Promise<void>) {
+    const removal = this.chain.then(remove);
+    const task = removal.then(
+      () => {
+        this.deletedProjectIds.add(lease.projectId);
+        this.releaseDelete(lease);
+      },
+      (error: unknown) => {
+        this.releaseDelete(lease);
+        throw error;
+      },
+    );
+    this.chain = task.then(() => undefined, () => undefined);
     return task;
   }
 }
+
+export const runAutosaveAttempt = async (
+  persistence: WorkspacePersistenceController,
+  projectId: string,
+  save: () => Promise<void>,
+): Promise<AutosaveAttempt> => {
+  try {
+    return { status: await persistence.enqueueSave(projectId, save), error: null };
+  } catch (error) {
+    return { status: 'error', error: getErrorMessage(error) };
+  }
+};
+
+export const getAutosaveRetryGeneration = (
+  currentGeneration: number,
+  activeProjectId: string | null,
+  targetProjectId: string,
+) => activeProjectId === targetProjectId ? currentGeneration + 1 : currentGeneration;
 
 export const cleanupImportedProject = async (
   projectId: string,
@@ -177,6 +224,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [error, setError] = useState<string | null>(null);
+  const [saveRetryGeneration, setSaveRetryGeneration] = useState(0);
   const authorityRef = useRef(new WorkspaceOperationAuthority());
   const persistenceRef = useRef(new WorkspacePersistenceController());
   const sourceUrlOwnerRef = useRef<SourceUrlOwner | null>(null);
@@ -306,11 +354,14 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     const targetProjectId = projectId;
     const operation = authorityRef.current.begin();
     const persistence = persistenceRef.current;
-    const deletion = persistence.enqueueDelete(targetProjectId, () => deleteEditorProject(targetProjectId));
+    const deleteLease = persistence.beginDelete(targetProjectId);
+    const deletion = persistence.enqueueDelete(deleteLease, () => deleteEditorProject(targetProjectId));
     try {
       await deletion;
     } catch (nextError) {
-      if (authorityRef.current.owns(operation)) persistence.allow(targetProjectId);
+      if (mountedRef.current && activeProjectIdRef.current === targetProjectId) {
+        setSaveRetryGeneration((current) => getAutosaveRetryGeneration(current, activeProjectIdRef.current, targetProjectId));
+      }
       if (mountedRef.current && authorityRef.current.owns(operation)) setError(getErrorMessage(nextError));
       return;
     }
@@ -334,31 +385,30 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   const historyRevision = history ? `${history.present.id}:${history.present.updatedAt}` : null;
 
   useEffect(() => {
-    if (!history || !historyRevision || persistenceRef.current.isExcluded(history.present.id)) return;
+    if (!history || !historyRevision || persistenceRef.current.isBlocked(history.present.id)) return;
     latestRevisionRef.current = historyRevision;
     const project = history.present;
     const timeout = window.setTimeout(() => {
       if (!mountedRef.current || latestRevisionRef.current !== historyRevision ||
-        persistenceRef.current.isExcluded(project.id)) return;
+        persistenceRef.current.isBlocked(project.id)) return;
       setSaveStatus('saving');
       setError(null);
-      void persistenceRef.current.enqueueSave(project.id, async () => {
+      void runAutosaveAttempt(persistenceRef.current, project.id, async () => {
         await saveEditorProject(project);
         await refreshProjects();
-      }).then(() => {
+      }).then((result) => {
         if (mountedRef.current && latestRevisionRef.current === historyRevision &&
-          !persistenceRef.current.isExcluded(project.id)) setSaveStatus('saved');
-      }).catch((nextError: unknown) => {
+          !persistenceRef.current.isBlocked(project.id) && result.status === 'saved') setSaveStatus('saved');
         if (mountedRef.current && latestRevisionRef.current === historyRevision &&
-          !persistenceRef.current.isExcluded(project.id)) {
+          !persistenceRef.current.isBlocked(project.id) && result.status === 'error') {
           setSaveStatus('error');
-          setError(getErrorMessage(nextError));
+          setError(result.error);
         }
       });
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [history, historyRevision, refreshProjects]);
+  }, [history, historyRevision, refreshProjects, saveRetryGeneration]);
 
   return {
     history,
