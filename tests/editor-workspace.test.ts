@@ -483,6 +483,162 @@ test('secondary cleanup retains an imported asset referenced by the current proj
   assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
 });
 
+test('a delayed restoration is cleaned again after its reference and workspace authority disappear', async () => {
+  const first = createOpenFixture(`project_restore_a_${crypto.randomUUID()}`);
+  const sibling = createEditorAsset(first.project.id, new Blob(['sibling']), {
+    name: 'sibling.png', width: 40, height: 30,
+  });
+  const second = createOpenFixture(`project_restore_b_${crypto.randomUUID()}`);
+  await saveEditorAsset(first.asset);
+  await saveEditorAsset(sibling);
+  await saveEditorProject(first.project);
+  await saveEditorAsset(second.asset);
+  await saveEditorProject(second.project);
+
+  const authority = new WorkspaceOperationAuthority();
+  const importOperation = authority.begin();
+  const restoreStarted = deferred<void>();
+  const restoreGate = deferred<void>();
+  const revoked: string[] = [];
+  let nextUrl = 0;
+  const registry = new AssetUrlRegistry({
+    createObjectURL: () => `blob:${++nextUrl}`,
+    revokeObjectURL: (url) => { revoked.push(url); },
+  });
+  let mounted = true;
+  let deletionBlocked = false;
+  let activeProjectId = first.project.id;
+  let currentProject = first.project;
+  let assetsByIdRef = getAssetsByIdForProject(currentProject, [first.asset, sibling]);
+  let reactAssetsById = assetsByIdRef;
+  let reactAssetUrlsById = registry.sync(Object.values(assetsByIdRef));
+  let importedAssetId = '';
+  let saveCalls = 0;
+  let deleteCalls = 0;
+
+  const importing = importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => activeProjectId,
+    isProjectActive: (projectId) => authority.owns(importOperation) && activeProjectId === projectId,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => {
+      saveCalls += 1;
+      await saveEditorAsset(asset);
+      if (saveCalls === 1) {
+        importedAssetId = asset.id;
+        assetsByIdRef = { ...assetsByIdRef, [asset.id]: asset };
+        reactAssetsById = assetsByIdRef;
+        reactAssetUrlsById = registry.sync(Object.values(assetsByIdRef));
+        return;
+      }
+      restoreStarted.resolve();
+      await restoreGate.promise;
+    },
+    deleteAsset: async (assetId) => {
+      deleteCalls += 1;
+      await deleteEditorAsset(assetId);
+      if (deleteCalls === 1) {
+        const sourceLayer = currentProject.variations[0].layers[0];
+        assert.equal(sourceLayer.type, 'image');
+        currentProject = structuredClone(currentProject);
+        currentProject.variations[0].layers.push({
+          ...sourceLayer,
+          id: 'layer-restored-reference',
+          assetId,
+          name: 'Referenced during cleanup',
+        });
+      }
+    },
+    isAssetReferenced: (asset) => currentProject.id === asset.projectId &&
+      currentProject.variations.some((variation) => variation.layers.some((layer) =>
+        layer.type === 'image' && layer.assetId === asset.id)),
+    captureRestorationGeneration: () => authority.current(),
+    isRestorationCurrent: (asset, generation) => mounted && authority.owns(generation) &&
+      activeProjectId === asset.projectId && !deletionBlocked &&
+      currentProject.id === asset.projectId && currentProject.variations.some((variation) =>
+        variation.layers.some((layer) => layer.type === 'image' && layer.assetId === asset.id)),
+    onAssetDeleted: (asset) => {
+      const reconciled = reconcileDeletedWorkspaceAssetIfCurrent(
+        authority,
+        authority.current(),
+        activeProjectId,
+        currentProject,
+        assetsByIdRef,
+        asset.id,
+        registry,
+      );
+      if (!reconciled) return;
+      assetsByIdRef = reconciled.assetsById;
+      reactAssetsById = reconciled.assetsById;
+      reactAssetUrlsById = reconciled.assetUrlsById;
+    },
+    dispatchLayer: () => { throw new Error('Force orphan cleanup.'); },
+    reportError: () => undefined,
+  });
+
+  await restoreStarted.promise;
+  authority.begin();
+  mounted = false;
+  deletionBlocked = true;
+  activeProjectId = second.project.id;
+  currentProject = second.project;
+  assetsByIdRef = getAssetsByIdForProject(second.project, [second.asset]);
+  reactAssetsById = assetsByIdRef;
+  reactAssetUrlsById = registry.sync(Object.values(assetsByIdRef));
+  restoreGate.resolve();
+
+  assert.equal(await importing, false);
+  assert.equal(saveCalls, 2);
+  assert.equal(deleteCalls, 2);
+  assert.equal(await getEditorAsset(importedAssetId), null);
+  assert.equal(reactAssetsById[importedAssetId], undefined);
+  assert.equal(reactAssetUrlsById[importedAssetId], undefined);
+  assert.deepEqual(Object.keys(reactAssetsById), [second.asset.id]);
+  assert.equal(revoked.filter((url) => url === 'blob:3').length, 1);
+  assert.ok(await getEditorAsset(first.asset.id));
+  assert.ok(await getEditorAsset(sibling.id));
+  assert.ok(await getEditorAsset(second.asset.id));
+
+  registry.dispose();
+  await deleteEditorProject(first.project.id);
+  await deleteEditorProject(second.project.id);
+});
+
+test('restoration convergence failure has bounded cleanup and no restore oscillation', async () => {
+  let referenced = false;
+  let saveCalls = 0;
+  let deleteCalls = 0;
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async () => { saveCalls += 1; },
+    deleteAsset: async () => {
+      deleteCalls += 1;
+      if (deleteCalls === 1) {
+        referenced = true;
+        return;
+      }
+      throw new Error('Final cleanup unavailable.');
+    },
+    isAssetReferenced: () => referenced,
+    captureRestorationGeneration: () => 7,
+    isRestorationCurrent: () => {
+      referenced = false;
+      return false;
+    },
+    dispatchLayer: () => { throw new Error('Force orphan cleanup.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.equal(saveCalls, 2);
+  assert.equal(deleteCalls, 4);
+  assert.deepEqual(errors, [
+    'Could not converge cleanup for the failed image import. Reopen the project and try again.',
+  ]);
+});
+
 test('a stale import cleans its persisted project instead of replacing a newer open', async () => {
   const authority = new WorkspaceOperationAuthority();
   const persisted = deferred<void>();

@@ -35,6 +35,8 @@ export const IMPORT_CLEANUP_ERROR = 'Could not clean up the superseded import. C
 export const ADDITIONAL_IMAGE_IMPORT_ERROR = 'Could not add the image to this project.';
 export const ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR =
   'Could not clean up the failed image import. Reopen the project and try again.';
+export const ADDITIONAL_IMAGE_IMPORT_CONVERGENCE_ERROR =
+  'Could not converge cleanup for the failed image import. Reopen the project and try again.';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
 
@@ -391,6 +393,8 @@ export interface AdditionalImageImportDependencies {
   saveAsset: (asset: EditorAsset) => Promise<unknown>;
   deleteAsset: (assetId: string) => Promise<void>;
   isAssetReferenced?: (asset: EditorAsset) => boolean;
+  captureRestorationGeneration?: () => number;
+  isRestorationCurrent?: (asset: EditorAsset, generation: number) => boolean;
   onAssetDeleted?: (asset: EditorAsset) => void;
   dispatchLayer: (asset: EditorAsset, layer: ImageLayer) => void;
   reportError: (message: string) => void;
@@ -452,19 +456,36 @@ export const importAdditionalImageLayer = async (
         return false;
       }
       if (dependencies.isAssetReferenced?.(persistedAsset)) {
+        const restorationGeneration = dependencies.captureRestorationGeneration?.();
         try {
           await dependencies.saveAsset(persistedAsset);
         } catch {
-          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR);
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CONVERGENCE_ERROR);
           return false;
         }
-      } else {
+        const restorationIsCurrent = restorationGeneration === undefined
+          ? Boolean(dependencies.isAssetReferenced?.(persistedAsset))
+          : Boolean(dependencies.isRestorationCurrent?.(persistedAsset, restorationGeneration));
+        if (restorationIsCurrent) {
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_ERROR);
+          return false;
+        }
         try {
-          dependencies.onAssetDeleted?.(persistedAsset);
+          await cleanupImportedAsset(persistedAsset.id, dependencies.deleteAsset);
         } catch {
-          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR);
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CONVERGENCE_ERROR);
           return false;
         }
+        if (dependencies.isAssetReferenced?.(persistedAsset)) {
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CONVERGENCE_ERROR);
+          return false;
+        }
+      }
+      try {
+        dependencies.onAssetDeleted?.(persistedAsset);
+      } catch {
+        dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CONVERGENCE_ERROR);
+        return false;
       }
     }
     dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_ERROR);
@@ -634,6 +655,15 @@ export const useEditorWorkspace = (): EditorWorkspace => {
         const currentProject = historyRef.current?.present;
         return Boolean(currentProject && currentProject.id === asset.projectId &&
           projectReferencesEditorAsset(currentProject, asset.id));
+      },
+      captureRestorationGeneration: () => authorityRef.current.current(),
+      isRestorationCurrent: (asset, generation) => {
+        const currentProject = historyRef.current?.present;
+        return mountedRef.current && authorityRef.current.owns(generation) &&
+          activeProjectIdRef.current === asset.projectId &&
+          !persistenceRef.current.isBlocked(asset.projectId) &&
+          Boolean(currentProject && currentProject.id === asset.projectId &&
+            projectReferencesEditorAsset(currentProject, asset.id));
       },
       onAssetDeleted: (asset) => {
         if (!mountedRef.current || activeProjectIdRef.current !== asset.projectId) return;
