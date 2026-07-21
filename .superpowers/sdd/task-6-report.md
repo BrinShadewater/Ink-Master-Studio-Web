@@ -119,3 +119,123 @@ Exit code: `0`; Git emitted only the repository's LF-to-CRLF working-copy warnin
 - Browser acceptance was run in Chromium only, as requested; Firefox and WebKit were not run.
 - Native color picker interaction details vary by operating system, but reducer normalization and component rendering are covered independently.
 - No known functional concerns remain within Task 6 scope.
+
+## Fix Review
+
+### Status
+
+DONE. Font-size editing now preserves raw keyboard drafts until an explicit commit, and text content history groups close on blur, inspector unmount, and selected text-layer changes. Phase-one image X/Y `NumberControl` behavior was not changed.
+
+### Fix Commit
+
+- `8f9de86ed38d49b0da7bc24a4843c6eefd7eaecd` `fix: harden text inspector edit lifecycles`
+
+### Files
+
+- `components/editor/TextInspector.tsx`: added the text-only font-size draft reducer/control, parsed and clamped commit behavior, Enter/Escape/blur handling, external layer synchronization, and stable layer-ID-scoped history cleanup.
+- `tests/editor-shell.test.ts`: added pure draft coverage for sequential input, same-layer rerenders, empty and invalid drafts, clamping, restore, and selected-layer synchronization.
+- `tests/editor-history.test.ts`: added reset atomicity, discrete redo invalidation, grouped color changes, and discrete style undo/redo coverage.
+- `tests/e2e/canvas-editor.spec.ts`: expanded actual-control coverage for sequential font entry, empty blur, Enter, Escape, layer switching, one-step undo/redo, content unmount sessions, reset atomicity, discrete redo invalidation, and programmatic color-input grouping.
+
+### Red Evidence
+
+Focused unit/history command before implementation:
+
+```powershell
+npx tsx --test tests/editor-shell.test.ts tests/editor-history.test.ts
+```
+
+Exit code: `1`.
+
+```text
+tests 42
+pass 41
+fail 1
+cancelled 0
+skipped 0
+todo 0
+```
+
+The only failure was `font-size draft preserves sequential input and normalizes commit, restore, and layer sync`: `createFontSizeDraftState` was `undefined` because the text-specific draft contract did not exist.
+
+Focused Chromium command before implementation:
+
+```powershell
+npx playwright test tests/e2e/canvas-editor.spec.ts --project=chromium -g "edits text layers and gates image tools|separates text content sessions"
+```
+
+Exit code: `1`; both tests failed.
+
+```text
+Expected font size: "72"
+Received font size: "82"
+
+Expected first undo content: "First session"
+Received first undo content: "Text"
+```
+
+The first failure proved reducer normalization overwrote the first digit during sequential input. The second proved two content sessions separated by programmatic layer selection still shared one active history group when textarea blur did not run.
+
+### Green Evidence
+
+Final focused unit/history command:
+
+```powershell
+npx tsx --test tests/editor-shell.test.ts tests/editor-history.test.ts
+```
+
+Exit code: `0`.
+
+```text
+tests 42
+pass 42
+fail 0
+cancelled 0
+skipped 0
+todo 0
+```
+
+Final focused Chromium command:
+
+```powershell
+npx playwright test tests/e2e/canvas-editor.spec.ts --project=chromium -g "edits text layers and gates image tools|separates text content sessions|groups text color control changes"
+```
+
+Exit code: `0`.
+
+```text
+3 passed (6.7s)
+```
+
+Required typecheck:
+
+```powershell
+npm run typecheck
+```
+
+Exit code: `0`; `tsc --noEmit` passed with no diagnostics.
+
+Required whitespace check:
+
+```powershell
+git diff --check
+```
+
+Exit code: `0`; Git emitted only the repository's LF-to-CRLF working-copy warnings.
+
+### Lifecycle Review
+
+- Font size no longer uses shared `NumberControl`. Its local draft accepts intermediate digit, empty, and browser-valid number states without dispatching reducer commands per key.
+- Blur and Enter parse the complete draft once, clamp it to `8..400`, restore the external value for empty or invalid drafts, dispatch at most one `inspector-font-size` style command, and explicitly end the group.
+- Escape restores the current external value, suppresses blur commit, and ends any active group. Switching away with an uncommitted draft remounts from the selected layer's external value.
+- Sequentially replacing `48` with `72` is verified through the real input. Undo returns directly to `48` and redo returns to `72`, proving one edit session creates one history step.
+- `TextInspector` keeps the latest dispatch in a ref. Its cleanup effect depends only on `layer.id`, so ordinary content rerenders do not end the group; unmount or selected text-layer changes do.
+- The content browser flow invokes layer buttons programmatically while the textarea remains focused, avoiding reliance on native blur. Two sessions then undo to the first session and original text separately, and redo independently.
+- The existing image Reset button is exercised through the DOM: one undo restores both X and opacity, then a checkbox flip invalidates the available redo as a discrete edit.
+- Color lifecycle coverage sets the native HTML color input value through Playwright three times, blurs it, and verifies one grouped undo step distinct from alignment. The native operating-system color picker UI was not opened or tested, and no such coverage is claimed.
+
+### Concerns
+
+- Browser lifecycle coverage remains Chromium-only; Firefox and WebKit were not run.
+- Native operating-system color picker UI behavior remains outside the tested surface.
+- No known functional concerns remain from the Task 6 review findings.
