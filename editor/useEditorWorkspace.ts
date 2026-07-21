@@ -24,7 +24,12 @@ import {
 
 const SUPPORTED_RASTER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_RASTER_IMPORT_SIZE = 50 * 1024 * 1024;
+const MAX_RASTER_DIMENSION = 16_384;
+const MAX_RASTER_PIXELS = 100_000_000;
 const IMPORT_CLEANUP_ATTEMPTS = 3;
+const RASTER_DIMENSION_ERROR = 'Choose an image no larger than 16,384 pixels per side or 100 megapixels.';
+
+export const IMPORT_CLEANUP_ERROR = 'Could not clean up the superseded import. Check Local projects.';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
 
@@ -40,6 +45,7 @@ export interface EditorWorkspace {
   openProject: (projectId: string) => Promise<boolean>;
   deleteProject: (projectId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
+  retrySave: () => Promise<void>;
 }
 
 export const validateRasterImport = (file: File): string | null => {
@@ -48,11 +54,26 @@ export const validateRasterImport = (file: File): string | null => {
   return null;
 };
 
+export const validateRasterDimensions = ({ width, height }: { width: number; height: number }): string | null => {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    return 'The image has invalid dimensions.';
+  }
+  if (width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION || width * height > MAX_RASTER_PIXELS) {
+    return RASTER_DIMENSION_ERROR;
+  }
+  return null;
+};
+
 export const readRasterDimensions = async (file: File) => {
   const bitmap = await createImageBitmap(file);
-  const dimensions = { width: bitmap.width, height: bitmap.height };
-  bitmap.close();
-  if (dimensions.width < 1 || dimensions.height < 1) throw new Error('The image has invalid dimensions.');
+  let dimensions: { width: number; height: number };
+  try {
+    dimensions = { width: bitmap.width, height: bitmap.height };
+  } finally {
+    bitmap.close();
+  }
+  const validationError = validateRasterDimensions(dimensions);
+  if (validationError) throw new Error(validationError);
   return dimensions;
 };
 
@@ -92,6 +113,27 @@ export const applyImportedProjectIfCurrent = async (
   if (applyNavigationIfCurrent(authority, operation, apply)) return true;
   await cleanUpStaleImport();
   return false;
+};
+
+export const completeImportedProjectIfCurrent = async (
+  authority: WorkspaceOperationAuthority,
+  operation: number,
+  apply: () => void,
+  cleanUpStaleImport: () => Promise<void>,
+  refreshProjects: () => Promise<void>,
+  reportError: (message: string) => void,
+) => {
+  try {
+    return await applyImportedProjectIfCurrent(authority, operation, apply, cleanUpStaleImport);
+  } catch {
+    try {
+      await refreshProjects();
+    } catch {
+      // The stable cleanup error remains more actionable than a secondary list refresh failure.
+    }
+    reportError(IMPORT_CLEANUP_ERROR);
+    return false;
+  }
 };
 
 export interface OpenProjectDependencies {
@@ -219,6 +261,20 @@ export const runAutosaveAttempt = async (
   }
 };
 
+export interface WorkspaceRevisionDependencies {
+  saveProject: (project: EditorProject) => Promise<void>;
+  refreshProjects: () => Promise<void>;
+}
+
+export const queueWorkspaceRevision = (
+  persistence: WorkspacePersistenceController,
+  project: EditorProject,
+  dependencies: WorkspaceRevisionDependencies,
+) => runAutosaveAttempt(persistence, project.id, async () => {
+  await dependencies.saveProject(project);
+  await dependencies.refreshProjects();
+});
+
 export const getAutosaveRetryGeneration = (
   currentGeneration: number,
   activeProjectId: string | null,
@@ -257,8 +313,11 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   const sourceUrlOwnerRef = useRef<SourceUrlOwner | null>(null);
   const activeProjectIdRef = useRef<string | null>(null);
   const latestRevisionRef = useRef<string | null>(null);
+  const historyRef = useRef<EditorHistory | null>(null);
   const refreshGenerationRef = useRef(0);
   const mountedRef = useRef(true);
+
+  historyRef.current = history;
 
   if (!sourceUrlOwnerRef.current) sourceUrlOwnerRef.current = new SourceUrlOwner(URL);
 
@@ -343,16 +402,28 @@ export const useEditorWorkspace = (): EditorWorkspace => {
           message = cleanupFailure.message;
         }
       }
-      if (mountedRef.current && authorityRef.current.owns(operation)) setError(message);
-      else if (cleanupFailure) throw cleanupFailure;
+      if (cleanupFailure) {
+        try {
+          await refreshProjects();
+        } catch {
+          // Keep the cleanup failure stable even when project-list refresh also fails.
+        }
+        if (mountedRef.current) setError(IMPORT_CLEANUP_ERROR);
+      } else if (mountedRef.current && authorityRef.current.owns(operation)) {
+        setError(message);
+      }
       return;
     }
 
-    const applied = await applyImportedProjectIfCurrent(
+    const applied = await completeImportedProjectIfCurrent(
       authorityRef.current,
       operation,
       () => replaceWorkspace(project, asset),
       () => cleanupImportedProject(projectId, new Error('Import was superseded.'), deleteEditorProject),
+      refreshProjects,
+      (message) => {
+        if (mountedRef.current) setError(message);
+      },
     );
     if (!applied) return;
     try {
@@ -408,6 +479,30 @@ export const useEditorWorkspace = (): EditorWorkspace => {
 
   const historyRevision = history ? `${history.present.id}:${history.present.updatedAt}` : null;
 
+  const retrySave = useCallback(async () => {
+    const currentHistory = historyRef.current;
+    if (!currentHistory) return;
+    const project = structuredClone(currentHistory.present);
+    const revision = `${project.id}:${project.updatedAt}`;
+    if (persistenceRef.current.isBlocked(project.id)) return;
+    latestRevisionRef.current = revision;
+    if (mountedRef.current) {
+      setSaveStatus('saving');
+      setError(null);
+    }
+    const result = await queueWorkspaceRevision(persistenceRef.current, project, {
+      saveProject: async (nextProject) => { await saveEditorProject(nextProject); },
+      refreshProjects,
+    });
+    if (!mountedRef.current || latestRevisionRef.current !== revision ||
+      persistenceRef.current.isBlocked(project.id)) return;
+    if (result.status === 'saved') setSaveStatus('saved');
+    if (result.status === 'error') {
+      setSaveStatus('error');
+      setError(result.error);
+    }
+  }, [refreshProjects]);
+
   useEffect(() => {
     if (!history || !historyRevision || persistenceRef.current.isBlocked(history.present.id)) return;
     latestRevisionRef.current = historyRevision;
@@ -446,5 +541,6 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     openProject,
     deleteProject,
     refreshProjects,
+    retrySave,
   };
 };

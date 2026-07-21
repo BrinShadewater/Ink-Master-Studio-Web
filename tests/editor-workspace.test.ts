@@ -2,14 +2,19 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   SourceUrlOwner,
+  IMPORT_CLEANUP_ERROR,
   WorkspaceOperationAuthority,
   WorkspacePersistenceController,
   applyImportedProjectIfCurrent,
   applyNavigationIfCurrent,
   cleanupImportedProject,
+  completeImportedProjectIfCurrent,
   getAutosaveRetryGeneration,
   openEditorProjectIfCurrent,
+  queueWorkspaceRevision,
+  readRasterDimensions,
   runAutosaveAttempt,
+  validateRasterDimensions,
   validateRasterImport,
 } from '../editor/useEditorWorkspace';
 import { createEditorAsset, createEditorProject } from '../editor/model';
@@ -37,6 +42,37 @@ test('rejects unsupported and oversized imports with stable messages', () => {
   );
   const oversized = new File([new Uint8Array(50 * 1024 * 1024 + 1)], 'huge.webp', { type: 'image/webp' });
   assert.equal(validateRasterImport(oversized), 'Choose an image no larger than 50 MB.');
+});
+
+test('rejects unsafe decoded dimensions with a stable pure validator', () => {
+  assert.equal(validateRasterDimensions({ width: 16_384, height: 6_000 }), null);
+  assert.equal(
+    validateRasterDimensions({ width: 16_385, height: 100 }),
+    'Choose an image no larger than 16,384 pixels per side or 100 megapixels.',
+  );
+  assert.equal(
+    validateRasterDimensions({ width: 12_000, height: 12_000 }),
+    'Choose an image no larger than 16,384 pixels per side or 100 megapixels.',
+  );
+});
+
+test('closes a decoded bitmap before rejecting unsafe dimensions', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
+  let closed = false;
+  Object.defineProperty(globalThis, 'createImageBitmap', {
+    configurable: true,
+    value: async () => ({ width: 20_000, height: 100, close: () => { closed = true; } }),
+  });
+  try {
+    await assert.rejects(
+      readRasterDimensions(new File(['x'], 'wide.png', { type: 'image/png' })),
+      /16,384 pixels per side or 100 megapixels/,
+    );
+    assert.equal(closed, true);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'createImageBitmap', original);
+    else delete (globalThis as { createImageBitmap?: typeof createImageBitmap }).createImageBitmap;
+  }
 });
 
 const createOpenFixture = (projectId: string) => {
@@ -130,6 +166,25 @@ test('a stale import cleans its persisted project instead of replacing a newer o
   assert.deepEqual(cleanedProjects, ['imported']);
 });
 
+test('contains superseded import cleanup rejection, refreshes, and reports a stable error', async () => {
+  const authority = new WorkspaceOperationAuthority();
+  const importOperation = authority.begin();
+  authority.begin();
+  const events: string[] = [];
+
+  const applied = await completeImportedProjectIfCurrent(
+    authority,
+    importOperation,
+    () => { events.push('apply'); },
+    async () => { throw new Error('IndexedDB cleanup detail.'); },
+    async () => { events.push('refresh'); },
+    (message) => { events.push(`error:${message}`); },
+  );
+
+  assert.equal(applied, false);
+  assert.deepEqual(events, ['refresh', `error:${IMPORT_CLEANUP_ERROR}`]);
+});
+
 test('a delayed delete of A cannot clear a newer open of B', async () => {
   const authority = new WorkspaceOperationAuthority();
   const persistence = new WorkspacePersistenceController();
@@ -200,6 +255,27 @@ test('autosave failure reports the hook-facing error transition and keeps the qu
     await runAutosaveAttempt(persistence, 'project-a', async () => undefined),
     { status: 'saved', error: null },
   );
+});
+
+test('queues the latest in-memory project revision for an explicit retry', async () => {
+  const persistence = new WorkspacePersistenceController();
+  const fixture = createOpenFixture('project-retry');
+  const latest = structuredClone(fixture.project);
+  latest.name = 'Latest in memory';
+  latest.updatedAt += 2;
+  let savedRevision: { name: string; updatedAt: number } | null = null;
+  let refreshes = 0;
+
+  const result = await queueWorkspaceRevision(persistence, latest, {
+    saveProject: async (project) => {
+      savedRevision = { name: project.name, updatedAt: project.updatedAt };
+    },
+    refreshProjects: async () => { refreshes += 1; },
+  });
+
+  assert.deepEqual(result, { status: 'saved', error: null });
+  assert.deepEqual(savedRevision, { name: 'Latest in memory', updatedAt: latest.updatedAt });
+  assert.equal(refreshes, 1);
 });
 
 test('a failed delete superseded by opening B releases A for a later save', async () => {

@@ -65,5 +65,19 @@ export const viewportDeltaToNormalized = (dx: number, dy: number, base: Size) =>
   y: round(isUsableSize(base) ? dy / base.height : 0),
 });
 
+export const moveTransformByViewportDelta = (
+  transform: LayerTransform,
+  dx: number,
+  dy: number,
+  viewport: Size,
+): LayerTransform => {
+  const delta = viewportDeltaToNormalized(dx, dy, viewport);
+  return {
+    ...transform,
+    x: round(transform.x + delta.x),
+    y: round(transform.y + delta.y),
+  };
+};
+
 export const buildCanvasFilter = (adjustments: ImageAdjustments) =>
   `brightness(${100 + adjustments.brightness}%) contrast(${100 + adjustments.contrast}%) saturate(${100 + adjustments.saturation}%)`;

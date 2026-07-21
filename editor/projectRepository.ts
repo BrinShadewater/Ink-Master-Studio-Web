@@ -54,6 +54,8 @@ const cloneProject = (project: EditorProject) => structuredClone(project);
 
 const cloneAsset = (asset: EditorAsset): EditorAsset => ({ ...asset, blob: asset.blob });
 
+const duplicateAssetError = () => new Error('Source asset id already exists.');
+
 export const saveEditorProject = async (project: EditorProject): Promise<EditorProject> => {
   const normalized = migrateEditorProject(project);
   if (!hasIndexedDb()) {
@@ -82,10 +84,16 @@ export const listEditorProjects = async (): Promise<EditorProject[]> => {
 
 export const saveEditorAsset = async (asset: EditorAsset): Promise<EditorAsset> => {
   if (!hasIndexedDb()) {
+    if (memoryAssets.has(asset.id)) throw duplicateAssetError();
     memoryAssets.set(asset.id, cloneAsset(asset));
     return cloneAsset(asset);
   }
-  await runRequest(EDITOR_ASSET_STORE, 'readwrite', (store) => store.put(asset));
+  try {
+    await runRequest(EDITOR_ASSET_STORE, 'readwrite', (store) => store.add(asset));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'ConstraintError') throw duplicateAssetError();
+    throw error;
+  }
   return asset;
 };
 

@@ -8,6 +8,7 @@ import type {
 } from '../../editor/model';
 
 export const controlBounds = {
+  position: { min: -2, max: 3, step: 0.01 },
   scale: { min: 5, max: 400, step: 1 },
   rotation: { min: -180, max: 180, step: 1 },
   crop: { min: 0, max: 45, step: 1 },
@@ -98,6 +99,33 @@ const RangeControl = ({
   );
 };
 
+interface NumberControlProps {
+  id: string;
+  label: string;
+  value: number;
+  bounds: { min: number; max: number; step: number };
+  onChange: (value: number) => void;
+  onEnd: () => void;
+}
+
+const NumberControl = ({ id, label, value, bounds, onChange, onEnd }: NumberControlProps) => (
+  <div className="grid gap-2">
+    <label className="text-xs font-medium text-neutral-300" htmlFor={id}>{label}</label>
+    <input
+      id={id}
+      className="h-9 w-full border border-neutral-700 bg-neutral-950 px-2 text-sm tabular-nums text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+      type="number"
+      min={bounds.min}
+      max={bounds.max}
+      step={bounds.step}
+      value={Number(value.toFixed(2))}
+      onChange={(event) => onChange(Number(event.currentTarget.value))}
+      onKeyUp={onEnd}
+      onBlur={onEnd}
+    />
+  </div>
+);
+
 const sectionTitle: Record<EditorTool, string> = {
   select: 'Transform',
   crop: 'Crop',
@@ -159,6 +187,24 @@ export const EditorInspector = ({ project, layer, tool, dispatch }: EditorInspec
       <div className="grid gap-5 p-4">
         {tool === 'select' ? (
           <>
+            <div className="grid grid-cols-2 gap-3">
+              <NumberControl
+                id="editor-position-x"
+                label="X position"
+                value={layer.transform.x}
+                bounds={controlBounds.position}
+                onChange={(value) => updateTransform({ ...layer.transform, x: value }, 'inspector-position-x')}
+                onEnd={endHistoryGroup}
+              />
+              <NumberControl
+                id="editor-position-y"
+                label="Y position"
+                value={layer.transform.y}
+                bounds={controlBounds.position}
+                onChange={(value) => updateTransform({ ...layer.transform, y: value }, 'inspector-position-y')}
+                onEnd={endHistoryGroup}
+              />
+            </div>
             <RangeControl
               id="editor-scale"
               label="Scale"

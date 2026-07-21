@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import {
   buildCanvasFilter,
-  fitSourceInViewport,
   getCroppedSourceRect,
   getLayerDrawRect,
+  moveTransformByViewportDelta,
   type Rect,
   type Size,
-  viewportDeltaToNormalized,
 } from '../../editor/geometry';
 import type { EditorTool, ImageLayer, LayerTransform } from '../../editor/model';
 
@@ -32,7 +31,7 @@ interface DragState {
   pointerId: number;
   startPoint: { x: number; y: number };
   transform: LayerTransform;
-  fittedRect: Rect;
+  viewportSize: Size;
 }
 
 const initialViewport: ViewportState = {
@@ -182,7 +181,7 @@ export const EditorCanvas = ({
       pointerId: event.pointerId,
       startPoint: point,
       transform: { ...layer.transform },
-      fittedRect: fitSourceInViewport(sourceSize, viewport.size),
+      viewportSize: { ...viewport.size },
     };
   };
 
@@ -191,16 +190,12 @@ export const EditorCanvas = ({
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const point = getCanvasPoint(event);
-    const delta = viewportDeltaToNormalized(
+    onTransformChange(moveTransformByViewportDelta(
+      drag.transform,
       point.x - drag.startPoint.x,
       point.y - drag.startPoint.y,
-      drag.fittedRect,
-    );
-    onTransformChange({
-      ...drag.transform,
-      x: drag.transform.x + delta.x,
-      y: drag.transform.y + delta.y,
-    }, 'canvas-drag');
+      drag.viewportSize,
+    ), 'canvas-drag');
   };
 
   return (

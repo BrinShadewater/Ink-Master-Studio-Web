@@ -6,6 +6,7 @@ import {
   fitSourceInViewport,
   getCroppedSourceRect,
   getLayerDrawRect,
+  moveTransformByViewportDelta,
   viewportDeltaToNormalized,
 } from '../editor/geometry';
 
@@ -21,8 +22,20 @@ test('converts normalized crop values to source pixels', () => {
   });
 });
 
-test('maps pointer movement to stable normalized project movement', () => {
-  assert.deepEqual(viewportDeltaToNormalized(54, -27, { width: 540, height: 270 }), { x: 0.1, y: -0.1 });
+test('maps pointer movement against viewport dimensions', () => {
+  assert.deepEqual(viewportDeltaToNormalized(100, -50, { width: 1000, height: 500 }), { x: 0.1, y: -0.1 });
+});
+
+test('moves normalized layer centers consistently in landscape and portrait viewports', () => {
+  const transform = { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false };
+  assert.deepEqual(
+    moveTransformByViewportDelta(transform, 100, -50, { width: 1000, height: 500 }),
+    { ...transform, x: 0.6, y: 0.4 },
+  );
+  assert.deepEqual(
+    moveTransformByViewportDelta(transform, 50, -100, { width: 500, height: 1000 }),
+    { ...transform, x: 0.6, y: 0.4 },
+  );
 });
 
 test('builds a Canvas 2D filter from editor adjustment units', () => {

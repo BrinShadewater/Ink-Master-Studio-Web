@@ -14,6 +14,7 @@ export type EditorCommand =
   | { type: 'select-variation'; variationId: string }
   | { type: 'duplicate-variation'; name: string }
   | { type: 'rename-variation'; variationId: string; name: string }
+  | { type: 'delete-variation'; variationId: string }
   | { type: 'set-transform'; layerId: string; transform: LayerTransform; historyGroup?: string }
   | { type: 'set-crop'; layerId: string; crop: CropRect; historyGroup?: string }
   | { type: 'set-adjustments'; layerId: string; adjustments: ImageAdjustments; historyGroup?: string }
@@ -22,18 +23,40 @@ export type EditorCommand =
   | { type: 'undo' }
   | { type: 'redo' };
 
-export interface EditorHistory {
-  past: EditorProject[];
-  present: EditorProject;
-  future: EditorProject[];
+export interface VariationEditState {
+  layers: ImageLayer[];
+  selectedLayerId: string;
+}
+
+export interface VariationHistory {
+  past: VariationEditState[];
+  future: VariationEditState[];
   activeHistoryGroup: string | null;
+}
+
+export interface EditorHistory {
+  present: EditorProject;
+  variationHistory: Record<string, VariationHistory>;
 }
 
 const MAX_PAST_STATES = 100;
 
 const cloneProject = (project: EditorProject): EditorProject => structuredClone(project);
 
-const cloneProjects = (projects: EditorProject[]): EditorProject[] => projects.map(cloneProject);
+const cloneEditState = (state: VariationEditState): VariationEditState => structuredClone(state);
+
+const cloneEditStates = (states: VariationEditState[]) => states.map(cloneEditState);
+
+const getEditState = (variation: DesignVariation): VariationEditState => ({
+  layers: structuredClone(variation.layers),
+  selectedLayerId: variation.selectedLayerId,
+});
+
+const createVariationHistory = (): VariationHistory => ({
+  past: [],
+  future: [],
+  activeHistoryGroup: null,
+});
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Number.isFinite(value) ? value : minimum));
@@ -91,25 +114,47 @@ const withUpdatedAt = (project: EditorProject, previous: EditorProject): EditorP
   return next;
 };
 
-const recordEdit = (
+const replaceVariationEditState = (
+  project: EditorProject,
+  variationId: string,
+  state: VariationEditState,
+): EditorProject => {
+  const next = cloneProject(project);
+  const variation = next.variations.find(({ id }) => id === variationId);
+  if (!variation) return next;
+  variation.layers = structuredClone(state.layers);
+  variation.selectedLayerId = state.selectedLayerId;
+  return next;
+};
+
+const recordVariationEdit = (
   history: EditorHistory,
   project: EditorProject,
   historyGroup?: string,
 ): EditorHistory => {
+  const variationId = history.present.activeVariationId;
+  const currentVariation = getActiveVariation(history.present);
+  const currentHistory = history.variationHistory[variationId] ?? createVariationHistory();
   const group = normalizeHistoryGroup(historyGroup);
-  const past = history.activeHistoryGroup === group && group !== null
-    ? cloneProjects(history.past)
-    : [...cloneProjects(history.past), cloneProject(history.present)].slice(-MAX_PAST_STATES);
+  const past = currentHistory.activeHistoryGroup === group && group !== null
+    ? cloneEditStates(currentHistory.past)
+    : [...cloneEditStates(currentHistory.past), getEditState(currentVariation)].slice(-MAX_PAST_STATES);
   return {
-    past,
     present: cloneProject(project),
-    future: [],
-    activeHistoryGroup: group,
+    variationHistory: {
+      ...history.variationHistory,
+      [variationId]: {
+        past,
+        future: [],
+        activeHistoryGroup: group,
+      },
+    },
   };
 };
 
 export const createEditorHistory = (project: EditorProject): EditorHistory => ({
-  past: [], present: cloneProject(project), future: [], activeHistoryGroup: null,
+  present: cloneProject(project),
+  variationHistory: Object.fromEntries(project.variations.map(({ id }) => [id, createVariationHistory()])),
 });
 
 export const getActiveVariation = (project: EditorProject): DesignVariation => {
@@ -125,25 +170,59 @@ export const getSelectedImageLayer = (project: EditorProject): ImageLayer => {
   return layer;
 };
 
+export const canUndoActiveVariation = (history: EditorHistory | null): boolean => {
+  if (!history) return false;
+  return Boolean(history.variationHistory[history.present.activeVariationId]?.past.length);
+};
+
+export const canRedoActiveVariation = (history: EditorHistory | null): boolean => {
+  if (!history) return false;
+  return Boolean(history.variationHistory[history.present.activeVariationId]?.future.length);
+};
+
 const undo = (history: EditorHistory): EditorHistory => {
-  if (history.past.length === 0) return { ...history, activeHistoryGroup: null };
-  const previous = history.past[history.past.length - 1];
+  const variationId = history.present.activeVariationId;
+  const variation = getActiveVariation(history.present);
+  const currentHistory = history.variationHistory[variationId];
+  if (!currentHistory?.past.length) return history;
+  const previous = currentHistory.past[currentHistory.past.length - 1];
+  const present = withUpdatedAt(
+    replaceVariationEditState(history.present, variationId, previous),
+    history.present,
+  );
   return {
-    past: cloneProjects(history.past.slice(0, -1)),
-    present: cloneProject(previous),
-    future: [cloneProject(history.present), ...cloneProjects(history.future)],
-    activeHistoryGroup: null,
+    present,
+    variationHistory: {
+      ...history.variationHistory,
+      [variationId]: {
+        past: cloneEditStates(currentHistory.past.slice(0, -1)),
+        future: [getEditState(variation), ...cloneEditStates(currentHistory.future)],
+        activeHistoryGroup: null,
+      },
+    },
   };
 };
 
 const redo = (history: EditorHistory): EditorHistory => {
-  if (history.future.length === 0) return { ...history, activeHistoryGroup: null };
-  const next = history.future[0];
+  const variationId = history.present.activeVariationId;
+  const variation = getActiveVariation(history.present);
+  const currentHistory = history.variationHistory[variationId];
+  if (!currentHistory?.future.length) return history;
+  const next = currentHistory.future[0];
+  const present = withUpdatedAt(
+    replaceVariationEditState(history.present, variationId, next),
+    history.present,
+  );
   return {
-    past: [...cloneProjects(history.past), cloneProject(history.present)].slice(-MAX_PAST_STATES),
-    present: cloneProject(next),
-    future: cloneProjects(history.future.slice(1)),
-    activeHistoryGroup: null,
+    present,
+    variationHistory: {
+      ...history.variationHistory,
+      [variationId]: {
+        past: [...cloneEditStates(currentHistory.past), getEditState(variation)].slice(-MAX_PAST_STATES),
+        future: cloneEditStates(currentHistory.future.slice(1)),
+        activeHistoryGroup: null,
+      },
+    },
   };
 };
 
@@ -153,28 +232,44 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       return undo(history);
     case 'redo':
       return redo(history);
-    case 'end-history-group':
-      return { ...history, activeHistoryGroup: null };
+    case 'end-history-group': {
+      const variationId = history.present.activeVariationId;
+      const currentHistory = history.variationHistory[variationId];
+      if (!currentHistory?.activeHistoryGroup) return history;
+      return {
+        ...history,
+        variationHistory: {
+          ...history.variationHistory,
+          [variationId]: { ...currentHistory, activeHistoryGroup: null },
+        },
+      };
+    }
     case 'rename-project': {
       const name = command.name.trim() || 'Untitled design';
       if (name === history.present.name) return history;
       const next = cloneProject(history.present);
       next.name = name;
-      return recordEdit(history, withUpdatedAt(next, history.present));
+      return { ...history, present: withUpdatedAt(next, history.present) };
     }
     case 'select-variation': {
       if (!history.present.variations.some(({ id }) => id === command.variationId) ||
         history.present.activeVariationId === command.variationId) return history;
       const next = cloneProject(history.present);
       next.activeVariationId = command.variationId;
-      return recordEdit(history, withUpdatedAt(next, history.present));
+      return { ...history, present: withUpdatedAt(next, history.present) };
     }
     case 'duplicate-variation': {
       const next = cloneProject(history.present);
       const duplicate = duplicateVariation(getActiveVariation(history.present), command.name);
       next.variations = [...next.variations, duplicate];
       next.activeVariationId = duplicate.id;
-      return recordEdit(history, withUpdatedAt(next, history.present));
+      return {
+        present: withUpdatedAt(next, history.present),
+        variationHistory: {
+          ...history.variationHistory,
+          [duplicate.id]: createVariationHistory(),
+        },
+      };
     }
     case 'rename-variation': {
       const variation = history.present.variations.find(({ id }) => id === command.variationId);
@@ -185,35 +280,47 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const nextVariation = next.variations.find(({ id }) => id === command.variationId);
       if (!nextVariation) return history;
       nextVariation.name = name;
-      return recordEdit(history, withUpdatedAt(next, history.present));
+      return { ...history, present: withUpdatedAt(next, history.present) };
+    }
+    case 'delete-variation': {
+      if (history.present.variations.length <= 1) return history;
+      const deletedIndex = history.present.variations.findIndex(({ id }) => id === command.variationId);
+      if (deletedIndex < 0) return history;
+      const next = cloneProject(history.present);
+      next.variations = next.variations.filter(({ id }) => id !== command.variationId);
+      if (next.activeVariationId === command.variationId) {
+        next.activeVariationId = next.variations[Math.min(deletedIndex, next.variations.length - 1)].id;
+      }
+      const { [command.variationId]: _deletedHistory, ...variationHistory } = history.variationHistory;
+      return { present: withUpdatedAt(next, history.present), variationHistory };
     }
     case 'set-transform': {
       const transform = normalizeTransform(command.transform);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || sameTransform(current.transform, transform)) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, transform }));
-      return next ? recordEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-crop': {
       const crop = normalizeCrop(command.crop);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || sameCrop(current.crop, crop)) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, crop }));
-      return next ? recordEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-adjustments': {
       const adjustments = normalizeAdjustments(command.adjustments);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || sameAdjustments(current.adjustments, adjustments)) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, adjustments }));
-      return next ? recordEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-opacity': {
       const opacity = clamp(command.opacity, 0, 1);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || current.opacity === opacity) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, opacity }));
-      return next ? recordEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
   }
 };

@@ -72,6 +72,38 @@ test('round-trips project JSON and source blob as separate records', async () =>
   assert.equal(await getEditorAsset(asset.id), null);
 });
 
+test('rejects duplicate source asset ids without replacing memory records', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const asset = createEditorAsset(projectId, new Blob(['original']), {
+    name: 'original.png', width: 10, height: 10,
+  });
+  await saveEditorAsset(asset);
+
+  await assert.rejects(
+    saveEditorAsset({ ...asset, name: 'replacement.png', blob: new Blob(['replacement']) }),
+    /Source asset id already exists/,
+  );
+  assert.equal((await getEditorAsset(asset.id))?.name, 'original.png');
+  assert.equal((await getEditorAsset(asset.id))?.blob.size, 8);
+});
+
+test('rejects duplicate source asset ids without replacing IndexedDB records', async () => {
+  await withFakeIndexedDb(async () => {
+    const projectId = `project_${crypto.randomUUID()}`;
+    const asset = createEditorAsset(projectId, new Blob(['original']), {
+      name: 'original.png', width: 10, height: 10,
+    });
+    await saveEditorAsset(asset);
+
+    await assert.rejects(
+      saveEditorAsset({ ...asset, name: 'replacement.png', blob: new Blob(['replacement']) }),
+      /Source asset id already exists/,
+    );
+    assert.equal((await getEditorAsset(asset.id))?.name, 'original.png');
+    assert.equal((await getEditorAsset(asset.id))?.blob.size, 8);
+  });
+});
+
 test('creates the complete version two schema when the legacy repository opens first', async () => {
   await withFakeIndexedDb(async (factory) => {
     const job = createStudioJob('Legacy first');
