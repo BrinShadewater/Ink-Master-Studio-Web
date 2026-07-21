@@ -24,6 +24,24 @@ const openDatabase = (factory: IDBFactory) => new Promise<IDBDatabase>((resolve,
   request.onerror = () => reject(request.error ?? new Error('Could not open test database.'));
 });
 
+const completeTransaction = (transaction: IDBTransaction) => new Promise<void>((resolve, reject) => {
+  transaction.oncomplete = () => resolve();
+  transaction.onerror = () => reject(transaction.error ?? new Error('Test transaction failed.'));
+  transaction.onabort = () => reject(transaction.error ?? new Error('Test transaction aborted.'));
+});
+
+const seedRawEditorProject = async (factory: IDBFactory, project: object, asset?: ReturnType<typeof createEditorAsset>) => {
+  const database = await openDatabase(factory);
+  try {
+    const transaction = database.transaction(['editor-projects', 'editor-assets'], 'readwrite');
+    transaction.objectStore('editor-projects').put(project);
+    if (asset) transaction.objectStore('editor-assets').put(asset);
+    await completeTransaction(transaction);
+  } finally {
+    database.close();
+  }
+};
+
 const createLegacyDatabase = (factory: IDBFactory, job: ReturnType<typeof createStudioJob>) => new Promise<void>((resolve, reject) => {
   const request = factory.open(DATABASE_NAME, 1);
   request.onupgradeneeded = () => {
@@ -176,5 +194,70 @@ test('upgrades legacy jobs without changing their data', async () => {
     } finally {
       database.close();
     }
+  });
+});
+
+test('hydrates stored version one projects with matching project assets', async () => {
+  await withFakeIndexedDb(async (factory) => {
+    await saveJob(createStudioJob('Initialize editor stores'));
+    const asset = createEditorAsset('project_legacy', new Blob(['source'], { type: 'image/webp' }), {
+      name: 'legacy-source.webp', width: 1440, height: 960,
+    });
+    const legacyProject = {
+      schemaVersion: 1,
+      id: 'project_legacy',
+      name: 'Legacy project',
+      createdAt: 100,
+      updatedAt: 200,
+      activeVariationId: 'variation_legacy',
+      variations: [{
+        id: 'variation_legacy',
+        name: 'Original',
+        selectedLayerId: 'layer_legacy',
+        layers: [{ type: 'image', id: 'layer_legacy', assetId: asset.id }],
+      }],
+      productVariants: [],
+    };
+    await seedRawEditorProject(factory, legacyProject, asset);
+
+    const project = await getEditorProject('project_legacy');
+    assert.equal(project?.schemaVersion, 2);
+    assert.equal(project?.sourceAssetId, asset.id);
+    assert.deepEqual(project?.sourceMetadata, {
+      name: 'legacy-source.webp', mimeType: 'image/webp', width: 1440, height: 960,
+    });
+    assert.equal(project?.variations[0].layers[0].id, 'layer_legacy');
+    assert.deepEqual((await listEditorProjects()).map((entry) => entry.id), ['project_legacy']);
+
+    const repository = await import('../editor/projectRepository') as unknown as {
+      getEditorAssetsForProject: (projectId: string) => Promise<ReturnType<typeof createEditorAsset>[]>;
+    };
+    const assets = await repository.getEditorAssetsForProject('project_legacy');
+    assert.equal(assets.length, 1);
+    assert.equal(assets[0].id, asset.id);
+  });
+});
+
+test('rejects stored version one projects whose source asset is missing', async () => {
+  await withFakeIndexedDb(async (factory) => {
+    await saveJob(createStudioJob('Initialize editor stores'));
+    await seedRawEditorProject(factory, {
+      schemaVersion: 1,
+      id: 'project_missing_asset',
+      name: 'Missing source',
+      createdAt: 100,
+      updatedAt: 100,
+      activeVariationId: 'variation_missing_asset',
+      variations: [{
+        id: 'variation_missing_asset',
+        name: 'Original',
+        selectedLayerId: 'layer_missing_asset',
+        layers: [{ type: 'image', id: 'layer_missing_asset', assetId: 'asset_missing' }],
+      }],
+      productVariants: [],
+    });
+
+    await assert.rejects(getEditorProject('project_missing_asset'), /Project source image not found/);
+    await assert.rejects(listEditorProjects(), /Project source image not found/);
   });
 });

@@ -1,4 +1,9 @@
-import { EditorAsset, EditorProject, migrateEditorProject } from './model';
+import {
+  EDITOR_PROJECT_SCHEMA_VERSION,
+  EditorAsset,
+  EditorProject,
+  migrateEditorProject,
+} from './model';
 import {
   EDITOR_ASSET_STORE,
   EDITOR_PROJECT_STORE,
@@ -57,7 +62,10 @@ const cloneAsset = (asset: EditorAsset): EditorAsset => ({ ...asset, blob: asset
 const duplicateAssetError = () => new Error('Source asset id already exists.');
 
 export const saveEditorProject = async (project: EditorProject): Promise<EditorProject> => {
-  const normalized = migrateEditorProject(project);
+  if (project.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION) {
+    throw new Error('Unsupported editor project schema.');
+  }
+  const normalized = cloneProject(project);
   if (!hasIndexedDb()) {
     memoryProjects.set(normalized.id, cloneProject(normalized));
     return cloneProject(normalized);
@@ -69,17 +77,19 @@ export const saveEditorProject = async (project: EditorProject): Promise<EditorP
 export const getEditorProject = async (id: string): Promise<EditorProject | null> => {
   if (!hasIndexedDb()) {
     const project = memoryProjects.get(id);
-    return project ? cloneProject(project) : null;
+    return project ? migrateEditorProject(cloneProject(project), await getEditorAssetsForProject(id)) : null;
   }
   const result = await runRequest<EditorProject | undefined>(EDITOR_PROJECT_STORE, 'readonly', (store) => store.get(id));
-  return result ? migrateEditorProject(result) : null;
+  return result ? migrateEditorProject(result, await getEditorAssetsForProject(id)) : null;
 };
 
 export const listEditorProjects = async (): Promise<EditorProject[]> => {
   const projects = hasIndexedDb()
     ? await runRequest<EditorProject[]>(EDITOR_PROJECT_STORE, 'readonly', (store) => store.getAll())
     : [...memoryProjects.values()].map(cloneProject);
-  return projects.map(migrateEditorProject).sort((a, b) => b.updatedAt - a.updatedAt);
+  const hydrated = await Promise.all(projects.map(async (project) =>
+    migrateEditorProject(project, await getEditorAssetsForProject(project.id))));
+  return hydrated.sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
 export const saveEditorAsset = async (asset: EditorAsset): Promise<EditorAsset> => {
@@ -103,6 +113,17 @@ export const getEditorAsset = async (id: string): Promise<EditorAsset | null> =>
     return asset ? cloneAsset(asset) : null;
   }
   return await runRequest<EditorAsset | undefined>(EDITOR_ASSET_STORE, 'readonly', (store) => store.get(id)) ?? null;
+};
+
+export const getEditorAssetsForProject = async (projectId: string): Promise<EditorAsset[]> => {
+  if (!hasIndexedDb()) {
+    return [...memoryAssets.values()]
+      .filter((asset) => asset.projectId === projectId)
+      .map(cloneAsset);
+  }
+  const assets = await runRequest<EditorAsset[]>(EDITOR_ASSET_STORE, 'readonly', (store) =>
+    store.index('projectId').getAll(projectId));
+  return assets.map(cloneAsset);
 };
 
 export const deleteEditorProject = async (id: string): Promise<void> => {
