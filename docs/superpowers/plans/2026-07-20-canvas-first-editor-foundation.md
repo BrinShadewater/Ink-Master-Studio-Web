@@ -444,7 +444,7 @@ import {
 
 test('fits a landscape source into a portrait work area without cropping', () => {
   assert.deepEqual(fitSourceInViewport({ width: 1600, height: 900 }, { width: 600, height: 800 }), {
-    x: 30, y: 231.25, width: 540, height: 303.75,
+    x: 30, y: 248.125, width: 540, height: 303.75,
   });
 });
 
