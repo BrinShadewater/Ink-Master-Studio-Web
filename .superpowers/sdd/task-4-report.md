@@ -56,7 +56,9 @@ AssertionError: 2 !== 3
 
 The failure proved a disposed controller did not restart decoding during effect replay.
 
-## Green Verification
+## Initial Green Verification (Pre-Review-Fix Evidence)
+
+All commands in this section were recorded before the subsequent Task 4 review fixes. The broad suite/build and Playwright results below are historical pre-review-fix evidence, not post-review-fix verification.
 
 Focused covering command:
 
@@ -117,7 +119,7 @@ Exit code: `0`; no whitespace errors were reported before the feature commit.
 - Pointer-down uses compositor hit testing, dispatches `select-layer`, and captures that hit layer's ID and transform. Drag remains bound to that layer even while React applies selection state. Blank clicks do not dispatch or start history groups.
 - Decoding is cached by active URL value, publishes only current URL-to-asset mappings, deactivates stale callbacks, and can restart after controller lifecycle cleanup. No borrowed URL is revoked.
 - `EditorInspector` still receives `getSelectedImageLayer(project)`, so its existing image-only behavior is unchanged and text selection yields no image inspector layer.
-- The production build, complete unit suite, and desktop/mobile editor acceptance tests passed after the final implementation.
+- The production build, complete unit suite, and desktop/mobile editor acceptance tests passed for the initial implementation before review fixes; post-review evidence is recorded in the Fix Review sections below.
 
 ## Concerns
 
@@ -182,7 +184,7 @@ actual   { x: 485.5, y: 378, width: 29, height: 244 }
 expected { x: 486.5, y: 379, width: 27, height: 242 }
 ```
 
-All three expected failures proved the old clamped-advance measurement did not use actual outlined glyph extents.
+All three tests stopped at their initial bounds assertions. They proved only that the old negative-spacing bounds were `{ x: 485.5, y: 378, width: 29, height: 244 }` instead of the expected actual-outlined-extents bounds; their later rendering and hit-testing assertions did not execute in this red run.
 
 ### Fix Green Evidence
 
@@ -243,3 +245,131 @@ Exit code: `0`; no whitespace errors were reported. Git emitted only the reposit
 - Vertical layout intentionally retains the specified 1.2 line-height box; actual glyph ascent/descent does not replace that design contract.
 - Hit testing remains rectangular rather than alpha- or glyph-path-aware, unchanged from Task 4 scope.
 - No known functional concerns remain from the review findings.
+
+## Final Fix Review
+
+### Finding Addressed
+
+Text measurement now establishes the same deterministic physical Canvas state used by drawing before the first `measureText` call: the layer font, `textAlign = 'left'`, `textBaseline = 'alphabetic'`, and `direction = 'ltr'`. Measurement is enclosed in `save()` plus `try/finally restore()`, while drawing uses the same state inside its existing save/restore block.
+
+Alphabetic baselines are placed one font size below each 1.2-line-height box top. This keeps the requested physical baseline deterministic without leaving baselines at the previous middle coordinates.
+
+The regression double changes `actualBoundingBoxLeft` and `actualBoundingBoxRight` when it receives inherited center or right alignment. It proves bounds, character draw coordinates, and hit results are identical for prior left, center, and right state; it also proves bounds, rendering, and hit testing restore the caller's font, alignment, baseline, and direction.
+
+The initial broad `npm test`/build and Playwright results are now explicitly labeled as pre-review-fix evidence. They were not rerun for this final fix. The earlier negative-spacing red conclusion now states that those tests stopped at their bounds assertions and did not execute their later render/hit assertions.
+
+### Final Fix Files
+
+- `editor/compositor.ts`: deterministic pre-measure text state, measurement save/finally/restore, matching render state, and alphabetic baseline placement within 1.2 line boxes.
+- `tests/editor-compositor.test.ts`: stateful save/restore recording double, alignment-sensitive metrics double, prior-state invariance, no-leak assertions, and physical draw-state coverage.
+- `.superpowers/sdd/task-4-report.md`: historical evidence labels, narrowed prior red claim, and this final evidence.
+
+The progress ledger was not edited.
+
+### Final Fix Red Evidence
+
+Physical-state regression command before implementation:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts
+```
+
+Exit code: `1`.
+
+```text
+tests 10
+pass 9
+fail 1
+cancelled 0
+skipped 0
+todo 0
+
+text bounds, rendering, and hit testing ignore prior context alignment without leaking text state
+actual   { font: '100px Arial', textAlign: 'left', textBaseline: 'bottom', direction: 'rtl' }
+expected { font: '13px Legacy', textAlign: 'left', textBaseline: 'bottom', direction: 'rtl' }
+```
+
+The test stopped at its first post-bounds state assertion. It proved measurement leaked its font; it did not yet execute the center/right result comparison.
+
+Self-review then added alphabetic baseline-position expectations before changing baseline coordinates. Red command:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts
+```
+
+Exit code: `1`.
+
+```text
+tests 10
+pass 5
+fail 5
+cancelled 0
+skipped 0
+todo 0
+
+multiline 50px text actual y: -30, 30; expected y: -10, 50
+multiline 100px text actual y: -60, 60; expected y: -20, 100
+single-line 100px text actual y: 0; expected y: 40
+```
+
+These failures proved drawing still used the old line-center coordinates after switching to an alphabetic physical baseline.
+
+### Final Fix Green Evidence
+
+Required focused command against the final code:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts tests/editor-geometry.test.ts
+```
+
+Exit code: `0`.
+
+```text
+tests 18
+pass 18
+fail 0
+cancelled 0
+skipped 0
+todo 0
+```
+
+Required typecheck command:
+
+```powershell
+npm run typecheck
+```
+
+Exit code: `0`.
+
+```text
+> inkmaster-studio@0.0.0 typecheck
+> tsc --noEmit
+```
+
+Required whitespace command:
+
+```powershell
+git diff --check
+```
+
+Exit code: `0`; no whitespace errors were reported. Git emitted only the repository's LF-to-CRLF working-copy warnings.
+
+### Final Fix Commit
+
+- `16534377506f38656c8f387cef67e49be1cc066b` `fix: normalize canvas text measurement state`
+
+### Final Fix Self-Review
+
+- `measureTextLayer` saves before changing any context property and restores in `finally`, including if `measureText` throws.
+- Font, left alignment, alphabetic baseline, and LTR direction are assigned before line iteration and therefore before every `measureText` call.
+- `renderTextLayer` assigns the same font/alignment/baseline/direction state before `strokeText` or `fillText`; its enclosing save/restore prevents drawing state from leaking.
+- The alignment-sensitive double would return different glyph extents for inherited center/right state. Equal bounds, draw coordinates, and edge hit results across all three prior alignments prove measurement does not inherit that state.
+- Caller-state assertions run after bounds, rendering, and both hit tests for every prior alignment.
+- Alphabetic baseline coordinates use `lineTop + fontPixels`; consecutive lines remain exactly `1.2 * fontPixels` apart.
+- Focused tests and typecheck pass on the final code. Broad build/full-suite and Playwright results remain clearly identified as pre-review-fix evidence only.
+
+### Final Fix Concerns
+
+- Direction is intentionally fixed to LTR because this compositor draws stored text explicitly in character order and does not yet expose bidirectional text controls.
+- Vertical hit bounds retain the specified font-size-based 1.2 line boxes rather than using font-specific ascent/descent.
+- No known functional concerns remain from the final finding.
