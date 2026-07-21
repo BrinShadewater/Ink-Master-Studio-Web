@@ -1,7 +1,11 @@
 import {
+  createEditorId,
   duplicateVariation,
   isImageLayer,
+  isTextLayer,
   normalizeTransform,
+  TEXT_ALIGNMENTS,
+  TEXT_FONT_FAMILIES,
   type CropRect,
   type DesignLayer,
   type DesignVariation,
@@ -9,6 +13,8 @@ import {
   type ImageAdjustments,
   type ImageLayer,
   type LayerTransform,
+  type TextLayer,
+  type TextLayerStyle,
 } from './model';
 
 export type EditorCommand =
@@ -17,17 +23,26 @@ export type EditorCommand =
   | { type: 'duplicate-variation'; name: string }
   | { type: 'rename-variation'; variationId: string; name: string }
   | { type: 'delete-variation'; variationId: string }
+  | { type: 'select-layer'; layerId: string }
+  | { type: 'add-image-layer'; layer: ImageLayer }
+  | { type: 'add-text-layer'; layer: TextLayer }
+  | { type: 'rename-layer'; layerId: string; name: string }
+  | { type: 'duplicate-layer'; layerId: string }
+  | { type: 'delete-layer'; layerId: string }
+  | { type: 'move-layer'; layerId: string; direction: 'up' | 'down' }
+  | { type: 'set-layer-visibility'; layerId: string; visible: boolean }
   | { type: 'set-transform'; layerId: string; transform: LayerTransform; historyGroup?: string }
   | { type: 'set-crop'; layerId: string; crop: CropRect; historyGroup?: string }
   | { type: 'set-adjustments'; layerId: string; adjustments: ImageAdjustments; historyGroup?: string }
   | { type: 'set-opacity'; layerId: string; opacity: number; historyGroup?: string }
+  | { type: 'set-text-content'; layerId: string; text: string; historyGroup?: string }
+  | { type: 'set-text-style'; layerId: string; style: TextLayerStyle; historyGroup?: string }
   | { type: 'end-history-group' }
   | { type: 'undo' }
   | { type: 'redo' };
 
 export interface VariationEditState {
   layers: DesignLayer[];
-  selectedLayerId: string;
 }
 
 export interface VariationHistory {
@@ -51,7 +66,6 @@ const cloneEditStates = (states: VariationEditState[]) => states.map(cloneEditSt
 
 const getEditState = (variation: DesignVariation): VariationEditState => ({
   layers: structuredClone(variation.layers),
-  selectedLayerId: variation.selectedLayerId,
 });
 
 const createVariationHistory = (): VariationHistory => ({
@@ -92,6 +106,31 @@ const sameCrop = (left: CropRect, right: CropRect) =>
 const sameAdjustments = (left: ImageAdjustments, right: ImageAdjustments) =>
   left.brightness === right.brightness && left.contrast === right.contrast && left.saturation === right.saturation;
 
+const normalizeHexColor = (color: string, fallback: string): string => {
+  const value = typeof color === 'string' ? color.trim() : '';
+  const full = /^#?([0-9a-f]{6})$/i.exec(value);
+  if (full) return `#${full[1].toLowerCase()}`;
+  const short = /^#?([0-9a-f]{3})$/i.exec(value);
+  return short ? `#${short[1].split('').map((character) => character.repeat(2)).join('').toLowerCase()}` : fallback;
+};
+
+const normalizeTextStyle = (style: TextLayerStyle): TextLayerStyle => ({
+  fontFamily: TEXT_FONT_FAMILIES.includes(style.fontFamily as TextLayer['fontFamily'])
+    ? style.fontFamily : 'Arial',
+  fontSize: clamp(style.fontSize, 8, 400),
+  color: normalizeHexColor(style.color, '#000000'),
+  align: TEXT_ALIGNMENTS.includes(style.align as TextLayer['align']) ? style.align : 'left',
+  letterSpacing: clamp(style.letterSpacing, -2, 40),
+  outlineWidth: clamp(style.outlineWidth, 0, 20),
+  outlineColor: normalizeHexColor(style.outlineColor, '#000000'),
+});
+
+const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
+  layer.fontFamily === style.fontFamily && layer.fontSize === style.fontSize &&
+  layer.color === style.color && layer.align === style.align &&
+  layer.letterSpacing === style.letterSpacing && layer.outlineWidth === style.outlineWidth &&
+  layer.outlineColor === style.outlineColor;
+
 const getActiveLayer = (project: EditorProject, layerId: string): DesignLayer | undefined => {
   const variation = project.variations.find(({ id }) => id === project.activeVariationId);
   return variation?.layers.find(({ id }) => id === layerId);
@@ -125,7 +164,8 @@ const replaceVariationEditState = (
   const variation = next.variations.find(({ id }) => id === variationId);
   if (!variation) return next;
   variation.layers = structuredClone(state.layers);
-  variation.selectedLayerId = state.selectedLayerId;
+  variation.selectedLayerId = variation.layers.some(({ id }) => id === variation.selectedLayerId)
+    ? variation.selectedLayerId : variation.layers[variation.layers.length - 1].id;
   return next;
 };
 
@@ -165,11 +205,21 @@ export const getActiveVariation = (project: EditorProject): DesignVariation => {
   return variation;
 };
 
-export const getSelectedImageLayer = (project: EditorProject): ImageLayer => {
+export const getSelectedLayer = (project: EditorProject): DesignLayer => {
   const variation = getActiveVariation(project);
   const layer = variation.layers.find(({ id }) => id === variation.selectedLayerId);
-  if (!layer || !isImageLayer(layer)) throw new Error('Selected editor image layer not found.');
+  if (!layer) throw new Error('Selected editor layer not found.');
   return layer;
+};
+
+export const getSelectedImageLayer = (project: EditorProject): ImageLayer | null => {
+  const layer = getSelectedLayer(project);
+  return isImageLayer(layer) ? layer : null;
+};
+
+export const getSelectedTextLayer = (project: EditorProject): TextLayer | null => {
+  const layer = getSelectedLayer(project);
+  return isTextLayer(layer) ? layer : null;
 };
 
 export const canUndoActiveVariation = (history: EditorHistory | null): boolean => {
@@ -296,6 +346,77 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const { [command.variationId]: _deletedHistory, ...variationHistory } = history.variationHistory;
       return { present: withUpdatedAt(next, history.present), variationHistory };
     }
+    case 'select-layer': {
+      const variation = getActiveVariation(history.present);
+      if (variation.selectedLayerId === command.layerId || !variation.layers.some(({ id }) => id === command.layerId)) {
+        return history;
+      }
+      const next = cloneProject(history.present);
+      getActiveVariation(next).selectedLayerId = command.layerId;
+      return { ...history, present: withUpdatedAt(next, history.present) };
+    }
+    case 'add-image-layer':
+    case 'add-text-layer': {
+      const layer = command.layer;
+      const variation = getActiveVariation(history.present);
+      if (variation.layers.some(({ id }) => id === layer.id)) return history;
+      const next = cloneProject(history.present);
+      const nextVariation = getActiveVariation(next);
+      nextVariation.layers.push(structuredClone(layer));
+      nextVariation.selectedLayerId = layer.id;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'rename-layer': {
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current) return history;
+      const name = command.name.trim() || (current.type === 'image' ? 'Image' : 'Text');
+      if (current.name === name) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, name }));
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present)) : history;
+    }
+    case 'duplicate-layer': {
+      const variation = getActiveVariation(history.present);
+      const layerIndex = variation.layers.findIndex(({ id }) => id === command.layerId);
+      if (layerIndex < 0) return history;
+      const duplicate = {
+        ...structuredClone(variation.layers[layerIndex]),
+        id: createEditorId('layer'),
+        name: `${variation.layers[layerIndex].name} copy`,
+      };
+      const next = cloneProject(history.present);
+      const nextVariation = getActiveVariation(next);
+      nextVariation.layers.splice(layerIndex + 1, 0, duplicate);
+      nextVariation.selectedLayerId = duplicate.id;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'delete-layer': {
+      const variation = getActiveVariation(history.present);
+      if (variation.layers.length <= 1 || !variation.layers.some(({ id }) => id === command.layerId)) return history;
+      const next = cloneProject(history.present);
+      const nextVariation = getActiveVariation(next);
+      nextVariation.layers = nextVariation.layers.filter(({ id }) => id !== command.layerId);
+      if (nextVariation.selectedLayerId === command.layerId) {
+        nextVariation.selectedLayerId = nextVariation.layers[nextVariation.layers.length - 1].id;
+      }
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'move-layer': {
+      const variation = getActiveVariation(history.present);
+      const layerIndex = variation.layers.findIndex(({ id }) => id === command.layerId);
+      const targetIndex = command.direction === 'up' ? layerIndex + 1 : layerIndex - 1;
+      if (layerIndex < 0 || targetIndex < 0 || targetIndex >= variation.layers.length) return history;
+      const next = cloneProject(history.present);
+      const nextLayers = getActiveVariation(next).layers;
+      [nextLayers[layerIndex], nextLayers[targetIndex]] = [nextLayers[targetIndex], nextLayers[layerIndex]];
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'set-layer-visibility': {
+      const visible = Boolean(command.visible);
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || current.visible === visible) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, visible }));
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present)) : history;
+    }
     case 'set-transform': {
       const transform = normalizeTransform(command.transform);
       const current = getActiveLayer(history.present, command.layerId);
@@ -324,6 +445,22 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || current.opacity === opacity) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, opacity }));
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+    }
+    case 'set-text-content': {
+      const text = command.text.slice(0, 500);
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isTextLayer(current) || current.text === text) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isTextLayer(layer) ? { ...layer, text } : layer);
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+    }
+    case 'set-text-style': {
+      const style = normalizeTextStyle(command.style);
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isTextLayer(current) || sameTextStyle(current, style)) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isTextLayer(layer) ? { ...layer, ...style } : layer);
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
   }

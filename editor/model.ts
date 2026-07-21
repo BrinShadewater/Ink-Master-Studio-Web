@@ -50,6 +50,16 @@ export interface TextLayer {
   outlineColor: string;
 }
 
+export interface TextLayerStyle {
+  fontFamily: TextLayer['fontFamily'];
+  fontSize: number;
+  color: string;
+  align: TextLayer['align'];
+  letterSpacing: number;
+  outlineWidth: number;
+  outlineColor: string;
+}
+
 export type DesignLayer = ImageLayer | TextLayer;
 
 export interface DesignVariation {
@@ -213,8 +223,8 @@ const normalizeImageLayer = (value: unknown): ImageLayer | null => {
   };
 };
 
-const textFontFamilies = ['Arial', 'Georgia', 'Impact', 'Trebuchet MS'] as const;
-const textAlignments = ['left', 'center', 'right'] as const;
+export const TEXT_FONT_FAMILIES = ['Arial', 'Georgia', 'Impact', 'Trebuchet MS'] as const;
+export const TEXT_ALIGNMENTS = ['left', 'center', 'right'] as const;
 
 const normalizeTextLayer = (value: unknown): TextLayer | null => {
   if (!isRecord(value) || value.type !== 'text' || !nonEmptyString(value.id)) return null;
@@ -226,11 +236,11 @@ const normalizeTextLayer = (value: unknown): TextLayer | null => {
     opacity: clamp(finiteNumber(value.opacity) ? value.opacity : 1, 0, 1),
     transform: normalizeTransformRecord(value.transform),
     text: nonEmptyString(value.text) ? value.text : 'Text',
-    fontFamily: textFontFamilies.includes(value.fontFamily as TextLayer['fontFamily'])
+    fontFamily: TEXT_FONT_FAMILIES.includes(value.fontFamily as TextLayer['fontFamily'])
       ? value.fontFamily as TextLayer['fontFamily'] : 'Arial',
     fontSize: clamp(finiteNumber(value.fontSize) ? value.fontSize : 48, 8, 400),
     color: nonEmptyString(value.color) ? value.color : '#000000',
-    align: textAlignments.includes(value.align as TextLayer['align'])
+    align: TEXT_ALIGNMENTS.includes(value.align as TextLayer['align'])
       ? value.align as TextLayer['align'] : 'left',
     letterSpacing: clamp(finiteNumber(value.letterSpacing) ? value.letterSpacing : 0, -20, 100),
     outlineWidth: clamp(finiteNumber(value.outlineWidth) ? value.outlineWidth : 0, 0, 50),

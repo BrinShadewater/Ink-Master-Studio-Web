@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createEditorHistory,
-  getSelectedImageLayer,
   reduceEditorHistory,
   type EditorCommand,
   type EditorHistory,
@@ -152,8 +151,7 @@ export const openEditorProjectIfCurrent = async (
   try {
     const project = await dependencies.getProject(projectId);
     if (!project) throw new Error('Project not found.');
-    const sourceAssetId = getSelectedImageLayer(project).assetId;
-    const asset = await dependencies.getAsset(sourceAssetId);
+    const asset = await dependencies.getAsset(project.sourceAssetId);
     if (!asset) throw new Error('Project source image not found.');
 
     return applyNavigationIfCurrent(authority, operation, () => dependencies.activate(project, asset));

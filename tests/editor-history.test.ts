@@ -5,7 +5,9 @@ import {
   canRedoActiveVariation,
   canUndoActiveVariation,
   createEditorHistory,
+  getSelectedLayer,
   getSelectedImageLayer,
+  getSelectedTextLayer,
   reduceEditorHistory,
 } from '../editor/history';
 
@@ -74,13 +76,137 @@ test('keeps crop and adjustment commands out of selected text layers', () => {
   project.variations[0].selectedLayerId = textLayer.id;
   const history = createEditorHistory(project);
 
-  assert.throws(() => getSelectedImageLayer(history.present), /Selected editor image layer not found/);
+  assert.equal(getSelectedImageLayer(history.present), null);
+  assert.equal(getSelectedTextLayer(history.present)?.id, textLayer.id);
   assert.equal(reduceEditorHistory(history, {
     type: 'set-crop', layerId: textLayer.id, crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
   }), history);
   assert.equal(reduceEditorHistory(history, {
     type: 'set-adjustments', layerId: textLayer.id, adjustments: { brightness: 10, contrast: 0, saturation: 0 },
   }), history);
+});
+
+test('adds image and text layers as undoable ordered edits', () => {
+  const initial = makeHistory();
+  const source = getSelectedImageLayer(initial.present);
+  if (!source) throw new Error('Expected a source image layer.');
+  const imageLayer = { ...structuredClone(source), id: 'image_added', name: 'Added image' };
+  const textLayer = { ...createTextLayer('Caption'), id: 'text_added' };
+
+  const imageAdded = reduceEditorHistory(initial, { type: 'add-image-layer', layer: imageLayer });
+  const textAdded = reduceEditorHistory(imageAdded, { type: 'add-text-layer', layer: textLayer });
+  const undone = reduceEditorHistory(textAdded, { type: 'undo' });
+
+  assert.deepEqual(imageAdded.present.variations[0].layers.map(({ id }) => id), [source.id, imageLayer.id]);
+  assert.equal(imageAdded.present.variations[0].selectedLayerId, imageLayer.id);
+  assert.deepEqual(textAdded.present.variations[0].layers.map(({ id }) => id), [source.id, imageLayer.id, textLayer.id]);
+  assert.equal(textAdded.present.variations[0].selectedLayerId, textLayer.id);
+  assert.deepEqual(undone.present.variations[0].layers.map(({ id }) => id), [source.id, imageLayer.id]);
+  assert.equal(undone.present.variations[0].selectedLayerId, imageLayer.id);
+  assert.deepEqual(reduceEditorHistory(undone, { type: 'undo' }).present.variations[0].layers.map(({ id }) => id), [source.id]);
+});
+
+test('duplicates image layers with a fresh layer identity and shared asset identity', () => {
+  const initial = makeHistory();
+  const source = getSelectedImageLayer(initial.present);
+  if (!source) throw new Error('Expected a source image layer.');
+
+  const duplicated = reduceEditorHistory(initial, { type: 'duplicate-layer', layerId: source.id });
+  const copy = duplicated.present.variations[0].layers[1];
+  const undone = reduceEditorHistory(duplicated, { type: 'undo' });
+
+  assert.equal(copy.type, 'image');
+  if (copy.type !== 'image') throw new Error('Expected the duplicate to be an image layer.');
+  assert.notEqual(copy.id, source.id);
+  assert.equal(copy.assetId, source.assetId);
+  assert.deepEqual(undone.present.variations[0].layers.map(({ id }) => id), [source.id]);
+});
+
+test('moves, hides, renames, and deletes layers as undoable edits with edge guards', () => {
+  const initial = makeHistory();
+  const source = getSelectedImageLayer(initial.present);
+  if (!source) throw new Error('Expected a source image layer.');
+  const textLayer = { ...createTextLayer('Caption'), id: 'text_ordered' };
+  const added = reduceEditorHistory(initial, { type: 'add-text-layer', layer: textLayer });
+  const moved = reduceEditorHistory(added, { type: 'move-layer', layerId: textLayer.id, direction: 'down' });
+  const hidden = reduceEditorHistory(moved, { type: 'set-layer-visibility', layerId: textLayer.id, visible: false });
+  const renamed = reduceEditorHistory(hidden, { type: 'rename-layer', layerId: textLayer.id, name: 'Heading' });
+  const deleted = reduceEditorHistory(renamed, { type: 'delete-layer', layerId: textLayer.id });
+  const deleteUndone = reduceEditorHistory(deleted, { type: 'undo' });
+  const renameUndone = reduceEditorHistory(deleteUndone, { type: 'undo' });
+  const visibilityUndone = reduceEditorHistory(renameUndone, { type: 'undo' });
+  const moveUndone = reduceEditorHistory(visibilityUndone, { type: 'undo' });
+
+  assert.deepEqual(moved.present.variations[0].layers.map(({ id }) => id), [textLayer.id, source.id]);
+  assert.equal(reduceEditorHistory(moved, { type: 'move-layer', layerId: textLayer.id, direction: 'down' }), moved);
+  assert.equal(hidden.present.variations[0].layers[0].visible, false);
+  assert.equal(renamed.present.variations[0].layers[0].name, 'Heading');
+  assert.deepEqual(deleted.present.variations[0].layers.map(({ id }) => id), [source.id]);
+  assert.equal(deleteUndone.present.variations[0].layers[0].name, 'Heading');
+  assert.equal(renameUndone.present.variations[0].layers[0].visible, false);
+  assert.deepEqual(visibilityUndone.present.variations[0].layers.map(({ id }) => id), [textLayer.id, source.id]);
+  assert.deepEqual(moveUndone.present.variations[0].layers.map(({ id }) => id), [source.id, textLayer.id]);
+  assert.equal(reduceEditorHistory(initial, { type: 'delete-layer', layerId: source.id }), initial);
+});
+
+test('layer selection does not create a history state and is preserved when restored layers retain it', () => {
+  const initial = makeHistory();
+  const source = getSelectedImageLayer(initial.present);
+  if (!source) throw new Error('Expected a source image layer.');
+  const textLayer = { ...createTextLayer('Caption'), id: 'text_selected' };
+  const added = reduceEditorHistory(initial, { type: 'add-text-layer', layer: textLayer });
+  const historyBeforeSelection = structuredClone(added.variationHistory);
+  const selected = reduceEditorHistory(added, { type: 'select-layer', layerId: source.id });
+  const undone = reduceEditorHistory(selected, { type: 'undo' });
+  const redone = reduceEditorHistory(undone, { type: 'redo' });
+
+  assert.deepEqual(selected.variationHistory, historyBeforeSelection);
+  assert.equal(getSelectedLayer(selected.present).id, source.id);
+  assert.equal(undone.present.variations[0].selectedLayerId, source.id);
+  assert.equal(redone.present.variations[0].selectedLayerId, source.id);
+});
+
+test('edits text content and style with normalized values and undo support', () => {
+  const initial = makeHistory();
+  const textLayer = { ...createTextLayer('Caption'), id: 'text_style' };
+  const added = reduceEditorHistory(initial, { type: 'add-text-layer', layer: textLayer });
+  const content = `first line\n${'x'.repeat(600)}`;
+  const edited = reduceEditorHistory(added, { type: 'set-text-content', layerId: textLayer.id, text: content });
+  const styled = reduceEditorHistory(edited, {
+    type: 'set-text-style',
+    layerId: textLayer.id,
+    style: {
+      fontFamily: 'Comic Sans MS' as never,
+      fontSize: 900,
+      color: '#AbC',
+      align: 'justify' as never,
+      letterSpacing: -10,
+      outlineWidth: 99,
+      outlineColor: 'red',
+    },
+  });
+  const transformed = reduceEditorHistory(styled, {
+    type: 'set-transform',
+    layerId: textLayer.id,
+    transform: { x: 0.4, y: 0.4, scale: 1.5, rotation: 0, flipX: false, flipY: false },
+  });
+  const opaque = reduceEditorHistory(transformed, { type: 'set-opacity', layerId: textLayer.id, opacity: 0.25 });
+  const undone = reduceEditorHistory(opaque, { type: 'undo' });
+  const layer = getSelectedTextLayer(styled.present);
+
+  if (!layer) throw new Error('Expected a selected text layer.');
+  assert.equal(layer.text.length, 500);
+  assert.ok(layer.text.startsWith('first line\n'));
+  assert.equal(layer.fontFamily, 'Arial');
+  assert.equal(layer.fontSize, 400);
+  assert.equal(layer.color, '#aabbcc');
+  assert.equal(layer.align, 'left');
+  assert.equal(layer.letterSpacing, -2);
+  assert.equal(layer.outlineWidth, 20);
+  assert.equal(layer.outlineColor, '#000000');
+  assert.equal(getSelectedTextLayer(opaque.present)?.opacity, 0.25);
+  assert.equal(getSelectedTextLayer(undone.present)?.opacity, 1);
+  assert.equal(getSelectedTextLayer(transformed.present)?.transform.scale, 1.5);
 });
 
 test('ends a history group and caps past states at 100', () => {
