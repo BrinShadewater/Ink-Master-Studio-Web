@@ -53,43 +53,51 @@ const measureTextLayer = (
   const fontPixels = layer.fontSize * designScale;
   const letterSpacingPixels = layer.letterSpacing * designScale;
   const outlinePixels = layer.outlineWidth * designScale;
-  context.font = `${fontPixels}px ${layer.fontFamily}`;
-  const outlineExtent = outlinePixels / 2;
-  let hasVisibleGlyph = false;
-  const lines = layer.text.split('\n').map((line): MeasuredTextLine => {
-    let penX = 0;
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    const glyphs = Array.from(line).map((character) => {
-      const metrics = context.measureText(character);
-      const hasActualBounds = Number.isFinite(metrics.actualBoundingBoxLeft) &&
-        Number.isFinite(metrics.actualBoundingBoxRight);
-      const left = hasActualBounds ? metrics.actualBoundingBoxLeft : 0;
-      const right = hasActualBounds ? metrics.actualBoundingBoxRight : metrics.width;
-      if (!hasActualBounds || left !== 0 || right !== 0) {
-        minX = Math.min(minX, penX - left - outlineExtent);
-        maxX = Math.max(maxX, penX + right + outlineExtent);
-        hasVisibleGlyph = true;
-      }
-      const glyph = { character, penX };
-      penX += metrics.width + letterSpacingPixels;
-      return glyph;
+  context.save();
+  try {
+    context.font = `${fontPixels}px ${layer.fontFamily}`;
+    context.textAlign = 'left';
+    context.textBaseline = 'alphabetic';
+    context.direction = 'ltr';
+    const outlineExtent = outlinePixels / 2;
+    let hasVisibleGlyph = false;
+    const lines = layer.text.split('\n').map((line): MeasuredTextLine => {
+      let penX = 0;
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      const glyphs = Array.from(line).map((character) => {
+        const metrics = context.measureText(character);
+        const hasActualBounds = Number.isFinite(metrics.actualBoundingBoxLeft) &&
+          Number.isFinite(metrics.actualBoundingBoxRight);
+        const left = hasActualBounds ? metrics.actualBoundingBoxLeft : 0;
+        const right = hasActualBounds ? metrics.actualBoundingBoxRight : metrics.width;
+        if (!hasActualBounds || left !== 0 || right !== 0) {
+          minX = Math.min(minX, penX - left - outlineExtent);
+          maxX = Math.max(maxX, penX + right + outlineExtent);
+          hasVisibleGlyph = true;
+        }
+        const glyph = { character, penX };
+        penX += metrics.width + letterSpacingPixels;
+        return glyph;
+      });
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { glyphs, minX: 0, maxX: 0, width: 0 };
+      return { glyphs, minX, maxX, width: maxX - minX };
     });
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { glyphs, minX: 0, maxX: 0, width: 0 };
-    return { glyphs, minX, maxX, width: maxX - minX };
-  });
-  const lineHeight = fontPixels * TEXT_LINE_HEIGHT;
-  const contentHeight = lines.length * lineHeight;
+    const lineHeight = fontPixels * TEXT_LINE_HEIGHT;
+    const contentHeight = lines.length * lineHeight;
 
-  return {
-    contentHeight,
-    fontPixels,
-    height: contentHeight + (hasVisibleGlyph ? outlinePixels : 0),
-    lineHeight,
-    lines,
-    width: Math.max(0, ...lines.map((line) => line.width)),
-    outlinePixels,
-  };
+    return {
+      contentHeight,
+      fontPixels,
+      height: contentHeight + (hasVisibleGlyph ? outlinePixels : 0),
+      lineHeight,
+      lines,
+      width: Math.max(0, ...lines.map((line) => line.width)),
+      outlinePixels,
+    };
+  } finally {
+    context.restore();
+  }
 };
 
 export const getTextLayerBounds = (
@@ -170,14 +178,15 @@ const renderTextLayer = (
   context.filter = 'none';
   context.font = `${measurement.fontPixels}px ${layer.fontFamily}`;
   context.textAlign = 'left';
-  context.textBaseline = 'middle';
+  context.textBaseline = 'alphabetic';
+  context.direction = 'ltr';
   context.fillStyle = layer.color;
   context.strokeStyle = layer.outlineColor;
   context.lineWidth = measurement.outlinePixels;
 
   measurement.lines.forEach((line, lineIndex) => {
     const originX = getLineOrigin(layer.align, measurement.width, line);
-    const y = -measurement.contentHeight / 2 + measurement.lineHeight * (lineIndex + 0.5);
+    const y = -measurement.contentHeight / 2 + measurement.lineHeight * lineIndex + measurement.fontPixels;
     line.glyphs.forEach(({ character, penX }) => {
       const x = originX + penX;
       if (measurement.outlinePixels > 0) context.strokeText(character, x, y);

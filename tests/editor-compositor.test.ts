@@ -74,6 +74,9 @@ interface TextRecord {
   color: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
   alpha: number;
+  align: CanvasTextAlign;
+  baseline: CanvasTextBaseline;
+  direction: CanvasDirection;
 }
 
 class RecordingContext {
@@ -85,13 +88,36 @@ class RecordingContext {
   lineWidth = 1;
   textAlign: CanvasTextAlign = 'start';
   textBaseline: CanvasTextBaseline = 'alphabetic';
+  direction: CanvasDirection = 'inherit';
   operations: unknown[][] = [];
   draws: DrawRecord[] = [];
   textDraws: TextRecord[] = [];
   measured: string[] = [];
+  private textStateStack: Array<{
+    font: string;
+    textAlign: CanvasTextAlign;
+    textBaseline: CanvasTextBaseline;
+    direction: CanvasDirection;
+  }> = [];
 
-  save() { this.operations.push(['save']); }
-  restore() { this.operations.push(['restore']); }
+  save() {
+    this.textStateStack.push({
+      font: this.font,
+      textAlign: this.textAlign,
+      textBaseline: this.textBaseline,
+      direction: this.direction,
+    });
+    this.operations.push(['save']);
+  }
+  restore() {
+    this.operations.push(['restore']);
+    const state = this.textStateStack.pop();
+    if (!state) return;
+    this.font = state.font;
+    this.textAlign = state.textAlign;
+    this.textBaseline = state.textBaseline;
+    this.direction = state.direction;
+  }
   translate(x: number, y: number) { this.operations.push(['translate', x, y]); }
   rotate(radians: number) { this.operations.push(['rotate', radians]); }
   scale(x: number, y: number) { this.operations.push(['scale', x, y]); }
@@ -117,14 +143,37 @@ class RecordingContext {
   fillText(value: string, x: number, y: number) {
     this.textDraws.push({
       kind: 'fill', text: value, x, y, font: this.font, color: this.fillStyle,
-      lineWidth: this.lineWidth, alpha: this.globalAlpha,
+      lineWidth: this.lineWidth, alpha: this.globalAlpha, align: this.textAlign,
+      baseline: this.textBaseline, direction: this.direction,
     });
   }
   strokeText(value: string, x: number, y: number) {
     this.textDraws.push({
       kind: 'stroke', text: value, x, y, font: this.font, color: this.strokeStyle,
-      lineWidth: this.lineWidth, alpha: this.globalAlpha,
+      lineWidth: this.lineWidth, alpha: this.globalAlpha, align: this.textAlign,
+      baseline: this.textBaseline, direction: this.direction,
     });
+  }
+}
+
+class AlignmentSensitiveContext extends RecordingContext {
+  override measureText(value: string) {
+    const metrics = super.measureText(value);
+    if (this.textAlign === 'center') {
+      return {
+        ...metrics,
+        actualBoundingBoxLeft: metrics.width / 2,
+        actualBoundingBoxRight: metrics.width / 2,
+      } as TextMetrics;
+    }
+    if (this.textAlign === 'right') {
+      return {
+        ...metrics,
+        actualBoundingBoxLeft: metrics.width,
+        actualBoundingBoxRight: 0,
+      } as TextMetrics;
+    }
+    return metrics;
   }
 }
 
@@ -212,12 +261,12 @@ test('measures and renders multiline text with reference scaling, outline, align
   assert.deepEqual(
     context.textDraws.map(({ kind, text, x, y }) => ({ kind, text, x, y })),
     [
-      { kind: 'stroke', text: 'A', x: -27.5, y: -30 },
-      { kind: 'fill', text: 'A', x: -27.5, y: -30 },
-      { kind: 'stroke', text: 'B', x: -2.5, y: -30 },
-      { kind: 'fill', text: 'B', x: -2.5, y: -30 },
-      { kind: 'stroke', text: 'C', x: 2.5, y: 30 },
-      { kind: 'fill', text: 'C', x: 2.5, y: 30 },
+      { kind: 'stroke', text: 'A', x: -27.5, y: -10 },
+      { kind: 'fill', text: 'A', x: -27.5, y: -10 },
+      { kind: 'stroke', text: 'B', x: -2.5, y: -10 },
+      { kind: 'fill', text: 'B', x: -2.5, y: -10 },
+      { kind: 'stroke', text: 'C', x: 2.5, y: 50 },
+      { kind: 'fill', text: 'C', x: 2.5, y: 50 },
     ],
   );
   assert.ok(context.textDraws.every(({ font }) => font === '50px Georgia'));
@@ -257,10 +306,10 @@ for (const { align, firstX } of negativeSpacingCases) {
     assert.deepEqual(
       context.textDraws.filter(({ kind }) => kind === 'fill').map(({ text, x, y }) => ({ text, x, y })),
       [
-        { text: 'i', x: firstX, y: -60 },
-        { text: 'i', x: firstX - 1, y: -60 },
-        { text: 'i', x: firstX - 2, y: -60 },
-        { text: 'C', x: -12.5, y: 60 },
+        { text: 'i', x: firstX, y: -20 },
+        { text: 'i', x: firstX - 1, y: -20 },
+        { text: 'i', x: firstX - 2, y: -20 },
+        { text: 'C', x: -12.5, y: 100 },
       ],
     );
     assert.equal(hitTestDesignLayers(
@@ -271,6 +320,58 @@ for (const { align, firstX } of negativeSpacingCases) {
     ), null);
   });
 }
+
+test('text bounds, rendering, and hit testing ignore prior context alignment without leaking text state', () => {
+  const viewport = { width: 1000, height: 1000 };
+  const layer = textLayer('alignment-state', { text: 'AB', fontSize: 100, align: 'center' });
+  const results = (['left', 'center', 'right'] as const).map((priorAlign) => {
+    const context = new AlignmentSensitiveContext();
+    context.font = '13px Legacy';
+    context.textAlign = priorAlign;
+    context.textBaseline = 'bottom';
+    context.direction = 'rtl';
+    const assertPriorState = () => assert.deepEqual(
+      {
+        font: context.font,
+        textAlign: context.textAlign,
+        textBaseline: context.textBaseline,
+        direction: context.direction,
+      },
+      { font: '13px Legacy', textAlign: priorAlign, textBaseline: 'bottom', direction: 'rtl' },
+    );
+
+    const bounds = getTextLayerBounds(asContext(context), viewport, layer);
+    assertPriorState();
+    renderDesignLayers(asContext(context), viewport, [layer], { metadataById: {}, imagesById: {} });
+    assertPriorState();
+    const inside = hitTestDesignLayers(
+      asContext(context), { x: 475, y: 500 }, viewport, [layer], { metadataById: {}, imagesById: {} },
+    )?.id ?? null;
+    const outside = hitTestDesignLayers(
+      asContext(context), { x: 474.9, y: 500 }, viewport, [layer], { metadataById: {}, imagesById: {} },
+    )?.id ?? null;
+    assertPriorState();
+
+    return {
+      bounds,
+      draws: context.textDraws.filter(({ kind }) => kind === 'fill')
+        .map(({ text, x, y, align, baseline, direction }) => ({ text, x, y, align, baseline, direction })),
+      inside,
+      outside,
+    };
+  });
+
+  const expected = {
+    bounds: { x: 475, y: 440, width: 50, height: 120 },
+    draws: [
+      { text: 'A', x: -25, y: 40, align: 'left', baseline: 'alphabetic', direction: 'ltr' },
+      { text: 'B', x: -5, y: 40, align: 'left', baseline: 'alphabetic', direction: 'ltr' },
+    ],
+    inside: layer.id,
+    outside: null,
+  };
+  assert.deepEqual(results, [expected, expected, expected]);
+});
 
 test('hit tests visible layers in reverse paint order and ignores missing image assets', () => {
   const context = new RecordingContext();
