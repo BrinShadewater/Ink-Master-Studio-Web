@@ -36,6 +36,8 @@ export const EditorApp = () => {
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
   const layer = project ? getSelectedImageLayer(project) : null;
+  const sourceAsset = project ? workspace.assetsById[project.sourceAssetId] ?? null : null;
+  const sourceUrl = project ? workspace.assetUrlsById[project.sourceAssetId] ?? null : null;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -108,8 +110,8 @@ export const EditorApp = () => {
           onDrop={importDroppedFile}
         >
           <EditorCanvas
-            sourceUrl={workspace.sourceUrl}
-            sourceSize={workspace.sourceAsset}
+            sourceUrl={sourceUrl}
+            sourceSize={sourceAsset}
             layer={layer}
             tool={tool}
             onTransformChange={(transform, historyGroup) => {

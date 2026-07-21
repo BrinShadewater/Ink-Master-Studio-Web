@@ -9,12 +9,15 @@ import {
   createEditorAsset,
   createEditorId,
   createEditorProject,
+  isImageLayer,
   type EditorAsset,
   type EditorProject,
+  type ImageLayer,
 } from './model';
 import {
+  deleteEditorAsset,
   deleteEditorProject,
-  getEditorAsset,
+  getEditorAssetsForProject,
   getEditorProject,
   listEditorProjects,
   saveEditorAsset,
@@ -29,18 +32,20 @@ const IMPORT_CLEANUP_ATTEMPTS = 3;
 const RASTER_DIMENSION_ERROR = 'Choose an image no larger than 16,384 pixels per side or 100 megapixels.';
 
 export const IMPORT_CLEANUP_ERROR = 'Could not clean up the superseded import. Check Local projects.';
+export const ADDITIONAL_IMAGE_IMPORT_ERROR = 'Could not add the image to this project.';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
 
 export interface EditorWorkspace {
   history: EditorHistory | null;
   projects: EditorProject[];
-  sourceAsset: EditorAsset | null;
-  sourceUrl: string | null;
+  assetsById: Record<string, EditorAsset>;
+  assetUrlsById: Record<string, string>;
   saveStatus: SaveStatus;
   error: string | null;
   dispatch: (command: EditorCommand) => void;
   importFile: (file: File) => Promise<void>;
+  importLayerFile: (file: File) => Promise<void>;
   openProject: (projectId: string) => Promise<boolean>;
   deleteProject: (projectId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -91,6 +96,10 @@ export class WorkspaceOperationAuthority {
   owns(operation: number) {
     return operation === this.generation;
   }
+
+  current() {
+    return this.generation;
+  }
 }
 
 export const applyNavigationIfCurrent = (
@@ -137,10 +146,29 @@ export const completeImportedProjectIfCurrent = async (
 
 export interface OpenProjectDependencies {
   getProject: (projectId: string) => Promise<EditorProject | null>;
-  getAsset: (assetId: string) => Promise<EditorAsset | null>;
-  activate: (project: EditorProject, asset: EditorAsset) => void;
+  getAssetsForProject: (projectId: string) => Promise<EditorAsset[]>;
+  activate: (project: EditorProject, assetsById: Record<string, EditorAsset>) => void;
   reportError: (message: string) => void;
 }
+
+export const getAssetsByIdForProject = (
+  project: EditorProject,
+  assets: Iterable<EditorAsset>,
+): Record<string, EditorAsset> => {
+  const assetsById: Record<string, EditorAsset> = {};
+  for (const asset of assets) {
+    if (asset.projectId === project.id) assetsById[asset.id] = asset;
+  }
+  if (!assetsById[project.sourceAssetId]) throw new Error('Project source image not found.');
+  for (const variation of project.variations) {
+    for (const layer of variation.layers) {
+      if (isImageLayer(layer) && !assetsById[layer.assetId]) {
+        throw new Error('Project image layer asset not found.');
+      }
+    }
+  }
+  return assetsById;
+};
 
 export const openEditorProjectIfCurrent = async (
   authority: WorkspaceOperationAuthority,
@@ -151,10 +179,10 @@ export const openEditorProjectIfCurrent = async (
   try {
     const project = await dependencies.getProject(projectId);
     if (!project) throw new Error('Project not found.');
-    const asset = await dependencies.getAsset(project.sourceAssetId);
-    if (!asset) throw new Error('Project source image not found.');
+    const assets = await dependencies.getAssetsForProject(project.id);
+    const assetsById = getAssetsByIdForProject(project, assets);
 
-    return applyNavigationIfCurrent(authority, operation, () => dependencies.activate(project, asset));
+    return applyNavigationIfCurrent(authority, operation, () => dependencies.activate(project, assetsById));
   } catch (error) {
     if (authority.owns(operation)) dependencies.reportError(getErrorMessage(error));
     return false;
@@ -166,22 +194,33 @@ export interface ObjectUrlApi {
   revokeObjectURL: (url: string) => void;
 }
 
-export class SourceUrlOwner {
-  private url: string | null = null;
+export class AssetUrlRegistry {
+  private urlsByAssetId = new Map<string, string>();
 
   constructor(private readonly api: ObjectUrlApi) {}
 
-  replace(blob: Blob | null) {
-    const nextUrl = blob ? this.api.createObjectURL(blob) : null;
-    if (this.url) this.api.revokeObjectURL(this.url);
-    this.url = nextUrl;
-    return this.url;
+  sync(assets: Iterable<EditorAsset>): Record<string, string> {
+    const nextAssets = new Map<string, EditorAsset>();
+    for (const asset of assets) nextAssets.set(asset.id, asset);
+
+    for (const [assetId, url] of this.urlsByAssetId) {
+      if (nextAssets.has(assetId)) continue;
+      this.api.revokeObjectURL(url);
+      this.urlsByAssetId.delete(assetId);
+    }
+    for (const [assetId, asset] of nextAssets) {
+      if (!this.urlsByAssetId.has(assetId)) {
+        this.urlsByAssetId.set(assetId, this.api.createObjectURL(asset.blob));
+      }
+    }
+    return Object.fromEntries(
+      [...nextAssets.keys()].map((assetId) => [assetId, this.urlsByAssetId.get(assetId)!]),
+    );
   }
 
   dispose() {
-    if (!this.url) return;
-    this.api.revokeObjectURL(this.url);
-    this.url = null;
+    for (const url of this.urlsByAssetId.values()) this.api.revokeObjectURL(url);
+    this.urlsByAssetId.clear();
   }
 }
 
@@ -279,6 +318,11 @@ export const getAutosaveRetryGeneration = (
   targetProjectId: string,
 ) => activeProjectId === targetProjectId ? currentGeneration + 1 : currentGeneration;
 
+export const shouldClearWorkspaceAfterDelete = (
+  activeProjectId: string | null,
+  deletedProjectId: string,
+) => activeProjectId === deletedProjectId;
+
 export const cleanupImportedProject = async (
   projectId: string,
   importError: unknown,
@@ -298,17 +342,82 @@ export const cleanupImportedProject = async (
   throw new Error(`Import failed: ${getErrorMessage(importError)} Cleanup failed: ${getErrorMessage(cleanupError)}`);
 };
 
+const createImportedImageLayer = (asset: EditorAsset): ImageLayer => ({
+  id: createEditorId('layer'),
+  type: 'image',
+  name: asset.name,
+  assetId: asset.id,
+  visible: true,
+  opacity: 1,
+  transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+  crop: { x: 0, y: 0, width: 1, height: 1 },
+  adjustments: { brightness: 0, contrast: 0, saturation: 0 },
+});
+
+export interface AdditionalImageImportDependencies {
+  getActiveProjectId: () => string | null;
+  isProjectActive: (projectId: string) => boolean;
+  readDimensions: (file: File) => Promise<{ width: number; height: number }>;
+  saveAsset: (asset: EditorAsset) => Promise<unknown>;
+  deleteAsset: (assetId: string) => Promise<void>;
+  dispatchLayer: (asset: EditorAsset, layer: ImageLayer) => void;
+  reportError: (message: string) => void;
+}
+
+export const importAdditionalImageLayer = async (
+  file: File,
+  dependencies: AdditionalImageImportDependencies,
+): Promise<boolean> => {
+  const validationError = validateRasterImport(file);
+  if (validationError) {
+    dependencies.reportError(validationError);
+    return false;
+  }
+  const projectId = dependencies.getActiveProjectId();
+  if (!projectId) {
+    dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_ERROR);
+    return false;
+  }
+
+  let persistedAsset: EditorAsset | null = null;
+  try {
+    const dimensions = await dependencies.readDimensions(file);
+    const dimensionError = validateRasterDimensions(dimensions);
+    if (dimensionError) {
+      dependencies.reportError(dimensionError);
+      return false;
+    }
+    const asset = createEditorAsset(projectId, file, { name: file.name, ...dimensions });
+    await dependencies.saveAsset(asset);
+    persistedAsset = asset;
+    if (!dependencies.isProjectActive(projectId)) throw new Error('The active project changed.');
+    dependencies.dispatchLayer(asset, createImportedImageLayer(asset));
+    return true;
+  } catch {
+    if (persistedAsset) {
+      try {
+        await dependencies.deleteAsset(persistedAsset.id);
+      } catch {
+        // The stable import error covers both the failed operation and orphan cleanup.
+      }
+    }
+    dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_ERROR);
+    return false;
+  }
+};
+
 export const useEditorWorkspace = (): EditorWorkspace => {
   const [history, setHistory] = useState<EditorHistory | null>(null);
   const [projects, setProjects] = useState<EditorProject[]>([]);
-  const [sourceAsset, setSourceAsset] = useState<EditorAsset | null>(null);
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [assetsById, setAssetsById] = useState<Record<string, EditorAsset>>({});
+  const [assetUrlsById, setAssetUrlsById] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [error, setError] = useState<string | null>(null);
   const [saveRetryGeneration, setSaveRetryGeneration] = useState(0);
   const authorityRef = useRef(new WorkspaceOperationAuthority());
   const persistenceRef = useRef(new WorkspacePersistenceController());
-  const sourceUrlOwnerRef = useRef<SourceUrlOwner | null>(null);
+  const assetUrlRegistryRef = useRef<AssetUrlRegistry | null>(null);
+  const assetsByIdRef = useRef<Record<string, EditorAsset>>({});
   const activeProjectIdRef = useRef<string | null>(null);
   const latestRevisionRef = useRef<string | null>(null);
   const historyRef = useRef<EditorHistory | null>(null);
@@ -317,7 +426,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
 
   historyRef.current = history;
 
-  if (!sourceUrlOwnerRef.current) sourceUrlOwnerRef.current = new SourceUrlOwner(URL);
+  if (!assetUrlRegistryRef.current) assetUrlRegistryRef.current = new AssetUrlRegistry(URL);
 
   const refreshProjects = useCallback(async () => {
     const refreshGeneration = refreshGenerationRef.current + 1;
@@ -338,23 +447,23 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     return () => {
       mountedRef.current = false;
       authorityRef.current.begin();
+      assetUrlRegistryRef.current?.dispose();
     };
   }, []);
 
-  useEffect(() => {
-    const nextUrl = sourceUrlOwnerRef.current!.replace(sourceAsset?.blob ?? null);
-    setSourceUrl((current) => current === nextUrl ? current : nextUrl);
-  }, [sourceAsset]);
-
-  useEffect(() => () => {
-    sourceUrlOwnerRef.current?.dispose();
-  }, []);
-
-  const replaceWorkspace = useCallback((project: EditorProject, asset: EditorAsset) => {
+  const replaceWorkspace = useCallback((
+    project: EditorProject,
+    nextAssetsById: Record<string, EditorAsset>,
+  ) => {
+    const nextAssetUrlsById = assetUrlRegistryRef.current!.sync(Object.values(nextAssetsById));
     activeProjectIdRef.current = project.id;
     latestRevisionRef.current = `${project.id}:${project.updatedAt}`;
-    setHistory(createEditorHistory(project));
-    setSourceAsset(asset);
+    const nextHistory = createEditorHistory(project);
+    historyRef.current = nextHistory;
+    assetsByIdRef.current = nextAssetsById;
+    setHistory(nextHistory);
+    setAssetsById(nextAssetsById);
+    setAssetUrlsById(nextAssetUrlsById);
     setSaveStatus('saved');
     setError(null);
   }, []);
@@ -366,6 +475,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
         activeProjectIdRef.current = next.present.id;
         latestRevisionRef.current = `${next.present.id}:${next.present.updatedAt}`;
       }
+      historyRef.current = next;
       return next;
     });
   }, []);
@@ -416,7 +526,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     const applied = await completeImportedProjectIfCurrent(
       authorityRef.current,
       operation,
-      () => replaceWorkspace(project, asset),
+      () => replaceWorkspace(project, getAssetsByIdForProject(project, [asset])),
       () => cleanupImportedProject(projectId, new Error('Import was superseded.'), deleteEditorProject),
       refreshProjects,
       (message) => {
@@ -435,13 +545,49 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     const operation = authorityRef.current.begin();
     return openEditorProjectIfCurrent(authorityRef.current, operation, projectId, {
       getProject: getEditorProject,
-      getAsset: getEditorAsset,
+      getAssetsForProject: getEditorAssetsForProject,
       activate: replaceWorkspace,
       reportError: (message) => {
         if (mountedRef.current) setError(message);
       },
     });
   }, [replaceWorkspace]);
+
+  const importLayerFile = useCallback(async (file: File) => {
+    const operation = authorityRef.current.current();
+    await importAdditionalImageLayer(file, {
+      getActiveProjectId: () => activeProjectIdRef.current,
+      isProjectActive: (projectId) => mountedRef.current &&
+        authorityRef.current.owns(operation) &&
+        activeProjectIdRef.current === projectId &&
+        !persistenceRef.current.isBlocked(projectId),
+      readDimensions: readRasterDimensions,
+      saveAsset: saveEditorAsset,
+      deleteAsset: deleteEditorAsset,
+      dispatchLayer: (asset, layer) => {
+        const current = historyRef.current;
+        if (!current || current.present.id !== asset.projectId ||
+          !authorityRef.current.owns(operation) || persistenceRef.current.isBlocked(asset.projectId)) {
+          throw new Error('The active project changed.');
+        }
+        const next = reduceEditorHistory(current, { type: 'add-image-layer', layer });
+        if (next === current) throw new Error('The image layer was not added.');
+        const nextAssetsById = { ...assetsByIdRef.current, [asset.id]: asset };
+        const nextAssetUrlsById = assetUrlRegistryRef.current!.sync(Object.values(nextAssetsById));
+        assetsByIdRef.current = nextAssetsById;
+        historyRef.current = next;
+        activeProjectIdRef.current = next.present.id;
+        latestRevisionRef.current = `${next.present.id}:${next.present.updatedAt}`;
+        setAssetsById(nextAssetsById);
+        setAssetUrlsById(nextAssetUrlsById);
+        setHistory(next);
+        setError(null);
+      },
+      reportError: (message) => {
+        if (mountedRef.current) setError(message);
+      },
+    });
+  }, []);
 
   const deleteProject = useCallback(async (projectId: string) => {
     const targetProjectId = projectId;
@@ -459,12 +605,16 @@ export const useEditorWorkspace = (): EditorWorkspace => {
       return;
     }
 
-    const clearsCurrentProject = authorityRef.current.owns(operation) && activeProjectIdRef.current === targetProjectId;
+    const clearsCurrentProject = shouldClearWorkspaceAfterDelete(activeProjectIdRef.current, targetProjectId);
     if (mountedRef.current && clearsCurrentProject) {
       activeProjectIdRef.current = null;
       latestRevisionRef.current = null;
+      historyRef.current = null;
+      assetsByIdRef.current = {};
+      const nextAssetUrlsById = assetUrlRegistryRef.current!.sync([]);
       setHistory(null);
-      setSourceAsset(null);
+      setAssetsById({});
+      setAssetUrlsById(nextAssetUrlsById);
       setSaveStatus('saved');
       setError(null);
     }
@@ -530,12 +680,13 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   return {
     history,
     projects,
-    sourceAsset,
-    sourceUrl,
+    assetsById,
+    assetUrlsById,
     saveStatus,
     error,
     dispatch,
     importFile,
+    importLayerFile,
     openProject,
     deleteProject,
     refreshProjects,

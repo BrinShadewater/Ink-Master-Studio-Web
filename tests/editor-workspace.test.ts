@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  SourceUrlOwner,
+  AssetUrlRegistry,
+  ADDITIONAL_IMAGE_IMPORT_ERROR,
   IMPORT_CLEANUP_ERROR,
   WorkspaceOperationAuthority,
   WorkspacePersistenceController,
@@ -9,15 +10,19 @@ import {
   applyNavigationIfCurrent,
   cleanupImportedProject,
   completeImportedProjectIfCurrent,
+  getAssetsByIdForProject,
   getAutosaveRetryGeneration,
+  importAdditionalImageLayer,
   openEditorProjectIfCurrent,
   queueWorkspaceRevision,
   readRasterDimensions,
   runAutosaveAttempt,
+  shouldClearWorkspaceAfterDelete,
   validateRasterDimensions,
   validateRasterImport,
 } from '../editor/useEditorWorkspace';
-import { createEditorAsset, createEditorProject } from '../editor/model';
+import { createEditorAsset, createEditorProject, type EditorProject } from '../editor/model';
+import { createEditorHistory, reduceEditorHistory } from '../editor/history';
 
 const deferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -92,8 +97,11 @@ test('a successful project open returns true only after activating the requested
 
   const opened = await openEditorProjectIfCurrent(authority, authority.begin(), 'project-a', {
     getProject: async (projectId) => projectId === fixture.project.id ? fixture.project : null,
-    getAsset: async (assetId) => assetId === fixture.asset.id ? fixture.asset : null,
-    activate: (project) => { activeProjectId = project.id; },
+    getAssetsForProject: async () => [fixture.asset],
+    activate: (project, assetsById) => {
+      activeProjectId = project.id;
+      assert.equal(assetsById[fixture.asset.id]?.id, fixture.asset.id);
+    },
     reportError: (message) => { errors.push(message); },
   });
 
@@ -108,7 +116,7 @@ test('a failed project open returns false and reports the current error', async 
 
   const opened = await openEditorProjectIfCurrent(authority, authority.begin(), 'missing', {
     getProject: async () => null,
-    getAsset: async () => { throw new Error('Asset lookup should not run.'); },
+    getAssetsForProject: async () => { throw new Error('Asset lookup should not run.'); },
     activate: () => { throw new Error('Activation should not run.'); },
     reportError: (message) => { errors.push(message); },
   });
@@ -126,7 +134,7 @@ test('a stale project open returns false without replacing or reporting over the
   const staleOperation = authority.begin();
   const firstOpen = openEditorProjectIfCurrent(authority, staleOperation, 'project-a', {
     getProject: async () => projectLoad.promise,
-    getAsset: async () => fixture.asset,
+    getAssetsForProject: async () => [fixture.asset],
     activate: (project) => { activeProjectId = project.id; },
     reportError: (message) => { errors.push(message); },
   });
@@ -138,6 +146,169 @@ test('a stale project open returns false without replacing or reporting over the
   assert.equal(await firstOpen, false);
   assert.equal(activeProjectId, 'project-b');
   assert.deepEqual(errors, []);
+});
+
+test('project hydration indexes every asset and rejects an unresolved image layer', () => {
+  const fixture = createOpenFixture('project-hydration');
+  const secondary = createEditorAsset(fixture.project.id, new Blob(['secondary']), {
+    name: 'secondary.png', width: 80, height: 60,
+  });
+  const sourceLayer = fixture.project.variations[0].layers[0];
+  assert.equal(sourceLayer.type, 'image');
+  fixture.project.variations[0].layers.push({
+    ...sourceLayer,
+    id: 'layer-secondary',
+    assetId: secondary.id,
+    name: secondary.name,
+  });
+
+  assert.deepEqual(Object.keys(getAssetsByIdForProject(fixture.project, [fixture.asset, secondary])).sort(),
+    [fixture.asset.id, secondary.id].sort());
+  assert.throws(
+    () => getAssetsByIdForProject(fixture.project, [fixture.asset]),
+    /Project image layer asset not found/,
+  );
+});
+
+test('secondary import rejects an unsupported file before decoding or persistence', async () => {
+  const events: string[] = [];
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['x'], 'vector.svg', { type: 'image/svg+xml' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => { events.push('decode'); return { width: 10, height: 10 }; },
+    saveAsset: async () => { events.push('save'); },
+    deleteAsset: async () => { events.push('delete'); },
+    dispatchLayer: () => { events.push('dispatch'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.deepEqual(events, []);
+  assert.deepEqual(errors, ['Choose a PNG, JPEG, or WebP image.']);
+});
+
+test('secondary import rejects an oversized file before decoding or persistence', async () => {
+  const events: string[] = [];
+  const errors: string[] = [];
+  const file = new File([new Uint8Array(50 * 1024 * 1024 + 1)], 'huge.png', { type: 'image/png' });
+  const imported = await importAdditionalImageLayer(file, {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => { events.push('decode'); return { width: 10, height: 10 }; },
+    saveAsset: async () => { events.push('save'); },
+    deleteAsset: async () => { events.push('delete'); },
+    dispatchLayer: () => { events.push('dispatch'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.deepEqual(events, []);
+  assert.deepEqual(errors, ['Choose an image no larger than 50 MB.']);
+});
+
+test('secondary import validates decoded dimensions before persistence', async () => {
+  const events: string[] = [];
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['x'], 'wide.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 20_000, height: 10 }),
+    saveAsset: async () => { events.push('save'); },
+    deleteAsset: async () => { events.push('delete'); },
+    dispatchLayer: () => { events.push('dispatch'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.deepEqual(events, []);
+  assert.deepEqual(errors, ['Choose an image no larger than 16,384 pixels per side or 100 megapixels.']);
+});
+
+test('secondary import persists before appending a layer without changing source identity', async () => {
+  const fixture = createOpenFixture('project-layer-import');
+  let activeProjectId = fixture.project.id;
+  let currentProject: EditorProject = fixture.project;
+  const originalSource = {
+    sourceAssetId: currentProject.sourceAssetId,
+    sourceMetadata: structuredClone(currentProject.sourceMetadata),
+  };
+  const events: string[] = [];
+  const errors: string[] = [];
+
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => activeProjectId,
+    isProjectActive: (projectId) => activeProjectId === projectId,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => { events.push(`save:${asset.id}`); },
+    deleteAsset: async (assetId) => { events.push(`delete:${assetId}`); },
+    dispatchLayer: (asset, layer) => {
+      events.push(`dispatch:${asset.id}`);
+      currentProject = reduceEditorHistory(createEditorHistory(currentProject), {
+        type: 'add-image-layer', layer,
+      }).present;
+      activeProjectId = currentProject.id;
+    },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, true);
+  assert.equal(events.length, 2);
+  assert.match(events[0], /^save:asset_/);
+  assert.equal(events[1], events[0].replace('save:', 'dispatch:'));
+  assert.equal(currentProject.id, fixture.project.id);
+  assert.equal(currentProject.variations[0].layers.at(-1)?.name, 'secondary.png');
+  assert.deepEqual({
+    sourceAssetId: currentProject.sourceAssetId,
+    sourceMetadata: currentProject.sourceMetadata,
+  }, originalSource);
+  assert.deepEqual(errors, []);
+});
+
+test('a stale persisted secondary import deletes its orphan and never replaces the active project', async () => {
+  const saveGate = deferred<void>();
+  let activeProjectId = 'project-a';
+  let persistedAssetId: string | null = null;
+  const deletedAssets: string[] = [];
+  const dispatchedProjects: string[] = [];
+  const errors: string[] = [];
+  const importing = importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => activeProjectId,
+    isProjectActive: (projectId) => activeProjectId === projectId,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => { persistedAssetId = asset.id; await saveGate.promise; },
+    deleteAsset: async (assetId) => { deletedAssets.push(assetId); },
+    dispatchLayer: (asset) => { dispatchedProjects.push(asset.projectId); },
+    reportError: (message) => { errors.push(message); },
+  });
+  await flushMicrotasks();
+  activeProjectId = 'project-b';
+  saveGate.resolve();
+
+  assert.equal(await importing, false);
+  assert.deepEqual(deletedAssets, [persistedAssetId]);
+  assert.deepEqual(dispatchedProjects, []);
+  assert.equal(activeProjectId, 'project-b');
+  assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
+});
+
+test('a failed secondary layer dispatch deletes the persisted orphan and reports one stable error', async () => {
+  const events: string[] = [];
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => { events.push(`save:${asset.id}`); },
+    deleteAsset: async (assetId) => { events.push(`delete:${assetId}`); },
+    dispatchLayer: () => { throw new Error('Dispatch failed.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.equal(events.length, 2);
+  assert.equal(events[1], events[0].replace('save:', 'delete:'));
+  assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
 });
 
 test('a stale import cleans its persisted project instead of replacing a newer open', async () => {
@@ -208,6 +379,11 @@ test('a delayed delete of A cannot clear a newer open of B', async () => {
   assert.equal(activeProject, 'project-b');
 });
 
+test('a completed delete clears its still-active project after a newer open fails', () => {
+  assert.equal(shouldClearWorkspaceAfterDelete('project-a', 'project-a'), true);
+  assert.equal(shouldClearWorkspaceAfterDelete('project-b', 'project-a'), false);
+});
+
 test('deleting a project excludes pending and later autosaves from recreating it', async () => {
   const persistence = new WorkspacePersistenceController();
   const saveGate = deferred<void>();
@@ -229,20 +405,36 @@ test('deleting a project excludes pending and later autosaves from recreating it
   assert.equal(storedProjects.has('project-a'), false);
 });
 
-test('source URL ownership revokes each owned URL once on replacement and unmount', () => {
-  const events: string[] = [];
+test('asset URL registry reuses immutable assets and revokes removed URLs exactly once', () => {
+  const created: string[] = [];
+  const revoked: string[] = [];
   let nextUrl = 0;
-  const owner = new SourceUrlOwner({
-    createObjectURL: () => `blob:${++nextUrl}`,
-    revokeObjectURL: (url) => { events.push(`revoke:${url}`); },
+  const registry = new AssetUrlRegistry({
+    createObjectURL: () => {
+      const url = `blob:${++nextUrl}`;
+      created.push(url);
+      return url;
+    },
+    revokeObjectURL: (url) => { revoked.push(url); },
   });
+  const projectId = `project_${crypto.randomUUID()}`;
+  const source = createEditorAsset(projectId, new Blob(['source']), { name: 'source.png', width: 10, height: 10 });
+  const secondary = createEditorAsset(projectId, new Blob(['secondary']), { name: 'secondary.png', width: 5, height: 5 });
 
-  assert.equal(owner.replace(new Blob(['first'])), 'blob:1');
-  assert.equal(owner.replace(new Blob(['second'])), 'blob:2');
-  owner.dispose();
-  owner.dispose();
+  assert.deepEqual(registry.sync([source, secondary]), {
+    [source.id]: 'blob:1',
+    [secondary.id]: 'blob:2',
+  });
+  assert.deepEqual(registry.sync([{ ...source }, { ...secondary }]), {
+    [source.id]: 'blob:1',
+    [secondary.id]: 'blob:2',
+  });
+  assert.deepEqual(registry.sync([secondary]), { [secondary.id]: 'blob:2' });
+  registry.dispose();
+  registry.dispose();
 
-  assert.deepEqual(events, ['revoke:blob:1', 'revoke:blob:2']);
+  assert.deepEqual(created, ['blob:1', 'blob:2']);
+  assert.deepEqual(revoked, ['blob:1', 'blob:2']);
 });
 
 test('autosave failure reports the hook-facing error transition and keeps the queue usable', async () => {

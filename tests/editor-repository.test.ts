@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { indexedDB as fakeIndexedDb } from 'fake-indexeddb';
 import { createEditorAsset, createEditorProject } from '../editor/model';
 import {
-  deleteEditorProject, getEditorAsset, getEditorProject,
+  deleteEditorAsset, deleteEditorProject, getEditorAsset, getEditorProject,
   listEditorProjects, saveEditorAsset, saveEditorProject,
 } from '../editor/projectRepository';
 import { createStudioJob } from '../services/jobModel';
@@ -165,6 +165,49 @@ test('rejects duplicate source asset ids without replacing IndexedDB records', a
     );
     assert.equal((await getEditorAsset(asset.id))?.name, 'original.png');
     assert.equal((await getEditorAsset(asset.id))?.blob.size, 8);
+  });
+});
+
+test('deletes only the requested in-memory editor asset', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const source = createEditorAsset(projectId, new Blob(['source']), {
+    name: 'source.png', width: 100, height: 100,
+  });
+  const secondary = createEditorAsset(projectId, new Blob(['secondary']), {
+    name: 'secondary.png', width: 80, height: 60,
+  });
+  const project = createEditorProject('Memory cleanup', source);
+  await saveEditorAsset(source);
+  await saveEditorAsset(secondary);
+  await saveEditorProject(project);
+
+  await deleteEditorAsset(secondary.id);
+
+  assert.equal(await getEditorAsset(secondary.id), null);
+  assert.equal((await getEditorAsset(source.id))?.id, source.id);
+  assert.equal((await getEditorProject(projectId))?.id, projectId);
+  await deleteEditorProject(projectId);
+});
+
+test('deletes only the requested IndexedDB editor asset', async () => {
+  await withFakeIndexedDb(async () => {
+    const projectId = `project_${crypto.randomUUID()}`;
+    const source = createEditorAsset(projectId, new Blob(['source']), {
+      name: 'source.png', width: 100, height: 100,
+    });
+    const secondary = createEditorAsset(projectId, new Blob(['secondary']), {
+      name: 'secondary.png', width: 80, height: 60,
+    });
+    const project = createEditorProject('Indexed cleanup', source);
+    await saveEditorAsset(source);
+    await saveEditorAsset(secondary);
+    await saveEditorProject(project);
+
+    await deleteEditorAsset(secondary.id);
+
+    assert.equal(await getEditorAsset(secondary.id), null);
+    assert.equal((await getEditorAsset(source.id))?.id, source.id);
+    assert.equal((await getEditorProject(projectId))?.id, projectId);
   });
 });
 

@@ -126,6 +126,14 @@ export const getEditorAssetsForProject = async (projectId: string): Promise<Edit
   return assets.map(cloneAsset);
 };
 
+export const deleteEditorAsset = async (assetId: string): Promise<void> => {
+  if (!hasIndexedDb()) {
+    memoryAssets.delete(assetId);
+    return;
+  }
+  await runRequest(EDITOR_ASSET_STORE, 'readwrite', (store) => store.delete(assetId));
+};
+
 export const deleteEditorProject = async (id: string): Promise<void> => {
   if (!hasIndexedDb()) {
     memoryProjects.delete(id);
