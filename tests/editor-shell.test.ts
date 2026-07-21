@@ -17,9 +17,9 @@ import {
   cropToEdgePercentages,
   edgePercentagesToCrop,
 } from '../components/editor/EditorInspector';
-import { getCompatibilitySourceLayer, openProjectFromDrawer } from '../components/editor/EditorApp';
+import { openProjectFromDrawer } from '../components/editor/EditorApp';
 import { createEditorAsset, createEditorProject, createTextLayer } from '../editor/model';
-import { createEditorHistory, reduceEditorHistory } from '../editor/history';
+import { createEditorHistory, getSelectedImageLayer, reduceEditorHistory } from '../editor/history';
 
 const topBarProps: EditorTopBarProps = {
   projectId: 'project-a',
@@ -153,7 +153,7 @@ test('project drawer closes only after the requested project opens successfully'
   assert.equal(closeCount, 1);
 });
 
-test('temporary compatibility rendering always resolves the immutable source image layer', () => {
+test('image-only inspector follows image selection and stays empty for text selection', () => {
   const source = createEditorAsset('project-source-render', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
   });
@@ -165,8 +165,8 @@ test('temporary compatibility rendering always resolves the immutable source ima
     type: 'add-image-layer', layer: secondaryLayer,
   });
   assert.equal(history.present.variations[0].selectedLayerId, secondaryLayer.id);
-  assert.equal(getCompatibilitySourceLayer(history.present)?.id, sourceLayer.id);
+  assert.equal(getSelectedImageLayer(history.present)?.id, secondaryLayer.id);
 
   history = reduceEditorHistory(history, { type: 'add-text-layer', layer: createTextLayer('Selected text') });
-  assert.equal(getCompatibilitySourceLayer(history.present)?.assetId, source.id);
+  assert.equal(getSelectedImageLayer(history.present), null);
 });

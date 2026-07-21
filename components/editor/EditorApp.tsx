@@ -6,7 +6,7 @@ import {
   getActiveVariation,
   getSelectedImageLayer,
 } from '../../editor/history';
-import { isImageLayer, type EditorProject, type EditorTool, type ImageLayer } from '../../editor/model';
+import type { EditorTool } from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { EditorInspector } from './EditorInspector';
@@ -27,10 +27,6 @@ export const openProjectFromDrawer = async (
   return opened;
 };
 
-export const getCompatibilitySourceLayer = (project: EditorProject) =>
-  getActiveVariation(project).layers.find((layer): layer is ImageLayer =>
-    isImageLayer(layer) && layer.assetId === project.sourceAssetId) ?? null;
-
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
   const [tool, setTool] = useState<EditorTool>('select');
@@ -40,9 +36,6 @@ export const EditorApp = () => {
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
   const selectedImageLayer = project ? getSelectedImageLayer(project) : null;
-  const compatibilitySourceLayer = project ? getCompatibilitySourceLayer(project) : null;
-  const sourceAsset = project ? workspace.assetsById[project.sourceAssetId] ?? null : null;
-  const sourceUrl = project ? workspace.assetUrlsById[project.sourceAssetId] ?? null : null;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -115,16 +108,14 @@ export const EditorApp = () => {
           onDrop={importDroppedFile}
         >
           <EditorCanvas
-            sourceUrl={sourceUrl}
-            sourceSize={sourceAsset}
-            layer={compatibilitySourceLayer}
+            layers={variation?.layers ?? []}
+            selectedLayerId={variation?.selectedLayerId ?? null}
+            assetsById={workspace.assetsById}
+            assetUrlsById={workspace.assetUrlsById}
             tool={tool}
-            onTransformChange={(transform, historyGroup) => {
-              if (compatibilitySourceLayer) {
-                workspace.dispatch({
-                  type: 'set-transform', layerId: compatibilitySourceLayer.id, transform, historyGroup,
-                });
-              }
+            onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
+            onTransformChange={(layerId, transform, historyGroup) => {
+              workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
             }}
             onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
           />

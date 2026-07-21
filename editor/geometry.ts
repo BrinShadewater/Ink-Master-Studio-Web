@@ -10,6 +10,11 @@ export interface Rect extends Size {
   y: number;
 }
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
 const round = (value: number) => Number(value.toFixed(6));
 
 const isUsableSize = ({ width, height }: Size) =>
@@ -77,6 +82,18 @@ export const moveTransformByViewportDelta = (
     x: round(transform.x + delta.x),
     y: round(transform.y + delta.y),
   };
+};
+
+export const isPointInRotatedRect = (point: Point, rect: Rect, rotation: number): boolean => {
+  if (rect.width <= 0 || rect.height <= 0) return false;
+  const centerX = rect.x + rect.width / 2;
+  const centerY = rect.y + rect.height / 2;
+  const dx = point.x - centerX;
+  const dy = point.y - centerY;
+  const radians = rotation * (Math.PI / 180);
+  const localX = dx * Math.cos(radians) + dy * Math.sin(radians);
+  const localY = -dx * Math.sin(radians) + dy * Math.cos(radians);
+  return Math.abs(localX) <= rect.width / 2 && Math.abs(localY) <= rect.height / 2;
 };
 
 export const buildCanvasFilter = (adjustments: ImageAdjustments) =>

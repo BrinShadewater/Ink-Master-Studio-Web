@@ -1,24 +1,20 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import {
-  buildCanvasFilter,
-  getCroppedSourceRect,
-  getLayerDrawRect,
-  moveTransformByViewportDelta,
-  type Rect,
-  type Size,
-} from '../../editor/geometry';
-import type { EditorTool, ImageLayer, LayerTransform } from '../../editor/model';
+import { hitTestDesignLayers, renderDesignLayers, type CompositorAssets } from '../../editor/compositor';
+import { moveTransformByViewportDelta, type Size } from '../../editor/geometry';
+import type { EditorAsset, EditorTool, DesignLayer, LayerTransform } from '../../editor/model';
 
 export interface EditorCanvasProps {
+  layers: DesignLayer[];
+  selectedLayerId: string | null;
+  assetsById: Record<string, EditorAsset>;
   /**
-   * Borrowed source URL. Its creator owns URL lifecycle and revocation;
-   * EditorCanvas consumes it without revoking it.
+   * Borrowed source URLs. Their creator owns URL lifecycle and revocation;
+   * EditorCanvas consumes them without revoking them.
    */
-  sourceUrl: string | null;
-  sourceSize: Size | null;
-  layer: ImageLayer | null;
+  assetUrlsById: Record<string, string>;
   tool: EditorTool;
-  onTransformChange: (transform: LayerTransform, historyGroup: string) => void;
+  onSelectLayer: (layerId: string) => void;
+  onTransformChange: (layerId: string, transform: LayerTransform, historyGroup: string) => void;
   onTransformEnd: () => void;
 }
 
@@ -29,63 +25,119 @@ interface ViewportState {
 
 interface DragState {
   pointerId: number;
+  layerId: string;
   startPoint: { x: number; y: number };
   transform: LayerTransform;
   viewportSize: Size;
 }
+
+interface DecodeEntry {
+  active: boolean;
+  image: HTMLImageElement;
+  loaded: boolean;
+  url: string;
+}
+
+export interface DecodedImageController {
+  sync: (assetUrlsById: Record<string, string>) => void;
+  dispose: () => void;
+}
+
+export const createDecodedImageController = (
+  createImage: () => HTMLImageElement,
+  publish: (imagesById: Record<string, CanvasImageSource>) => void,
+): DecodedImageController => {
+  const entriesByUrl = new Map<string, DecodeEntry>();
+  let currentUrlsById: Record<string, string> = {};
+  let disposed = false;
+
+  const publishCurrent = () => {
+    if (disposed) return;
+    const imagesById: Record<string, CanvasImageSource> = {};
+    for (const [assetId, url] of Object.entries(currentUrlsById)) {
+      const entry = entriesByUrl.get(url);
+      if (entry?.active && entry.loaded) imagesById[assetId] = entry.image;
+    }
+    publish(imagesById);
+  };
+
+  const deactivate = (entry: DecodeEntry) => {
+    entry.active = false;
+    entry.image.onload = null;
+    entry.image.onerror = null;
+  };
+
+  return {
+    sync(nextUrlsById) {
+      // React StrictMode replays effects after cleanup with the same component state.
+      disposed = false;
+      currentUrlsById = { ...nextUrlsById };
+      const activeUrls = new Set(Object.values(currentUrlsById));
+      for (const [url, entry] of entriesByUrl) {
+        if (activeUrls.has(url)) continue;
+        deactivate(entry);
+        entriesByUrl.delete(url);
+      }
+
+      for (const url of activeUrls) {
+        if (entriesByUrl.has(url)) continue;
+        const image = createImage();
+        const entry: DecodeEntry = { active: true, image, loaded: false, url };
+        entriesByUrl.set(url, entry);
+        image.onload = () => {
+          if (disposed || !entry.active || entriesByUrl.get(url) !== entry) return;
+          entry.loaded = true;
+          publishCurrent();
+        };
+        image.onerror = () => {
+          if (disposed || !entry.active || entriesByUrl.get(url) !== entry) return;
+          entry.loaded = false;
+          publishCurrent();
+        };
+        image.src = url;
+      }
+      publishCurrent();
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const entry of entriesByUrl.values()) deactivate(entry);
+      entriesByUrl.clear();
+      currentUrlsById = {};
+    },
+  };
+};
 
 const initialViewport: ViewportState = {
   size: { width: 0, height: 0 },
   pixelRatio: 1,
 };
 
-const toRadians = (degrees: number) => degrees * (Math.PI / 180);
-
-const isPointInRect = (
-  point: { x: number; y: number },
-  drawRect: Rect,
-  rotation: number,
-) => {
-  const centerX = drawRect.x + drawRect.width / 2;
-  const centerY = drawRect.y + drawRect.height / 2;
-  const dx = point.x - centerX;
-  const dy = point.y - centerY;
-  const angle = toRadians(rotation);
-  const localX = dx * Math.cos(angle) + dy * Math.sin(angle);
-  const localY = -dx * Math.sin(angle) + dy * Math.cos(angle);
-
-  return Math.abs(localX) <= drawRect.width / 2 && Math.abs(localY) <= drawRect.height / 2;
-};
-
 export const EditorCanvas = ({
-  sourceUrl,
-  sourceSize,
-  layer,
+  layers,
+  selectedLayerId,
+  assetsById,
+  assetUrlsById,
   tool,
+  onSelectLayer,
   onTransformChange,
   onTransformEnd,
 }: EditorCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imagesById, setImagesById] = useState<Record<string, CanvasImageSource>>({});
   const [viewport, setViewport] = useState<ViewportState>(initialViewport);
+  const decoderRef = useRef<DecodedImageController | null>(null);
+  if (!decoderRef.current) {
+    decoderRef.current = createDecodedImageController(() => new Image(), setImagesById);
+  }
+  const decoder = decoderRef.current;
 
   useEffect(() => {
-    // Clear only this component's decoded-image state when its borrowed URL changes.
-    setImage(null);
-    if (!sourceUrl) return;
+    decoder.sync(assetUrlsById);
+  }, [assetUrlsById, decoder]);
 
-    const nextImage = new Image();
-    nextImage.onload = () => setImage(nextImage);
-    nextImage.onerror = () => setImage(null);
-    nextImage.src = sourceUrl;
-
-    return () => {
-      // Stop stale image callbacks only. The borrowed URL remains owned by its creator.
-      nextImage.onload = null;
-      nextImage.onerror = null;
-    };
-  }, [sourceUrl]);
+  useEffect(() => () => decoder.dispose(), [decoder]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -123,38 +175,17 @@ export const EditorCanvas = ({
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#1f1f1f';
     context.fillRect(0, 0, canvas.width, canvas.height);
+    if (viewport.size.width <= 0 || viewport.size.height <= 0) return;
 
-    if (!image || !sourceSize || !layer || !layer.visible || viewport.size.width === 0 || viewport.size.height === 0) return;
-
-    const drawRect = getLayerDrawRect(sourceSize, viewport.size, layer.transform, layer.crop);
-    const cropRect = getCroppedSourceRect(sourceSize, layer.crop);
-    if (drawRect.width <= 0 || drawRect.height <= 0 || cropRect.width <= 0 || cropRect.height <= 0) return;
-
-    const centerX = drawRect.x + drawRect.width / 2;
-    const centerY = drawRect.y + drawRect.height / 2;
+    const compositorAssets: CompositorAssets = { metadataById: assetsById, imagesById };
     context.save();
     context.scale(viewport.pixelRatio, viewport.pixelRatio);
     context.beginPath();
     context.rect(0, 0, viewport.size.width, viewport.size.height);
     context.clip();
-    context.translate(centerX, centerY);
-    context.rotate(toRadians(layer.transform.rotation));
-    context.scale(layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1);
-    context.globalAlpha = layer.opacity;
-    context.filter = buildCanvasFilter(layer.adjustments);
-    context.drawImage(
-      image,
-      cropRect.x,
-      cropRect.y,
-      cropRect.width,
-      cropRect.height,
-      -drawRect.width / 2,
-      -drawRect.height / 2,
-      drawRect.width,
-      drawRect.height,
-    );
+    renderDesignLayers(context, viewport.size, layers, compositorAssets);
     context.restore();
-  }, [image, layer, sourceSize, viewport]);
+  }, [assetsById, imagesById, layers, viewport]);
 
   const getCanvasPoint = (event: PointerEvent<HTMLCanvasElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -170,17 +201,26 @@ export const EditorCanvas = ({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (tool !== 'select' || !sourceSize || !layer || !layer.visible || !image) return;
-
+    if (tool !== 'select' || viewport.size.width <= 0 || viewport.size.height <= 0) return;
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
     const point = getCanvasPoint(event);
-    const drawRect = getLayerDrawRect(sourceSize, viewport.size, layer.transform, layer.crop);
-    if (!isPointInRect(point, drawRect, layer.transform.rotation)) return;
+    const hitLayer = hitTestDesignLayers(
+      context,
+      point,
+      viewport.size,
+      layers,
+      { metadataById: assetsById, imagesById },
+    );
+    if (!hitLayer) return;
 
+    onSelectLayer(hitLayer.id);
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
+      layerId: hitLayer.id,
       startPoint: point,
-      transform: { ...layer.transform },
+      transform: { ...hitLayer.transform },
       viewportSize: { ...viewport.size },
     };
   };
@@ -190,12 +230,16 @@ export const EditorCanvas = ({
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const point = getCanvasPoint(event);
-    onTransformChange(moveTransformByViewportDelta(
-      drag.transform,
-      point.x - drag.startPoint.x,
-      point.y - drag.startPoint.y,
-      drag.viewportSize,
-    ), 'canvas-drag');
+    onTransformChange(
+      drag.layerId,
+      moveTransformByViewportDelta(
+        drag.transform,
+        point.x - drag.startPoint.x,
+        point.y - drag.startPoint.y,
+        drag.viewportSize,
+      ),
+      'canvas-drag',
+    );
   };
 
   return (
@@ -203,6 +247,7 @@ export const EditorCanvas = ({
       ref={canvasRef}
       aria-label="Design canvas"
       className="block h-full min-h-0 w-full touch-none"
+      data-selected-layer-id={selectedLayerId ?? undefined}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishDrag}

@@ -6,6 +6,7 @@ import {
   fitSourceInViewport,
   getCroppedSourceRect,
   getLayerDrawRect,
+  isPointInRotatedRect,
   moveTransformByViewportDelta,
   viewportDeltaToNormalized,
 } from '../editor/geometry';
@@ -52,6 +53,12 @@ test('derives a cropped draw rectangle around the normalized layer center', () =
     ),
     { x: -260, y: -80, width: 1120, height: 560 },
   );
+});
+
+test('inverse-rotates points when testing rotated layer bounds', () => {
+  const bounds = { x: 40, y: 80, width: 120, height: 40 };
+  assert.equal(isPointInRotatedRect({ x: 100, y: 150 }, bounds, 90), true);
+  assert.equal(isPointInRotatedRect({ x: 150, y: 100 }, bounds, 90), false);
 });
 
 test('keeps source URL lifecycle with its creator', () => {
