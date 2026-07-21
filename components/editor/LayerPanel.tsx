@@ -32,6 +32,8 @@ export interface LayerPanelProps {
   titleId?: string;
   onClose?: () => void;
   closeButtonRef?: Ref<HTMLButtonElement>;
+  panelRef?: Ref<HTMLElement>;
+  focusable?: boolean;
 }
 
 export interface LayerNameDraftState {
@@ -170,12 +172,19 @@ export const LayerPanel = ({
   titleId,
   onClose,
   closeButtonRef,
+  panelRef,
+  focusable = false,
 }: LayerPanelProps) => {
   const layers = variation?.layers ?? [];
   const selectedLayerId = variation?.selectedLayerId ?? null;
 
   return (
-    <section className={`flex min-h-0 flex-col bg-neutral-900 ${className}`} aria-label="Layers panel">
+    <section
+      ref={panelRef}
+      className={`flex min-h-0 flex-col bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${className}`}
+      aria-label="Layers panel"
+      tabIndex={focusable ? -1 : undefined}
+    >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-neutral-800 px-3">
         <h2 id={titleId} className="text-sm font-semibold text-neutral-100">Layers</h2>
         <div className="flex items-center gap-1">
@@ -268,7 +277,7 @@ export const LayerPanel = ({
 export interface LayerDrawerProps extends Omit<LayerPanelProps, 'className' | 'titleId'> {
   open: boolean;
   onClose: () => void;
-  returnFocusRef: RefObject<HTMLButtonElement | null>;
+  returnFocusRef: RefObject<HTMLElement | null>;
 }
 
 export const LayerDrawer = ({

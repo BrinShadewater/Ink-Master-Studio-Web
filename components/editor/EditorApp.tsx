@@ -5,6 +5,7 @@ import {
   canUndoActiveVariation,
   getActiveVariation,
   getSelectedImageLayer,
+  getSelectedLayer,
 } from '../../editor/history';
 import type { EditorCommand } from '../../editor/history';
 import {
@@ -37,24 +38,25 @@ export const openProjectFromDrawer = async (
 export const selectLayerFromPanel = (
   layer: DesignLayer,
   dispatch: (command: EditorCommand) => void,
-  setTool: (tool: EditorTool) => void,
 ) => {
   dispatch({ type: 'select-layer', layerId: layer.id });
-  if (layer.type === 'text') setTool('select');
 };
 
 export const addTextLayerFromPanel = (
   dispatch: (command: EditorCommand) => void,
-  setTool: (tool: EditorTool) => void,
   closeMobileDrawer: () => void,
 ): TextLayer => {
   const layer = createTextLayer('Text');
   dispatch({ type: 'add-text-layer', layer });
   dispatch({ type: 'select-layer', layerId: layer.id });
-  setTool('select');
   closeMobileDrawer();
   return layer;
 };
+
+export const normalizeToolForSelectedLayer = (
+  tool: EditorTool,
+  layer: Pick<DesignLayer, 'type'> | null,
+): EditorTool => layer?.type === 'text' ? 'select' : tool;
 
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
@@ -65,9 +67,44 @@ export const EditorApp = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const layerFileInputRef = useRef<HTMLInputElement>(null);
   const layersButtonRef = useRef<HTMLButtonElement>(null);
+  const desktopLayersPanelRef = useRef<HTMLElement>(null);
+  const layerDrawerReturnFocusRef = useRef<HTMLElement>(null);
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
+  const selectedLayer = project ? getSelectedLayer(project) : null;
   const selectedImageLayer = project ? getSelectedImageLayer(project) : null;
+  const selectedLayerId = selectedLayer?.id ?? null;
+  const selectedLayerType = selectedLayer?.type ?? null;
+
+  const openLayers = () => {
+    layerDrawerReturnFocusRef.current = layersButtonRef.current;
+    setLayersOpen(true);
+  };
+
+  const closeLayers = () => {
+    layerDrawerReturnFocusRef.current = layersButtonRef.current;
+    setLayersOpen(false);
+  };
+
+  useEffect(() => {
+    setTool((current) => normalizeToolForSelectedLayer(
+      current,
+      selectedLayerType ? { type: selectedLayerType } : null,
+    ));
+  }, [selectedLayerId, selectedLayerType]);
+
+  useEffect(() => {
+    if (!layersOpen) return undefined;
+    const desktopQuery = window.matchMedia('(min-width: 768px)');
+    const closeAtDesktopBreakpoint = () => {
+      if (!desktopQuery.matches) return;
+      layerDrawerReturnFocusRef.current = desktopLayersPanelRef.current;
+      setLayersOpen(false);
+    };
+    closeAtDesktopBreakpoint();
+    desktopQuery.addEventListener('change', closeAtDesktopBreakpoint);
+    return () => desktopQuery.removeEventListener('change', closeAtDesktopBreakpoint);
+  }, [layersOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -129,7 +166,7 @@ export const EditorApp = () => {
         <EditorToolbar
           tool={tool}
           onToolChange={setTool}
-          onOpenLayers={() => setLayersOpen(true)}
+          onOpenLayers={openLayers}
           layersButtonRef={layersButtonRef}
         />
         <div
@@ -170,12 +207,14 @@ export const EditorApp = () => {
         <div className="order-2 h-60 min-h-0 md:order-none md:grid md:h-auto md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]">
           <LayerPanel
             className="hidden border-b border-neutral-800 md:flex md:border-l"
+            panelRef={desktopLayersPanelRef}
+            focusable
             variation={variation}
             onAddImage={() => layerFileInputRef.current?.click()}
             onAddText={() => {
-              addTextLayerFromPanel(workspace.dispatch, setTool, () => setLayersOpen(false));
+              addTextLayerFromPanel(workspace.dispatch, closeLayers);
             }}
-            onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch, setTool)}
+            onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
             dispatch={workspace.dispatch}
           />
           <EditorInspector project={project} layer={selectedImageLayer} tool={tool} dispatch={workspace.dispatch} />
@@ -184,7 +223,7 @@ export const EditorApp = () => {
 
       <input
         ref={fileInputRef}
-        className="sr-only"
+        hidden
         type="file"
         aria-label="Import artwork file"
         accept=".png,.jpg,.jpeg,.webp"
@@ -197,7 +236,7 @@ export const EditorApp = () => {
 
       <input
         ref={layerFileInputRef}
-        className="sr-only"
+        hidden
         type="file"
         aria-label="Add layer image file"
         accept=".png,.jpg,.jpeg,.webp"
@@ -230,14 +269,14 @@ export const EditorApp = () => {
 
       <LayerDrawer
         open={layersOpen}
-        returnFocusRef={layersButtonRef}
+        returnFocusRef={layerDrawerReturnFocusRef}
         variation={variation}
-        onClose={() => setLayersOpen(false)}
+        onClose={closeLayers}
         onAddImage={() => layerFileInputRef.current?.click()}
         onAddText={() => {
-          addTextLayerFromPanel(workspace.dispatch, setTool, () => setLayersOpen(false));
+          addTextLayerFromPanel(workspace.dispatch, closeLayers);
         }}
-        onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch, setTool)}
+        onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
         dispatch={workspace.dispatch}
       />
     </main>

@@ -29,6 +29,7 @@ import {
 } from '../components/editor/LayerPanel';
 import {
   addTextLayerFromPanel,
+  normalizeToolForSelectedLayer,
   openProjectFromDrawer,
   selectLayerFromPanel,
 } from '../components/editor/EditorApp';
@@ -38,7 +39,12 @@ import {
   createTextLayer,
   type DesignVariation,
 } from '../editor/model';
-import { createEditorHistory, getSelectedImageLayer, reduceEditorHistory } from '../editor/history';
+import {
+  createEditorHistory,
+  getSelectedImageLayer,
+  getSelectedLayer,
+  reduceEditorHistory,
+} from '../editor/history';
 
 const topBarProps: EditorTopBarProps = {
   projectId: 'project-a',
@@ -197,19 +203,16 @@ test('mobile layer drawer keeps its close control inside the panel header', () =
   assert.match(header, /aria-label="Close layers"/);
 });
 
-test('selecting a text layer dispatches by id and forces the select tool', () => {
+test('selecting a text layer from the panel dispatches by id', () => {
   const commands: unknown[] = [];
-  const tools: string[] = [];
   const textLayer = { ...createTextLayer('Headline'), id: 'layer-text' };
 
   selectLayerFromPanel(
     textLayer,
     (command) => commands.push(command),
-    (tool) => tools.push(tool),
   );
 
   assert.deepEqual(commands, [{ type: 'select-layer', layerId: 'layer-text' }]);
-  assert.deepEqual(tools, ['select']);
 });
 
 test('adding text creates and selects a text layer before closing the mobile drawer', () => {
@@ -218,7 +221,6 @@ test('adding text creates and selects a text layer before closing the mobile dra
 
   const layer = addTextLayerFromPanel(
     (command) => commands.push(command),
-    (tool) => events.push(`tool:${tool}`),
     () => events.push('close'),
   );
 
@@ -228,7 +230,45 @@ test('adding text creates and selects a text layer before closing the mobile dra
     { type: 'add-text-layer', layer },
     { type: 'select-layer', layerId: layer.id },
   ]);
-  assert.deepEqual(events, ['tool:select', 'close']);
+  assert.deepEqual(events, ['close']);
+});
+
+test('delete fallback from Crop normalizes to Select when the remaining layer is text', () => {
+  const source = createEditorAsset('project-delete-tool', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Delete tool', source);
+  const imageLayer = project.variations[0].layers[0];
+  const textLayer = { ...createTextLayer('Fallback'), id: 'layer-text-fallback' };
+  project.variations[0].layers = [textLayer, imageLayer];
+  project.variations[0].selectedLayerId = imageLayer.id;
+
+  const history = reduceEditorHistory(createEditorHistory(project), {
+    type: 'delete-layer', layerId: imageLayer.id,
+  });
+  const selectedLayer = getSelectedLayer(history.present);
+
+  assert.equal(selectedLayer.id, textLayer.id);
+  assert.equal(normalizeToolForSelectedLayer('crop', selectedLayer), 'select');
+});
+
+test('duplicating selected text from Adjust normalizes the duplicate to Select', () => {
+  const source = createEditorAsset('project-duplicate-tool', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Duplicate tool', source);
+  const textLayer = { ...createTextLayer('Duplicate'), id: 'layer-text-duplicate' };
+  project.variations[0].layers.push(textLayer);
+  project.variations[0].selectedLayerId = textLayer.id;
+
+  const history = reduceEditorHistory(createEditorHistory(project), {
+    type: 'duplicate-layer', layerId: textLayer.id,
+  });
+  const selectedLayer = getSelectedLayer(history.present);
+
+  assert.equal(selectedLayer.type, 'text');
+  assert.notEqual(selectedLayer.id, textLayer.id);
+  assert.equal(normalizeToolForSelectedLayer('adjust', selectedLayer), 'select');
 });
 
 test('variation select is controlled by active id when names are duplicated', () => {

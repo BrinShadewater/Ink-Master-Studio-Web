@@ -38,7 +38,7 @@ const createPngFixture = async (page: Page, width: number, height: number): Prom
 
 const uploadFixture = async (page: Page, width: number, height: number, name: string) => {
   const buffer = await createPngFixture(page, width, height);
-  await page.getByLabel('Import artwork file').setInputFiles({
+  await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
     name,
     mimeType: 'image/png',
     buffer,
@@ -313,6 +313,91 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
     path: artifactPath('mobile-390x844.png'),
     animations: 'disabled',
   });
+});
+
+test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Layers' }).click();
+  await expect(page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Close layers' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Layers' })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Layers' }).click();
+  await expect(page.getByRole('button', { name: 'Close layers' })).toBeFocused();
+
+  await page.setViewportSize({ width: 1200, height: 844 });
+
+  const drawer = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
+  const desktopLayers = page.getByRole('region', { name: 'Layers panel' });
+  await expect(drawer).toHaveCount(0);
+  await expect(desktopLayers).toBeVisible();
+  await expect(desktopLayers).toBeFocused();
+
+  await page.keyboard.press('Tab');
+  const focusState = await page.evaluate(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return null;
+    const bounds = active.getBoundingClientRect();
+    const style = window.getComputedStyle(active);
+    return {
+      tagName: active.tagName,
+      ariaLabel: active.getAttribute('aria-label'),
+      sequentiallyHidden: active.hidden || active.classList.contains('sr-only') || active.tabIndex < 0,
+      visible: bounds.width > 0 && bounds.height > 0 &&
+        style.display !== 'none' && style.visibility !== 'hidden',
+    };
+  });
+  expect(focusState?.tagName).not.toBe('BODY');
+  expect(focusState?.sequentiallyHidden).toBe(false);
+  expect(focusState?.visible).toBe(true);
+});
+
+test('keeps dedicated file inputs hidden while preserving labeled imports', async ({ page }) => {
+  await page.goto('/');
+
+  const primaryInput = page.locator('input[type="file"][aria-label="Import artwork file"]');
+  const layerInput = page.locator('input[type="file"][aria-label="Add layer image file"]');
+  await expect(primaryInput).toHaveCount(1);
+  await expect(layerInput).toHaveCount(1);
+  await expect(primaryInput).toBeHidden();
+  await expect(layerInput).toBeHidden();
+  await expect(primaryInput).toHaveAttribute('hidden', '');
+  await expect(layerInput).toHaveAttribute('hidden', '');
+
+  const buffer = await createPngFixture(page, 320, 240);
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByLabel('Project commands').getByRole('button', { name: 'Import artwork' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({ name: 'hidden-input.png', mimeType: 'image/png', buffer });
+  await expect(page.getByLabel('Project name')).toHaveValue('hidden-input');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+});
+
+test('normalizes tools after text duplicate and delete fallback selection paths', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 640, 480, 'tool-paths.png');
+
+  const select = page.getByRole('button', { name: 'Select', exact: true });
+  const crop = page.getByRole('button', { name: 'Crop', exact: true });
+  const adjust = page.getByRole('button', { name: 'Adjust', exact: true });
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
+
+  await adjust.click();
+  await expect(adjust).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Duplicate layer' }).click();
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
+  await crop.click();
+  await expect(crop).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Delete layer' }).click();
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('keeps save failure status and retry accessible on mobile', async ({ page }) => {
