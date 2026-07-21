@@ -9,3 +9,4 @@ Task 5: complete (local `git diff --check`; `npm run verify`; production tee acc
 Canvas-first editor foundation (plan commit 0e26e67)
 
 Execution location: current checkout on main (owner declined an isolated worktree on 2026-07-20).
+Task 1: complete (commits 275c919..04c9519, spec compliant, quality approved; cross-task UI and persistence constraints remain assigned to later tasks).
