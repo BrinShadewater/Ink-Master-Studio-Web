@@ -1,0 +1,139 @@
+import { Upload } from 'lucide-react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { getActiveVariation, getSelectedImageLayer } from '../../editor/history';
+import type { EditorTool } from '../../editor/model';
+import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
+import { EditorCanvas } from './EditorCanvas';
+import { EditorInspector } from './EditorInspector';
+import { EditorToolbar } from './EditorToolbar';
+import { EditorTopBar } from './EditorTopBar';
+import { ProjectDrawer } from './ProjectDrawer';
+
+const isTextControl = (target: EventTarget | null) =>
+  target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
+
+export const EditorApp = () => {
+  const workspace = useEditorWorkspace();
+  const [tool, setTool] = useState<EditorTool>('select');
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const project = workspace.history?.present ?? null;
+  const variation = project ? getActiveVariation(project) : null;
+  const layer = project ? getSelectedImageLayer(project) : null;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || isTextControl(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        workspace.dispatch({ type: 'redo' });
+      } else if (key === 'z') {
+        event.preventDefault();
+        workspace.dispatch({ type: 'undo' });
+      } else if (key === 'y') {
+        event.preventDefault();
+        workspace.dispatch({ type: 'redo' });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workspace.dispatch]);
+
+  const importDroppedFile = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDropActive(false);
+    const file = event.dataTransfer.files[0];
+    if (file) void workspace.importFile(file);
+  };
+
+  return (
+    <main className="relative grid h-dvh min-w-0 grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100">
+      <EditorTopBar
+        projectName={project?.name ?? 'Untitled design'}
+        variationName={variation?.name ?? 'Original'}
+        variations={project?.variations.map(({ id, name }) => ({ id, name })) ?? []}
+        saveStatus={workspace.saveStatus}
+        canUndo={Boolean(workspace.history?.past.length)}
+        canRedo={Boolean(workspace.history?.future.length)}
+        onProjectNameChange={(name) => workspace.dispatch({ type: 'rename-project', name })}
+        onVariationChange={(variationId) => workspace.dispatch({ type: 'select-variation', variationId })}
+        onDuplicateVariation={() => workspace.dispatch({ type: 'duplicate-variation', name: `${variation?.name ?? 'Variation'} copy` })}
+        onUndo={() => workspace.dispatch({ type: 'undo' })}
+        onRedo={() => workspace.dispatch({ type: 'redo' })}
+        onImport={() => fileInputRef.current?.click()}
+        onOpenProjects={() => setProjectsOpen(true)}
+      />
+
+      <section className="grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1">
+        <EditorToolbar tool={tool} onToolChange={setTool} />
+        <div
+          className={`relative order-1 min-h-0 overflow-hidden ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDropActive(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+          }}
+          onDrop={importDroppedFile}
+        >
+          <EditorCanvas
+            sourceUrl={workspace.sourceUrl}
+            sourceSize={workspace.sourceAsset}
+            layer={layer}
+            tool={tool}
+            onTransformChange={(transform, historyGroup) => {
+              if (layer) workspace.dispatch({ type: 'set-transform', layerId: layer.id, transform, historyGroup });
+            }}
+            onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+          />
+          {!project ? (
+            <button
+              type="button"
+              className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(240px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 border border-dashed border-neutral-600 bg-neutral-900 px-5 text-sm font-medium text-neutral-200 transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload aria-hidden="true" size={20} />
+              Import artwork
+            </button>
+          ) : null}
+        </div>
+        <EditorInspector project={project} layer={layer} tool={tool} dispatch={workspace.dispatch} />
+      </section>
+
+      <input
+        ref={fileInputRef}
+        className="sr-only"
+        type="file"
+        accept=".png,.jpg,.jpeg,.webp"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (file) void workspace.importFile(file);
+          event.currentTarget.value = '';
+        }}
+      />
+
+      <div
+        className={`pointer-events-none absolute left-1/2 top-16 z-30 w-[min(360px,calc(100%-24px))] -translate-x-1/2 border px-3 py-2 text-center text-xs shadow-lg ${workspace.error ? 'border-red-800 bg-red-950 text-red-200' : 'sr-only'}`}
+        aria-live="polite"
+        role="status"
+      >
+        {workspace.error}
+      </div>
+
+      <ProjectDrawer
+        open={projectsOpen}
+        projects={workspace.projects}
+        onClose={() => setProjectsOpen(false)}
+        onOpen={async (projectId) => {
+          await workspace.openProject(projectId);
+          setProjectsOpen(false);
+        }}
+        onDelete={workspace.deleteProject}
+      />
+    </main>
+  );
+};
