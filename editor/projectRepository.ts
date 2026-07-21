@@ -65,7 +65,7 @@ export const saveEditorProject = async (project: EditorProject): Promise<EditorP
   if (project.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION) {
     throw new Error('Unsupported editor project schema.');
   }
-  const normalized = cloneProject(project);
+  const normalized = migrateEditorProject(project, await getEditorAssetsForProject(project.id));
   if (!hasIndexedDb()) {
     memoryProjects.set(normalized.id, cloneProject(normalized));
     return cloneProject(normalized);

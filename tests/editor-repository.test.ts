@@ -90,6 +90,52 @@ test('round-trips project JSON and source blob as separate records', async () =>
   assert.equal(await getEditorAsset(asset.id), null);
 });
 
+test('normalizes malformed schema two projects with their stored source asset before saving', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
+    name: 'source.png', width: 1200, height: 800,
+  });
+  await saveEditorAsset(asset);
+  const project = createEditorProject('Source', asset);
+  const malformed = {
+    ...project,
+    sourceMetadata: { name: '', mimeType: '', width: 0, height: Number.NaN },
+    activeVariationId: 'missing_variation',
+    variations: [
+      { id: 'discarded_variation', layers: [], selectedLayerId: 'missing' },
+      {
+        id: 'text_variation', name: '', selectedLayerId: 'missing_layer', layers: [{
+          id: 'text_layer', type: 'text', name: '', visible: 1, opacity: 2,
+          transform: { x: 9, y: -9, scale: 0, rotation: 500, flipX: 0, flipY: 1 },
+          text: '', fontFamily: 'Comic Sans MS', fontSize: -1, color: '', align: 'justify',
+          letterSpacing: -100, outlineWidth: -1, outlineColor: '',
+        }],
+      },
+    ],
+  };
+
+  const saved = await saveEditorProject(malformed as typeof project);
+  assert.deepEqual(saved.sourceMetadata, {
+    name: 'source.png', mimeType: 'image/png', width: 1200, height: 800,
+  });
+  assert.equal(saved.activeVariationId, 'text_variation');
+  assert.equal(saved.variations.length, 1);
+  assert.equal(saved.variations[0].name, 'Original');
+  assert.equal(saved.variations[0].selectedLayerId, 'text_layer');
+  assert.deepEqual(await getEditorProject(projectId), saved);
+});
+
+test('rejects schema two saves whose source asset is not stored for the project', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
+    name: 'source.png', width: 1200, height: 800,
+  });
+  const project = createEditorProject('Missing source', asset);
+
+  await assert.rejects(saveEditorProject(project), /Project source image not found/);
+  assert.equal(await getEditorProject(projectId), null);
+});
+
 test('rejects duplicate source asset ids without replacing memory records', async () => {
   const projectId = `project_${crypto.randomUUID()}`;
   const asset = createEditorAsset(projectId, new Blob(['original']), {

@@ -1,7 +1,9 @@
 import {
   duplicateVariation,
+  isImageLayer,
   normalizeTransform,
   type CropRect,
+  type DesignLayer,
   type DesignVariation,
   type EditorProject,
   type ImageAdjustments,
@@ -24,7 +26,7 @@ export type EditorCommand =
   | { type: 'redo' };
 
 export interface VariationEditState {
-  layers: ImageLayer[];
+  layers: DesignLayer[];
   selectedLayerId: string;
 }
 
@@ -90,7 +92,7 @@ const sameCrop = (left: CropRect, right: CropRect) =>
 const sameAdjustments = (left: ImageAdjustments, right: ImageAdjustments) =>
   left.brightness === right.brightness && left.contrast === right.contrast && left.saturation === right.saturation;
 
-const getActiveLayer = (project: EditorProject, layerId: string): ImageLayer | undefined => {
+const getActiveLayer = (project: EditorProject, layerId: string): DesignLayer | undefined => {
   const variation = project.variations.find(({ id }) => id === project.activeVariationId);
   return variation?.layers.find(({ id }) => id === layerId);
 };
@@ -98,7 +100,7 @@ const getActiveLayer = (project: EditorProject, layerId: string): ImageLayer | u
 const updateActiveLayer = (
   project: EditorProject,
   layerId: string,
-  update: (layer: ImageLayer) => ImageLayer,
+  update: (layer: DesignLayer) => DesignLayer,
 ): EditorProject | null => {
   if (!getActiveLayer(project, layerId)) return null;
   const next = cloneProject(project);
@@ -166,7 +168,7 @@ export const getActiveVariation = (project: EditorProject): DesignVariation => {
 export const getSelectedImageLayer = (project: EditorProject): ImageLayer => {
   const variation = getActiveVariation(project);
   const layer = variation.layers.find(({ id }) => id === variation.selectedLayerId);
-  if (!layer) throw new Error('Selected editor image layer not found.');
+  if (!layer || !isImageLayer(layer)) throw new Error('Selected editor image layer not found.');
   return layer;
 };
 
@@ -304,15 +306,17 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
     case 'set-crop': {
       const crop = normalizeCrop(command.crop);
       const current = getActiveLayer(history.present, command.layerId);
-      if (!current || sameCrop(current.crop, crop)) return history;
-      const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, crop }));
+      if (!current || !isImageLayer(current) || sameCrop(current.crop, crop)) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isImageLayer(layer) ? { ...layer, crop } : layer);
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-adjustments': {
       const adjustments = normalizeAdjustments(command.adjustments);
       const current = getActiveLayer(history.present, command.layerId);
-      if (!current || sameAdjustments(current.adjustments, adjustments)) return history;
-      const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, adjustments }));
+      if (!current || !isImageLayer(current) || sameAdjustments(current.adjustments, adjustments)) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isImageLayer(layer) ? { ...layer, adjustments } : layer);
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-opacity': {

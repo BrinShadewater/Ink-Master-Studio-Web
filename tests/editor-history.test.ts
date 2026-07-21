@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createEditorAsset, createEditorProject } from '../editor/model';
+import { createEditorAsset, createEditorProject, createTextLayer } from '../editor/model';
 import {
   canRedoActiveVariation,
   canUndoActiveVariation,
@@ -64,6 +64,23 @@ test('normalizes layer edits and leaves caller-owned history untouched', () => {
   assert.deepEqual(getSelectedImageLayer(changed.present).transform, {
     x: 3, y: -2, scale: 0.05, rotation: 180, flipX: true, flipY: false,
   });
+});
+
+test('keeps crop and adjustment commands out of selected text layers', () => {
+  const asset = createEditorAsset('project_text_history', new Blob(['x']), { name: 'x.png', width: 100, height: 100 });
+  const project = createEditorProject('Text history', asset);
+  const textLayer = createTextLayer('Text');
+  project.variations[0].layers = [textLayer];
+  project.variations[0].selectedLayerId = textLayer.id;
+  const history = createEditorHistory(project);
+
+  assert.throws(() => getSelectedImageLayer(history.present), /Selected editor image layer not found/);
+  assert.equal(reduceEditorHistory(history, {
+    type: 'set-crop', layerId: textLayer.id, crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
+  }), history);
+  assert.equal(reduceEditorHistory(history, {
+    type: 'set-adjustments', layerId: textLayer.id, adjustments: { brightness: 10, contrast: 0, saturation: 0 },
+  }), history);
 });
 
 test('ends a history group and caps past states at 100', () => {
