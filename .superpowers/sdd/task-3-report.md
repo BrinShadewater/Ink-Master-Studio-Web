@@ -121,3 +121,108 @@ Exit code: `0`; `8` passed and `0` failed.
 - `importLayerFile` is intentionally exposed only at the workspace API in this task; there is no layer-import UI until a later layer UI task.
 - The current canvas still renders only the immutable source asset through the temporary compatibility derivation. The shared ordered-layer compositor is intentionally deferred.
 - No known functional concerns remain within Task 3 scope.
+
+## Fix Review
+
+### Findings Addressed
+
+1. Same-project reopen reconciliation: a newer reopen can hydrate an additional asset while its originating import is still pending. Successful stale cleanup now reconciles the latest active workspace generation, `assetsByIdRef`, React asset state, URL state, and `AssetUrlRegistry`. Reconciliation preserves source, sibling, concurrent, and currently referenced assets.
+2. Orphan cleanup failure: additional-image cleanup retries isolated `deleteEditorAsset(assetId)` up to three times. Successful retry retains the existing stable import error; permanent failure reports the explicit stable cleanup error `Could not clean up the failed image import. Reopen the project and try again.`
+3. Temporary renderer compatibility: `EditorCanvas` now receives only the active variation image layer whose `assetId` equals immutable `project.sourceAssetId`. Secondary/text selection remains available to the inspector but cannot mismatch the source-only canvas bitmap.
+
+### Fix Files
+
+- `editor/useEditorWorkspace.ts`: bounded cleanup retries, reference checks before and after async deletion, restoration if a reference appears during deletion, generation-safe workspace reconciliation, and explicit cleanup-failure reporting.
+- `components/editor/EditorApp.tsx`: added `getCompatibilitySourceLayer` and separated selected inspector state from source-only canvas state.
+- `tests/editor-workspace.test.ts`: added real repository/registry same-project reopen coverage, transient/permanent cleanup tests, and referenced-asset retention coverage.
+- `tests/editor-shell.test.ts`: added source-layer compatibility coverage for secondary and text selection.
+- `.superpowers/sdd/task-3-report.md`: appended this Fix Review.
+
+The progress ledger was not edited.
+
+### Fix Red Evidence
+
+Command:
+
+```powershell
+npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts tests/editor-shell.test.ts
+```
+
+Exit code: `1`
+
+```text
+SyntaxError: '../components/editor/EditorApp' does not provide an export named 'getCompatibilitySourceLayer'
+SyntaxError: '../editor/useEditorWorkspace' does not provide an export named 'ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR'
+tests 14
+pass 12
+fail 2
+cancelled 0
+skipped 0
+todo 0
+```
+
+The failures were expected because the reviewed compatibility and cleanup-failure contracts did not exist.
+
+### Fix Green Verification
+
+Covering command:
+
+```powershell
+npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts tests/editor-shell.test.ts
+```
+
+Exit code: `0`
+
+```text
+tests 51
+pass 51
+fail 0
+cancelled 0
+skipped 0
+todo 0
+```
+
+Typecheck command:
+
+```powershell
+npm run typecheck
+```
+
+Exit code: `0`
+
+```text
+> inkmaster-studio@0.0.0 typecheck
+> tsc --noEmit
+```
+
+Editor Playwright command:
+
+```powershell
+npx playwright test tests/e2e/canvas-editor.spec.ts
+```
+
+Exit code: `0`
+
+```text
+Running 8 tests using 1 worker
+8 passed (25.2s)
+```
+
+`git diff --check` completed with exit code `0` before the fix commit.
+
+### Fix Commit
+
+- `b8cf741675a9c0947d66ecbc0c7daf6eb3e700eb` `fix: reconcile stale editor asset imports`
+
+### Fix Self-Review
+
+- The same-project race test uses the real memory repository. It blocks the import after asset persistence, reopens the same project so the orphan is hydrated and receives a URL, then resumes stale cleanup and proves repository, ref-equivalent state, React-equivalent state, URL state, and registry ownership all drop only that ID.
+- Reconciliation reads the latest refs after cleanup and applies synchronously only while its captured generation still owns authority and the same project remains active. It clones the latest map, so concurrent sibling imports are retained.
+- `projectReferencesEditorAsset` checks immutable source identity and every image layer in every variation. Cleanup checks before deletion and after deletion; a reference appearing during the asynchronous delete causes the immutable asset to be restored instead of removed from the workspace.
+- Cleanup retries only `deleteAsset(asset.id)`. It cannot cascade to the project, source, or sibling assets. Permanent cleanup failure does not falsely reconcile state or revoke a URL for an asset that may remain persisted.
+- The compatibility helper searches the active variation by immutable source asset ID rather than selection. Canvas transform dispatch targets that same source layer, while the inspector continues to receive the selected image layer.
+
+### Fix Concerns
+
+- No known functional concerns remain from the three review findings.
+- Multi-layer rendering remains intentionally deferred to Task 4; the compatibility path is explicitly source-only until then.
