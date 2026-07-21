@@ -18,6 +18,13 @@ test('homepage metadata includes twitter site attribution', () => {
   assert.match(html, /<meta name="twitter:site" content="@InkMasterStudio" \/>/);
 });
 
+test('homepage metadata describes the canvas-first editor', () => {
+  const html = readFileSync('index.html', 'utf8');
+
+  assert.match(html, /Canvas-First Merch Editor/);
+  assert.doesNotMatch(html, /Advanced workflow tools/);
+});
+
 test('public docs describe the creator-first Printify workflow before advanced production tools', () => {
   const readme = readFileSync('README.md', 'utf8');
   const brief = readFileSync('docs/PROJECT-BRIEF.md', 'utf8');

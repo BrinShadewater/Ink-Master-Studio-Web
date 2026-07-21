@@ -170,7 +170,7 @@ export const EditorTopBar = ({
       <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
       <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
       <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
-      <IconButton label="Open projects" icon={FolderOpen} onClick={onOpenProjects} />
+      <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
     </div>
   </header>
   );

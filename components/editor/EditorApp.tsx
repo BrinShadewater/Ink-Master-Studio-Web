@@ -80,7 +80,7 @@ export const EditorApp = () => {
       <section className="grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1">
         <EditorToolbar tool={tool} onToolChange={setTool} />
         <div
-          className={`relative order-1 min-h-0 overflow-hidden ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
+          className={`relative order-1 min-h-0 overflow-hidden md:order-none ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
           onDragEnter={(event) => {
             event.preventDefault();
             setDropActive(true);
