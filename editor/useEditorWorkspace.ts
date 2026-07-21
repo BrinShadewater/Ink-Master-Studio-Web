@@ -33,6 +33,8 @@ const RASTER_DIMENSION_ERROR = 'Choose an image no larger than 16,384 pixels per
 
 export const IMPORT_CLEANUP_ERROR = 'Could not clean up the superseded import. Check Local projects.';
 export const ADDITIONAL_IMAGE_IMPORT_ERROR = 'Could not add the image to this project.';
+export const ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR =
+  'Could not clean up the failed image import. Reopen the project and try again.';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
 
@@ -224,6 +226,34 @@ export class AssetUrlRegistry {
   }
 }
 
+export const projectReferencesEditorAsset = (project: EditorProject, assetId: string) =>
+  project.sourceAssetId === assetId || project.variations.some((variation) =>
+    variation.layers.some((layer) => isImageLayer(layer) && layer.assetId === assetId));
+
+export interface WorkspaceAssetReconciliation {
+  assetsById: Record<string, EditorAsset>;
+  assetUrlsById: Record<string, string>;
+}
+
+export const reconcileDeletedWorkspaceAssetIfCurrent = (
+  authority: WorkspaceOperationAuthority,
+  operation: number,
+  activeProjectId: string | null,
+  project: EditorProject,
+  assetsById: Record<string, EditorAsset>,
+  assetId: string,
+  registry: AssetUrlRegistry,
+): WorkspaceAssetReconciliation | null => {
+  if (!authority.owns(operation) || activeProjectId !== project.id ||
+    projectReferencesEditorAsset(project, assetId)) return null;
+  const nextAssetsById = { ...assetsById };
+  delete nextAssetsById[assetId];
+  return {
+    assetsById: nextAssetsById,
+    assetUrlsById: registry.sync(Object.values(nextAssetsById)),
+  };
+};
+
 export interface DeleteLease {
   projectId: string;
   id: number;
@@ -360,9 +390,29 @@ export interface AdditionalImageImportDependencies {
   readDimensions: (file: File) => Promise<{ width: number; height: number }>;
   saveAsset: (asset: EditorAsset) => Promise<unknown>;
   deleteAsset: (assetId: string) => Promise<void>;
+  isAssetReferenced?: (asset: EditorAsset) => boolean;
+  onAssetDeleted?: (asset: EditorAsset) => void;
   dispatchLayer: (asset: EditorAsset, layer: ImageLayer) => void;
   reportError: (message: string) => void;
 }
+
+const cleanupImportedAsset = async (
+  assetId: string,
+  deleteAsset: (assetId: string) => Promise<void>,
+  attempts = IMPORT_CLEANUP_ATTEMPTS,
+) => {
+  let cleanupError: unknown;
+  const maximumAttempts = Math.max(1, Math.floor(attempts));
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    try {
+      await deleteAsset(assetId);
+      return;
+    } catch (nextError) {
+      cleanupError = nextError;
+    }
+  }
+  throw cleanupError;
+};
 
 export const importAdditionalImageLayer = async (
   file: File,
@@ -394,11 +444,27 @@ export const importAdditionalImageLayer = async (
     dependencies.dispatchLayer(asset, createImportedImageLayer(asset));
     return true;
   } catch {
-    if (persistedAsset) {
+    if (persistedAsset && !dependencies.isAssetReferenced?.(persistedAsset)) {
       try {
-        await dependencies.deleteAsset(persistedAsset.id);
+        await cleanupImportedAsset(persistedAsset.id, dependencies.deleteAsset);
       } catch {
-        // The stable import error covers both the failed operation and orphan cleanup.
+        dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR);
+        return false;
+      }
+      if (dependencies.isAssetReferenced?.(persistedAsset)) {
+        try {
+          await dependencies.saveAsset(persistedAsset);
+        } catch {
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR);
+          return false;
+        }
+      } else {
+        try {
+          dependencies.onAssetDeleted?.(persistedAsset);
+        } catch {
+          dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR);
+          return false;
+        }
       }
     }
     dependencies.reportError(ADDITIONAL_IMAGE_IMPORT_ERROR);
@@ -564,6 +630,30 @@ export const useEditorWorkspace = (): EditorWorkspace => {
       readDimensions: readRasterDimensions,
       saveAsset: saveEditorAsset,
       deleteAsset: deleteEditorAsset,
+      isAssetReferenced: (asset) => {
+        const currentProject = historyRef.current?.present;
+        return Boolean(currentProject && currentProject.id === asset.projectId &&
+          projectReferencesEditorAsset(currentProject, asset.id));
+      },
+      onAssetDeleted: (asset) => {
+        if (!mountedRef.current || activeProjectIdRef.current !== asset.projectId) return;
+        const reconciliationOperation = authorityRef.current.current();
+        const currentProject = historyRef.current?.present;
+        if (!currentProject) return;
+        const reconciled = reconcileDeletedWorkspaceAssetIfCurrent(
+          authorityRef.current,
+          reconciliationOperation,
+          activeProjectIdRef.current,
+          currentProject,
+          assetsByIdRef.current,
+          asset.id,
+          assetUrlRegistryRef.current!,
+        );
+        if (!reconciled) return;
+        assetsByIdRef.current = reconciled.assetsById;
+        setAssetsById(reconciled.assetsById);
+        setAssetUrlsById(reconciled.assetUrlsById);
+      },
       dispatchLayer: (asset, layer) => {
         const current = historyRef.current;
         if (!current || current.present.id !== asset.projectId ||

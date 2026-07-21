@@ -6,7 +6,7 @@ import {
   getActiveVariation,
   getSelectedImageLayer,
 } from '../../editor/history';
-import type { EditorTool } from '../../editor/model';
+import { isImageLayer, type EditorProject, type EditorTool, type ImageLayer } from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { EditorInspector } from './EditorInspector';
@@ -27,6 +27,10 @@ export const openProjectFromDrawer = async (
   return opened;
 };
 
+export const getCompatibilitySourceLayer = (project: EditorProject) =>
+  getActiveVariation(project).layers.find((layer): layer is ImageLayer =>
+    isImageLayer(layer) && layer.assetId === project.sourceAssetId) ?? null;
+
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
   const [tool, setTool] = useState<EditorTool>('select');
@@ -35,7 +39,8 @@ export const EditorApp = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
-  const layer = project ? getSelectedImageLayer(project) : null;
+  const selectedImageLayer = project ? getSelectedImageLayer(project) : null;
+  const compatibilitySourceLayer = project ? getCompatibilitySourceLayer(project) : null;
   const sourceAsset = project ? workspace.assetsById[project.sourceAssetId] ?? null : null;
   const sourceUrl = project ? workspace.assetUrlsById[project.sourceAssetId] ?? null : null;
 
@@ -112,10 +117,14 @@ export const EditorApp = () => {
           <EditorCanvas
             sourceUrl={sourceUrl}
             sourceSize={sourceAsset}
-            layer={layer}
+            layer={compatibilitySourceLayer}
             tool={tool}
             onTransformChange={(transform, historyGroup) => {
-              if (layer) workspace.dispatch({ type: 'set-transform', layerId: layer.id, transform, historyGroup });
+              if (compatibilitySourceLayer) {
+                workspace.dispatch({
+                  type: 'set-transform', layerId: compatibilitySourceLayer.id, transform, historyGroup,
+                });
+              }
             }}
             onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
           />
@@ -130,7 +139,7 @@ export const EditorApp = () => {
             </button>
           ) : null}
         </div>
-        <EditorInspector project={project} layer={layer} tool={tool} dispatch={workspace.dispatch} />
+        <EditorInspector project={project} layer={selectedImageLayer} tool={tool} dispatch={workspace.dispatch} />
       </section>
 
       <input

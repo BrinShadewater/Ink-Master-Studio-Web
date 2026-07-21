@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   AssetUrlRegistry,
   ADDITIONAL_IMAGE_IMPORT_ERROR,
+  ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR,
   IMPORT_CLEANUP_ERROR,
   WorkspaceOperationAuthority,
   WorkspacePersistenceController,
@@ -15,6 +16,7 @@ import {
   importAdditionalImageLayer,
   openEditorProjectIfCurrent,
   queueWorkspaceRevision,
+  reconcileDeletedWorkspaceAssetIfCurrent,
   readRasterDimensions,
   runAutosaveAttempt,
   shouldClearWorkspaceAfterDelete,
@@ -23,6 +25,15 @@ import {
 } from '../editor/useEditorWorkspace';
 import { createEditorAsset, createEditorProject, type EditorProject } from '../editor/model';
 import { createEditorHistory, reduceEditorHistory } from '../editor/history';
+import {
+  deleteEditorAsset,
+  deleteEditorProject,
+  getEditorAsset,
+  getEditorAssetsForProject,
+  getEditorProject,
+  saveEditorAsset,
+  saveEditorProject,
+} from '../editor/projectRepository';
 
 const deferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -292,6 +303,97 @@ test('a stale persisted secondary import deletes its orphan and never replaces t
   assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
 });
 
+test('a same-project reopen drops an observed stale import from repository state and URL ownership', async () => {
+  const fixture = createOpenFixture(`project_same_reopen_${crypto.randomUUID()}`);
+  const sibling = createEditorAsset(fixture.project.id, new Blob(['sibling']), {
+    name: 'sibling.png', width: 40, height: 30,
+  });
+  await saveEditorAsset(fixture.asset);
+  await saveEditorAsset(sibling);
+  await saveEditorProject(fixture.project);
+
+  const authority = new WorkspaceOperationAuthority();
+  const importOperation = authority.begin();
+  const saveObserved = deferred<void>();
+  const saveGate = deferred<void>();
+  const revoked: string[] = [];
+  let nextUrl = 0;
+  const registry = new AssetUrlRegistry({
+    createObjectURL: () => `blob:${++nextUrl}`,
+    revokeObjectURL: (url) => { revoked.push(url); },
+  });
+  let currentProject = fixture.project;
+  let activeProjectId = fixture.project.id;
+  let assetsByIdRef = getAssetsByIdForProject(currentProject, [fixture.asset, sibling]);
+  let reactAssetsById = assetsByIdRef;
+  let reactAssetUrlsById = registry.sync(Object.values(assetsByIdRef));
+  let importedAssetId = '';
+
+  const importing = importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => activeProjectId,
+    isProjectActive: (projectId) => authority.owns(importOperation) && activeProjectId === projectId,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => {
+      importedAssetId = asset.id;
+      await saveEditorAsset(asset);
+      saveObserved.resolve();
+      await saveGate.promise;
+    },
+    deleteAsset: deleteEditorAsset,
+    isAssetReferenced: (asset) => currentProject.sourceAssetId === asset.id ||
+      currentProject.variations.some((variation) => variation.layers.some((layer) =>
+        layer.type === 'image' && layer.assetId === asset.id)),
+    onAssetDeleted: (asset) => {
+      const reconciled = reconcileDeletedWorkspaceAssetIfCurrent(
+        authority,
+        authority.current(),
+        activeProjectId,
+        currentProject,
+        assetsByIdRef,
+        asset.id,
+        registry,
+      );
+      if (!reconciled) return;
+      assetsByIdRef = reconciled.assetsById;
+      reactAssetsById = reconciled.assetsById;
+      reactAssetUrlsById = reconciled.assetUrlsById;
+    },
+    dispatchLayer: () => { throw new Error('Stale import must not dispatch.'); },
+    reportError: () => undefined,
+  });
+
+  await saveObserved.promise;
+  const reopenOperation = authority.begin();
+  const reopened = await openEditorProjectIfCurrent(authority, reopenOperation, fixture.project.id, {
+    getProject: getEditorProject,
+    getAssetsForProject: getEditorAssetsForProject,
+    activate: (project, nextAssetsById) => {
+      currentProject = project;
+      activeProjectId = project.id;
+      assetsByIdRef = nextAssetsById;
+      reactAssetsById = nextAssetsById;
+      reactAssetUrlsById = registry.sync(Object.values(nextAssetsById));
+    },
+    reportError: (message) => { throw new Error(message); },
+  });
+  assert.equal(reopened, true);
+  assert.ok(assetsByIdRef[importedAssetId]);
+  assert.ok(reactAssetUrlsById[importedAssetId]);
+  saveGate.resolve();
+
+  assert.equal(await importing, false);
+  assert.equal(await getEditorAsset(importedAssetId), null);
+  assert.equal(assetsByIdRef[importedAssetId], undefined);
+  assert.equal(reactAssetsById[importedAssetId], undefined);
+  assert.equal(reactAssetUrlsById[importedAssetId], undefined);
+  assert.ok(assetsByIdRef[fixture.asset.id]);
+  assert.ok(assetsByIdRef[sibling.id]);
+  assert.deepEqual(revoked, ['blob:3']);
+
+  registry.dispose();
+  await deleteEditorProject(fixture.project.id);
+});
+
 test('a failed secondary layer dispatch deletes the persisted orphan and reports one stable error', async () => {
   const events: string[] = [];
   const errors: string[] = [];
@@ -308,6 +410,76 @@ test('a failed secondary layer dispatch deletes the persisted orphan and reports
   assert.equal(imported, false);
   assert.equal(events.length, 2);
   assert.equal(events[1], events[0].replace('save:', 'delete:'));
+  assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
+});
+
+test('secondary import retries transient orphan cleanup before reporting the stable import error', async () => {
+  let cleanupAttempts = 0;
+  const deletedAssets: string[] = [];
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async () => undefined,
+    deleteAsset: async (assetId) => {
+      cleanupAttempts += 1;
+      if (cleanupAttempts < 3) throw new Error('Cleanup temporarily unavailable.');
+      deletedAssets.push(assetId);
+    },
+    onAssetDeleted: (asset) => { assert.deepEqual(deletedAssets, [asset.id]); },
+    dispatchLayer: () => { throw new Error('Dispatch failed.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.equal(cleanupAttempts, 3);
+  assert.equal(deletedAssets.length, 1);
+  assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
+});
+
+test('secondary import reports explicit cleanup failure after bounded orphan deletion attempts', async () => {
+  let cleanupAttempts = 0;
+  let reconciled = false;
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async () => undefined,
+    deleteAsset: async () => {
+      cleanupAttempts += 1;
+      throw new Error('Cleanup unavailable.');
+    },
+    onAssetDeleted: () => { reconciled = true; },
+    dispatchLayer: () => { throw new Error('Dispatch failed.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.equal(cleanupAttempts, 3);
+  assert.equal(reconciled, false);
+  assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR]);
+});
+
+test('secondary cleanup retains an imported asset referenced by the current project', async () => {
+  let referencedAssetId = '';
+  const deletedAssets: string[] = [];
+  const errors: string[] = [];
+  const imported = await importAdditionalImageLayer(new File(['secondary'], 'secondary.png', { type: 'image/png' }), {
+    getActiveProjectId: () => 'project-a',
+    isProjectActive: () => true,
+    readDimensions: async () => ({ width: 80, height: 60 }),
+    saveAsset: async (asset) => { referencedAssetId = asset.id; },
+    deleteAsset: async (assetId) => { deletedAssets.push(assetId); },
+    isAssetReferenced: (asset) => asset.id === referencedAssetId,
+    onAssetDeleted: () => { throw new Error('Referenced asset must not be pruned.'); },
+    dispatchLayer: () => { throw new Error('Dispatch failed.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(imported, false);
+  assert.deepEqual(deletedAssets, []);
   assert.deepEqual(errors, [ADDITIONAL_IMAGE_IMPORT_ERROR]);
 });
 
