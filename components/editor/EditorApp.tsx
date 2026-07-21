@@ -12,6 +12,16 @@ import { ProjectDrawer } from './ProjectDrawer';
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
 
+export const openProjectFromDrawer = async (
+  projectId: string,
+  openProject: (projectId: string) => Promise<boolean>,
+  closeDrawer: () => void,
+) => {
+  const opened = await openProject(projectId);
+  if (opened) closeDrawer();
+  return opened;
+};
+
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
   const [tool, setTool] = useState<EditorTool>('select');
@@ -51,8 +61,9 @@ export const EditorApp = () => {
   return (
     <main className="relative grid h-dvh min-w-0 grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100">
       <EditorTopBar
+        projectId={project?.id ?? null}
         projectName={project?.name ?? 'Untitled design'}
-        variationName={variation?.name ?? 'Original'}
+        activeVariationId={project?.activeVariationId ?? ''}
         variations={project?.variations.map(({ id, name }) => ({ id, name })) ?? []}
         saveStatus={workspace.saveStatus}
         canUndo={Boolean(workspace.history?.past.length)}
@@ -128,10 +139,11 @@ export const EditorApp = () => {
         open={projectsOpen}
         projects={workspace.projects}
         onClose={() => setProjectsOpen(false)}
-        onOpen={async (projectId) => {
-          await workspace.openProject(projectId);
-          setProjectsOpen(false);
-        }}
+        onOpen={(projectId) => openProjectFromDrawer(
+          projectId,
+          workspace.openProject,
+          () => setProjectsOpen(false),
+        )}
         onDelete={workspace.deleteProject}
       />
     </main>

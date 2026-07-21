@@ -8,9 +8,11 @@ import {
   applyNavigationIfCurrent,
   cleanupImportedProject,
   getAutosaveRetryGeneration,
+  openEditorProjectIfCurrent,
   runAutosaveAttempt,
   validateRasterImport,
 } from '../editor/useEditorWorkspace';
+import { createEditorAsset, createEditorProject } from '../editor/model';
 
 const deferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -37,24 +39,69 @@ test('rejects unsupported and oversized imports with stable messages', () => {
   assert.equal(validateRasterImport(oversized), 'Choose an image no larger than 50 MB.');
 });
 
-test('a stale open cannot replace a newer open', async () => {
+const createOpenFixture = (projectId: string) => {
+  const asset = createEditorAsset(
+    projectId,
+    new Blob(['image'], { type: 'image/png' }),
+    { name: `${projectId}.png`, width: 100, height: 100 },
+  );
+  return { asset, project: createEditorProject(projectId, asset) };
+};
+
+test('a successful project open returns true only after activating the requested project', async () => {
   const authority = new WorkspaceOperationAuthority();
-  const firstOpen = deferred<string>();
-  const secondOpen = deferred<string>();
-  let activeProject = 'initial';
+  const fixture = createOpenFixture('project-a');
+  let activeProjectId: string | null = null;
+  const errors: string[] = [];
 
-  const loadProject = async (operation: number, result: Promise<string>) => {
-    const projectId = await result;
-    return applyNavigationIfCurrent(authority, operation, () => { activeProject = projectId; });
-  };
+  const opened = await openEditorProjectIfCurrent(authority, authority.begin(), 'project-a', {
+    getProject: async (projectId) => projectId === fixture.project.id ? fixture.project : null,
+    getAsset: async (assetId) => assetId === fixture.asset.id ? fixture.asset : null,
+    activate: (project) => { activeProjectId = project.id; },
+    reportError: (message) => { errors.push(message); },
+  });
 
-  const first = loadProject(authority.begin(), firstOpen.promise);
-  const second = loadProject(authority.begin(), secondOpen.promise);
-  secondOpen.resolve('project-b');
-  assert.equal(await second, true);
-  firstOpen.resolve('project-a');
-  assert.equal(await first, false);
-  assert.equal(activeProject, 'project-b');
+  assert.equal(opened, true);
+  assert.equal(activeProjectId, 'project-a');
+  assert.deepEqual(errors, []);
+});
+
+test('a failed project open returns false and reports the current error', async () => {
+  const authority = new WorkspaceOperationAuthority();
+  const errors: string[] = [];
+
+  const opened = await openEditorProjectIfCurrent(authority, authority.begin(), 'missing', {
+    getProject: async () => null,
+    getAsset: async () => { throw new Error('Asset lookup should not run.'); },
+    activate: () => { throw new Error('Activation should not run.'); },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  assert.equal(opened, false);
+  assert.deepEqual(errors, ['Project not found.']);
+});
+
+test('a stale project open returns false without replacing or reporting over the newer operation', async () => {
+  const authority = new WorkspaceOperationAuthority();
+  const fixture = createOpenFixture('project-a');
+  const projectLoad = deferred<typeof fixture.project | null>();
+  let activeProjectId = 'initial';
+  const errors: string[] = [];
+  const staleOperation = authority.begin();
+  const firstOpen = openEditorProjectIfCurrent(authority, staleOperation, 'project-a', {
+    getProject: async () => projectLoad.promise,
+    getAsset: async () => fixture.asset,
+    activate: (project) => { activeProjectId = project.id; },
+    reportError: (message) => { errors.push(message); },
+  });
+
+  const currentOperation = authority.begin();
+  assert.equal(applyNavigationIfCurrent(authority, currentOperation, () => { activeProjectId = 'project-b'; }), true);
+  projectLoad.resolve(fixture.project);
+
+  assert.equal(await firstOpen, false);
+  assert.equal(activeProjectId, 'project-b');
+  assert.deepEqual(errors, []);
 });
 
 test('a stale import cleans its persisted project instead of replacing a newer open', async () => {

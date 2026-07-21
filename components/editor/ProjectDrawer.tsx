@@ -7,7 +7,7 @@ export interface ProjectDrawerProps {
   open: boolean;
   projects: EditorProject[];
   onClose: () => void;
-  onOpen: (projectId: string) => void | Promise<void>;
+  onOpen: (projectId: string) => void | Promise<boolean>;
   onDelete: (projectId: string) => void | Promise<void>;
 }
 

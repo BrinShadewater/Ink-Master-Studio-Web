@@ -6,11 +6,13 @@ import {
   Upload,
   type LucideIcon,
 } from 'lucide-react';
+import { useEffect, useReducer } from 'react';
 import type { SaveStatus } from '../../editor/useEditorWorkspace';
 
 export interface EditorTopBarProps {
+  projectId: string | null;
   projectName: string;
-  variationName: string;
+  activeVariationId: string;
   variations: Array<{ id: string; name: string }>;
   saveStatus: SaveStatus;
   canUndo: boolean;
@@ -23,6 +25,34 @@ export interface EditorTopBarProps {
   onImport: () => void;
   onOpenProjects: () => void;
 }
+
+export interface ProjectNameDraftState {
+  projectId: string | null;
+  externalName: string;
+  draft: string;
+}
+
+export type ProjectNameDraftAction =
+  | { type: 'input'; value: string }
+  | { type: 'restore' }
+  | { type: 'sync'; projectId: string | null; projectName: string };
+
+export const createProjectNameDraftState = (
+  projectId: string | null,
+  projectName: string,
+): ProjectNameDraftState => ({ projectId, externalName: projectName, draft: projectName });
+
+export const projectNameDraftReducer = (
+  state: ProjectNameDraftState,
+  action: ProjectNameDraftAction,
+): ProjectNameDraftState => {
+  if (action.type === 'input') return { ...state, draft: action.value };
+  if (action.type === 'restore') return { ...state, draft: state.externalName };
+  if (state.projectId === action.projectId && state.externalName === action.projectName) return state;
+  return createProjectNameDraftState(action.projectId, action.projectName);
+};
+
+export const normalizeProjectNameDraft = (draft: string) => draft.trim() || 'Untitled design';
 
 interface IconButtonProps {
   label: string;
@@ -53,8 +83,9 @@ const saveStatusText: Record<SaveStatus, string> = {
 };
 
 export const EditorTopBar = ({
+  projectId,
   projectName,
-  variationName,
+  activeVariationId,
   variations,
   saveStatus,
   canUndo,
@@ -66,17 +97,43 @@ export const EditorTopBar = ({
   onRedo,
   onImport,
   onOpenProjects,
-}: EditorTopBarProps) => (
-  <header className="flex h-14 min-w-0 items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-2 md:gap-2 md:px-3">
+}: EditorTopBarProps) => {
+  const [projectNameState, updateProjectNameState] = useReducer(
+    projectNameDraftReducer,
+    createProjectNameDraftState(projectId, projectName),
+  );
+
+  useEffect(() => {
+    updateProjectNameState({ type: 'sync', projectId, projectName });
+  }, [projectId, projectName]);
+
+  const commitProjectName = () => {
+    const committedName = normalizeProjectNameDraft(projectNameState.draft);
+    updateProjectNameState({ type: 'input', value: committedName });
+    if (committedName !== projectNameState.externalName) onProjectNameChange(committedName);
+  };
+
+  return (
+    <header className="flex h-14 min-w-0 items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-2 md:gap-2 md:px-3">
     <div className="min-w-[64px] flex-1 md:max-w-64">
       <label className="sr-only" htmlFor="editor-project-name">Project name</label>
       <input
         id="editor-project-name"
         className="h-8 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-        value={projectName}
+        value={projectNameState.draft}
         aria-label="Project name"
         spellCheck={false}
-        onChange={(event) => onProjectNameChange(event.currentTarget.value)}
+        onChange={(event) => updateProjectNameState({ type: 'input', value: event.currentTarget.value })}
+        onBlur={commitProjectName}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            updateProjectNameState({ type: 'restore' });
+          }
+        }}
       />
       <span
         className={`hidden px-1 text-[11px] leading-none md:block ${saveStatus === 'error' ? 'text-red-400' : 'text-neutral-500'}`}
@@ -91,12 +148,12 @@ export const EditorTopBar = ({
       <select
         id="editor-variation"
         className="h-10 w-[68px] min-w-0 border border-neutral-700 bg-neutral-900 px-1 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-36 md:px-2"
-        value={variations.length > 0 ? variations.find(({ name }) => name === variationName)?.id ?? variations[0].id : ''}
+        value={activeVariationId}
         disabled={variations.length === 0}
         aria-label="Variation"
         onChange={(event) => onVariationChange(event.currentTarget.value)}
       >
-        {variations.length === 0 ? <option value="">{variationName}</option> : null}
+        {variations.length === 0 ? <option value="">Original</option> : null}
         {variations.map((variation) => (
           <option key={variation.id} value={variation.id}>{variation.name}</option>
         ))}
@@ -116,4 +173,5 @@ export const EditorTopBar = ({
       <IconButton label="Open projects" icon={FolderOpen} onClick={onOpenProjects} />
     </div>
   </header>
-);
+  );
+};

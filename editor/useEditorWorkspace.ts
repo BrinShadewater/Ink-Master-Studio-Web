@@ -37,7 +37,7 @@ export interface EditorWorkspace {
   error: string | null;
   dispatch: (command: EditorCommand) => void;
   importFile: (file: File) => Promise<void>;
-  openProject: (projectId: string) => Promise<void>;
+  openProject: (projectId: string) => Promise<boolean>;
   deleteProject: (projectId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
 }
@@ -92,6 +92,33 @@ export const applyImportedProjectIfCurrent = async (
   if (applyNavigationIfCurrent(authority, operation, apply)) return true;
   await cleanUpStaleImport();
   return false;
+};
+
+export interface OpenProjectDependencies {
+  getProject: (projectId: string) => Promise<EditorProject | null>;
+  getAsset: (assetId: string) => Promise<EditorAsset | null>;
+  activate: (project: EditorProject, asset: EditorAsset) => void;
+  reportError: (message: string) => void;
+}
+
+export const openEditorProjectIfCurrent = async (
+  authority: WorkspaceOperationAuthority,
+  operation: number,
+  projectId: string,
+  dependencies: OpenProjectDependencies,
+): Promise<boolean> => {
+  try {
+    const project = await dependencies.getProject(projectId);
+    if (!project) throw new Error('Project not found.');
+    const sourceAssetId = getSelectedImageLayer(project).assetId;
+    const asset = await dependencies.getAsset(sourceAssetId);
+    if (!asset) throw new Error('Project source image not found.');
+
+    return applyNavigationIfCurrent(authority, operation, () => dependencies.activate(project, asset));
+  } catch (error) {
+    if (authority.owns(operation)) dependencies.reportError(getErrorMessage(error));
+    return false;
+  }
 };
 
 export interface ObjectUrlApi {
@@ -337,17 +364,14 @@ export const useEditorWorkspace = (): EditorWorkspace => {
 
   const openProject = useCallback(async (projectId: string) => {
     const operation = authorityRef.current.begin();
-    try {
-      const project = await getEditorProject(projectId);
-      if (!project) throw new Error('Project not found.');
-      const sourceAssetId = getSelectedImageLayer(project).assetId;
-      const asset = await getEditorAsset(sourceAssetId);
-      if (!asset) throw new Error('Project source image not found.');
-
-      applyNavigationIfCurrent(authorityRef.current, operation, () => replaceWorkspace(project, asset));
-    } catch (nextError) {
-      if (mountedRef.current && authorityRef.current.owns(operation)) setError(getErrorMessage(nextError));
-    }
+    return openEditorProjectIfCurrent(authorityRef.current, operation, projectId, {
+      getProject: getEditorProject,
+      getAsset: getEditorAsset,
+      activate: replaceWorkspace,
+      reportError: (message) => {
+        if (mountedRef.current) setError(message);
+      },
+    });
   }, [replaceWorkspace]);
 
   const deleteProject = useCallback(async (projectId: string) => {
