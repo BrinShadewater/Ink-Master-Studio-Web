@@ -38,7 +38,7 @@ const createPngFixture = async (page: Page, width: number, height: number): Prom
 
 const uploadFixture = async (page: Page, width: number, height: number, name: string) => {
   const buffer = await createPngFixture(page, width, height);
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByLabel('Import artwork file').setInputFiles({
     name,
     mimeType: 'image/png',
     buffer,

@@ -6,10 +6,17 @@ import {
   getActiveVariation,
   getSelectedImageLayer,
 } from '../../editor/history';
-import type { EditorTool } from '../../editor/model';
+import type { EditorCommand } from '../../editor/history';
+import {
+  createTextLayer,
+  type DesignLayer,
+  type EditorTool,
+  type TextLayer,
+} from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { EditorInspector } from './EditorInspector';
+import { LayerDrawer, LayerPanel } from './LayerPanel';
 import { EditorToolbar } from './EditorToolbar';
 import { EditorTopBar } from './EditorTopBar';
 import { ProjectDrawer } from './ProjectDrawer';
@@ -27,12 +34,37 @@ export const openProjectFromDrawer = async (
   return opened;
 };
 
+export const selectLayerFromPanel = (
+  layer: DesignLayer,
+  dispatch: (command: EditorCommand) => void,
+  setTool: (tool: EditorTool) => void,
+) => {
+  dispatch({ type: 'select-layer', layerId: layer.id });
+  if (layer.type === 'text') setTool('select');
+};
+
+export const addTextLayerFromPanel = (
+  dispatch: (command: EditorCommand) => void,
+  setTool: (tool: EditorTool) => void,
+  closeMobileDrawer: () => void,
+): TextLayer => {
+  const layer = createTextLayer('Text');
+  dispatch({ type: 'add-text-layer', layer });
+  dispatch({ type: 'select-layer', layerId: layer.id });
+  setTool('select');
+  closeMobileDrawer();
+  return layer;
+};
+
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
   const [tool, setTool] = useState<EditorTool>('select');
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const layerFileInputRef = useRef<HTMLInputElement>(null);
+  const layersButtonRef = useRef<HTMLButtonElement>(null);
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
   const selectedImageLayer = project ? getSelectedImageLayer(project) : null;
@@ -94,7 +126,12 @@ export const EditorApp = () => {
       />
 
       <section className="grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1">
-        <EditorToolbar tool={tool} onToolChange={setTool} />
+        <EditorToolbar
+          tool={tool}
+          onToolChange={setTool}
+          onOpenLayers={() => setLayersOpen(true)}
+          layersButtonRef={layersButtonRef}
+        />
         <div
           className={`relative order-1 min-h-0 overflow-hidden md:order-none ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
           onDragEnter={(event) => {
@@ -130,17 +167,43 @@ export const EditorApp = () => {
             </button>
           ) : null}
         </div>
-        <EditorInspector project={project} layer={selectedImageLayer} tool={tool} dispatch={workspace.dispatch} />
+        <div className="order-2 h-60 min-h-0 md:order-none md:grid md:h-auto md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]">
+          <LayerPanel
+            className="hidden border-b border-neutral-800 md:flex md:border-l"
+            variation={variation}
+            onAddImage={() => layerFileInputRef.current?.click()}
+            onAddText={() => {
+              addTextLayerFromPanel(workspace.dispatch, setTool, () => setLayersOpen(false));
+            }}
+            onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch, setTool)}
+            dispatch={workspace.dispatch}
+          />
+          <EditorInspector project={project} layer={selectedImageLayer} tool={tool} dispatch={workspace.dispatch} />
+        </div>
       </section>
 
       <input
         ref={fileInputRef}
         className="sr-only"
         type="file"
+        aria-label="Import artwork file"
         accept=".png,.jpg,.jpeg,.webp"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           if (file) void workspace.importFile(file);
+          event.currentTarget.value = '';
+        }}
+      />
+
+      <input
+        ref={layerFileInputRef}
+        className="sr-only"
+        type="file"
+        aria-label="Add layer image file"
+        accept=".png,.jpg,.jpeg,.webp"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (file) void workspace.importLayerFile(file);
           event.currentTarget.value = '';
         }}
       />
@@ -163,6 +226,19 @@ export const EditorApp = () => {
           () => setProjectsOpen(false),
         )}
         onDelete={workspace.deleteProject}
+      />
+
+      <LayerDrawer
+        open={layersOpen}
+        returnFocusRef={layersButtonRef}
+        variation={variation}
+        onClose={() => setLayersOpen(false)}
+        onAddImage={() => layerFileInputRef.current?.click()}
+        onAddText={() => {
+          addTextLayerFromPanel(workspace.dispatch, setTool, () => setLayersOpen(false));
+        }}
+        onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch, setTool)}
+        dispatch={workspace.dispatch}
       />
     </main>
   );

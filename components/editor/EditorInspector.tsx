@@ -139,7 +139,7 @@ export const EditorInspector = ({ project, layer, tool, dispatch }: EditorInspec
 
   if (!project || !layer) {
     return (
-      <aside className="order-2 h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:order-none md:h-auto md:border-l md:border-t-0" aria-label="Inspector">
+      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
         <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
         <p className="mt-2 text-xs leading-5 text-neutral-500">Import artwork to edit.</p>
       </aside>
@@ -159,7 +159,7 @@ export const EditorInspector = ({ project, layer, tool, dispatch }: EditorInspec
   const cropEdges = cropToEdgePercentages(layer.crop);
 
   return (
-    <aside className="order-2 h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:order-none md:h-auto md:border-l md:border-t-0" aria-label="Inspector">
+    <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
       <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-neutral-800 bg-neutral-900 px-4">
         <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
         <button

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createElement } from 'react';
+import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   EditorTopBar,
@@ -12,13 +12,32 @@ import {
   variationNameDraftReducer,
   type EditorTopBarProps,
 } from '../components/editor/EditorTopBar';
+import { EditorToolbar } from '../components/editor/EditorToolbar';
 import {
   controlBounds,
   cropToEdgePercentages,
   edgePercentagesToCrop,
 } from '../components/editor/EditorInspector';
-import { openProjectFromDrawer } from '../components/editor/EditorApp';
-import { createEditorAsset, createEditorProject, createTextLayer } from '../editor/model';
+import {
+  LayerPanel,
+  LayerDrawer,
+  createLayerNameDraftState,
+  layerNameDraftReducer,
+  normalizeLayerNameDraft,
+  restoreLayerNameDraft,
+  type LayerPanelProps,
+} from '../components/editor/LayerPanel';
+import {
+  addTextLayerFromPanel,
+  openProjectFromDrawer,
+  selectLayerFromPanel,
+} from '../components/editor/EditorApp';
+import {
+  createEditorAsset,
+  createEditorProject,
+  createTextLayer,
+  type DesignVariation,
+} from '../editor/model';
 import { createEditorHistory, getSelectedImageLayer, reduceEditorHistory } from '../editor/history';
 
 const topBarProps: EditorTopBarProps = {
@@ -44,6 +63,173 @@ const topBarProps: EditorTopBarProps = {
   onImport: () => undefined,
   onOpenProjects: () => undefined,
 };
+
+const createLayerPanelVariation = (): DesignVariation => {
+  const bottom = {
+    ...createTextLayer('Bottom'),
+    id: 'layer-bottom',
+    name: 'Same name',
+  };
+  const top = {
+    ...createTextLayer('Top'),
+    id: 'layer-top',
+    name: 'Same name',
+    visible: false,
+  };
+  return {
+    id: 'variation-layers',
+    name: 'Original',
+    layers: [bottom, top],
+    selectedLayerId: top.id,
+  };
+};
+
+const layerPanelProps: LayerPanelProps = {
+  variation: createLayerPanelVariation(),
+  onAddImage: () => undefined,
+  onAddText: () => undefined,
+  onSelectLayer: () => undefined,
+  dispatch: () => undefined,
+};
+
+test('layer panel exposes accessible creation, visibility, and selected-layer actions', () => {
+  const markup = renderToStaticMarkup(createElement(LayerPanel, layerPanelProps));
+
+  for (const label of [
+    'Add image',
+    'Add text',
+    'Show layer',
+    'Move layer up',
+    'Move layer down',
+    'Duplicate layer',
+    'Delete layer',
+  ]) {
+    assert.match(markup, new RegExp(`aria-label="${label}"`));
+  }
+});
+
+test('layer panel renders topmost first and selects duplicate names by layer id', () => {
+  const markup = renderToStaticMarkup(createElement(LayerPanel, layerPanelProps));
+  const topIndex = markup.indexOf('value="layer-top"');
+  const bottomIndex = markup.indexOf('value="layer-bottom"');
+
+  assert.ok(topIndex >= 0 && bottomIndex >= 0 && topIndex < bottomIndex);
+  assert.match(markup, /value="layer-top"[^>]*aria-pressed="true"/);
+  assert.match(markup, /value="layer-bottom"[^>]*aria-pressed="false"/);
+});
+
+test('layer panel disables ordering at both edges and protects the final layer', () => {
+  const topSelected = renderToStaticMarkup(createElement(LayerPanel, layerPanelProps));
+  assert.match(topSelected, /aria-label="Move layer up"[^>]*disabled=""/);
+  assert.doesNotMatch(topSelected, /aria-label="Move layer down"[^>]*disabled=""/);
+
+  const bottomSelected = renderToStaticMarkup(createElement(LayerPanel, {
+    ...layerPanelProps,
+    variation: { ...createLayerPanelVariation(), selectedLayerId: 'layer-bottom' },
+  }));
+  assert.match(bottomSelected, /aria-label="Move layer down"[^>]*disabled=""/);
+
+  const onlyLayer = createLayerPanelVariation().layers[0];
+  const finalLayer = renderToStaticMarkup(createElement(LayerPanel, {
+    ...layerPanelProps,
+    variation: {
+      ...createLayerPanelVariation(),
+      layers: [onlyLayer],
+      selectedLayerId: onlyLayer.id,
+    },
+  }));
+  assert.match(finalLayer, /aria-label="Delete layer"[^>]*disabled=""/);
+});
+
+test('layer-name draft commits normalized text and restores the latest external name', () => {
+  let state = createLayerNameDraftState('layer-a', 'First name');
+  state = layerNameDraftReducer(state, { type: 'input', value: '  Front art  ' });
+  assert.equal(normalizeLayerNameDraft(state.draft, 'text'), 'Front art');
+  assert.equal(normalizeLayerNameDraft('   ', 'image'), 'Image');
+
+  state = layerNameDraftReducer(state, {
+    type: 'sync', layerId: 'layer-a', layerName: 'Renamed elsewhere',
+  });
+  state = layerNameDraftReducer(state, { type: 'input', value: 'Discard me' });
+  state = layerNameDraftReducer(state, { type: 'restore' });
+  assert.equal(state.draft, 'Renamed elsewhere');
+
+  state = layerNameDraftReducer(state, {
+    type: 'sync', layerId: 'layer-b', layerName: 'Second layer',
+  });
+  assert.deepEqual(state, {
+    layerId: 'layer-b', externalName: 'Second layer', draft: 'Second layer',
+  });
+});
+
+test('restoring a layer name consumes Escape before the drawer can close', () => {
+  const events: string[] = [];
+  restoreLayerNameDraft({
+    preventDefault: () => events.push('prevent'),
+    stopPropagation: () => events.push('stop'),
+    currentTarget: { blur: () => events.push('blur') },
+  }, () => events.push('restore'));
+
+  assert.deepEqual(events, ['prevent', 'stop', 'restore', 'blur']);
+});
+
+test('mobile toolbar exposes a stable Layers command', () => {
+  const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+
+  assert.match(markup, /aria-label="Layers"/);
+  assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
+});
+
+test('mobile layer drawer keeps its close control inside the panel header', () => {
+  const markup = renderToStaticMarkup(createElement(LayerDrawer, {
+    ...layerPanelProps,
+    open: true,
+    onClose: () => undefined,
+    returnFocusRef: createRef<HTMLButtonElement>(),
+  }));
+  const header = markup.match(/<header[^>]*>[\s\S]*?<\/header>/)?.[0] ?? '';
+
+  assert.match(markup, /role="dialog"/);
+  assert.match(header, /aria-label="Close layers"/);
+});
+
+test('selecting a text layer dispatches by id and forces the select tool', () => {
+  const commands: unknown[] = [];
+  const tools: string[] = [];
+  const textLayer = { ...createTextLayer('Headline'), id: 'layer-text' };
+
+  selectLayerFromPanel(
+    textLayer,
+    (command) => commands.push(command),
+    (tool) => tools.push(tool),
+  );
+
+  assert.deepEqual(commands, [{ type: 'select-layer', layerId: 'layer-text' }]);
+  assert.deepEqual(tools, ['select']);
+});
+
+test('adding text creates and selects a text layer before closing the mobile drawer', () => {
+  const commands: Array<{ type: string; layer?: { id: string }; layerId?: string }> = [];
+  const events: string[] = [];
+
+  const layer = addTextLayerFromPanel(
+    (command) => commands.push(command),
+    (tool) => events.push(`tool:${tool}`),
+    () => events.push('close'),
+  );
+
+  assert.equal(layer.type, 'text');
+  assert.equal(layer.text, 'Text');
+  assert.deepEqual(commands, [
+    { type: 'add-text-layer', layer },
+    { type: 'select-layer', layerId: layer.id },
+  ]);
+  assert.deepEqual(events, ['tool:select', 'close']);
+});
 
 test('variation select is controlled by active id when names are duplicated', () => {
   const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));

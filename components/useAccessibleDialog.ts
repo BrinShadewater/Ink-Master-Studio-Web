@@ -25,13 +25,24 @@ interface AccessibleDialogOptions {
   topmost?: boolean;
   onClose: () => void;
   initialFocusRef?: RefObject<HTMLElement | null>;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
+
+interface FocusTarget {
+  focus: () => void;
+}
+
+export const getDialogReturnFocusTarget = <Target extends FocusTarget>(
+  explicitTarget: Target | null | undefined,
+  previousTarget: Target | null,
+): Target | null => explicitTarget ?? previousTarget;
 
 export const useAccessibleDialog = ({
   open,
   topmost = true,
   onClose,
   initialFocusRef,
+  returnFocusRef,
 }: AccessibleDialogOptions) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -49,11 +60,11 @@ export const useAccessibleDialog = ({
       : null;
     focusedForOpenRef.current = false;
     return () => {
-      previousFocusRef.current?.focus();
+      getDialogReturnFocusTarget(returnFocusRef?.current, previousFocusRef.current)?.focus();
       previousFocusRef.current = null;
       focusedForOpenRef.current = false;
     };
-  }, [open]);
+  }, [open, returnFocusRef]);
 
   useEffect(() => {
     if (!open || !topmost) return undefined;
