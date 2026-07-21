@@ -16,7 +16,7 @@ The progress ledger was not edited.
 - `editor/geometry.ts`: added inverse-rotation rectangle hit testing shared by image and text layers.
 - `components/editor/EditorCanvas.tsx`: added URL-keyed image decoding, stale-callback guards, ordered composition, topmost selection, and hit-layer drag capture without URL revocation.
 - `components/editor/EditorApp.tsx`: passes active layers, selection, workspace assets, and borrowed URLs; dispatches selection and layer-specific transforms.
-- `tests/editor-compositor.test.ts`: covers image/text composition, font scaling, hidden/missing assets, reverse hit testing, hit-layer drag normalization, stale decode callbacks, and StrictMode replay.
+- `tests/editor-compositor.test.ts`: covers image/text composition, font scaling, hidden/missing assets, reverse hit testing, hit-layer drag normalization, stale decode callbacks, and controller lifecycle replay.
 - `tests/editor-geometry.test.ts`: covers rotated bounds and retains the borrowed-URL ownership guard.
 - `tests/editor-shell.test.ts`: replaces the retired source-only compatibility assertion with selected-image inspector preservation coverage.
 - `.superpowers/sdd/task-4-report.md`: this report.
@@ -39,7 +39,7 @@ pass 0
 fail 2
 ```
 
-Self-review found that React StrictMode effect replay would dispose the decoder before its replayed sync. A regression assertion was added before the fix:
+Self-review found that cleanup/setup lifecycle replay could dispose the decoder before a replayed sync. A pure controller regression assertion was added before the fix; it did not mount React or exercise `React.StrictMode` directly:
 
 ```powershell
 npx tsx --test tests/editor-compositor.test.ts
@@ -115,7 +115,7 @@ Exit code: `0`; no whitespace errors were reported before the feature commit.
 - Text preview font pixels are exactly `fontSize * min(viewport.width, viewport.height) / 1000`, then transformed by `layer.transform.scale`. Letter spacing and outline units use the same reference extent, and line height is exactly `1.2`.
 - Text measurement and rendering share per-character widths, so bounds, alignment, and explicit spacing remain deterministic without `CanvasRenderingContext2D.letterSpacing`.
 - Pointer-down uses compositor hit testing, dispatches `select-layer`, and captures that hit layer's ID and transform. Drag remains bound to that layer even while React applies selection state. Blank clicks do not dispatch or start history groups.
-- Decoding is cached by active URL value, publishes only current URL-to-asset mappings, deactivates stale callbacks, and can restart after StrictMode cleanup. No borrowed URL is revoked.
+- Decoding is cached by active URL value, publishes only current URL-to-asset mappings, deactivates stale callbacks, and can restart after controller lifecycle cleanup. No borrowed URL is revoked.
 - `EditorInspector` still receives `getSelectedImageLayer(project)`, so its existing image-only behavior is unchanged and text selection yields no image inspector layer.
 - The production build, complete unit suite, and desktop/mobile editor acceptance tests passed after the final implementation.
 
@@ -124,3 +124,122 @@ Exit code: `0`; no whitespace errors were reported before the feature commit.
 - Hit testing intentionally uses transformed rectangular layer bounds rather than image alpha masks or glyph outlines.
 - Text editing controls and layer inspectors remain deferred to later Phase 2A tasks, as required.
 - No known functional concerns remain within Task 4 scope.
+
+## Fix Review
+
+### Findings Addressed
+
+1. Decoded state is now `assetId -> { url, image }`. `getCurrentDecodedImages` synchronously intersects that state with the current `assetUrlsById` props during render, before passive-effect controller synchronization. Both composition and pointer hit testing receive only this current-URL image map.
+2. Text lines now track the minimum and maximum actual glyph extents at every pen position. Canvas outline expansion is included as half the rendered line width on each side. Bounds, left/center/right origins, drawing, and hit testing share these line extents, including when negative spacing reverses pen movement.
+3. StrictMode language was corrected. The dispose/sync regression is pure controller lifecycle replay coverage; it does not mount React or directly verify `React.StrictMode` behavior.
+
+### Fix Files
+
+- `components/editor/EditorCanvas.tsx`: URL-tagged decoded entries, pure current-prop filtering, and lifecycle-neutral replay language.
+- `editor/compositor.ts`: per-glyph actual bounding extents, outlined line unions, extent-based alignment origins, and coherent bounds.
+- `tests/editor-compositor.test.ts`: pre-effect URL replacement, old callback window, post-sync stale callback, lifecycle replay, and narrow negative-spacing multiline coverage for all alignments.
+- `.superpowers/sdd/task-4-report.md`: corrected prior terminology and appended this review evidence.
+
+The progress ledger was not edited.
+
+### Fix Red Evidence
+
+URL-coherence command before implementation:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts
+```
+
+Exit code: `1`.
+
+```text
+SyntaxError: EditorCanvas does not provide an export named 'getCurrentDecodedImages'
+tests 1
+pass 0
+fail 1
+```
+
+This was the expected missing-contract failure for synchronous current-prop filtering. After the URL fix, the same command exited `0` with `6` passed and `0` failed.
+
+Negative-spacing command before the glyph-extents implementation:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts
+```
+
+Exit code: `1`.
+
+```text
+tests 9
+pass 6
+fail 3
+cancelled 0
+skipped 0
+todo 0
+
+left/center/right negative-spacing bounds:
+actual   { x: 485.5, y: 378, width: 29, height: 244 }
+expected { x: 486.5, y: 379, width: 27, height: 242 }
+```
+
+All three expected failures proved the old clamped-advance measurement did not use actual outlined glyph extents.
+
+### Fix Green Evidence
+
+Required focused command:
+
+```powershell
+npx tsx --test tests/editor-compositor.test.ts tests/editor-geometry.test.ts tests/editor-shell.test.ts
+```
+
+Exit code: `0`.
+
+```text
+tests 26
+pass 26
+fail 0
+cancelled 0
+skipped 0
+todo 0
+```
+
+Required typecheck command:
+
+```powershell
+npm run typecheck
+```
+
+Exit code: `0`.
+
+```text
+> inkmaster-studio@0.0.0 typecheck
+> tsc --noEmit
+```
+
+Required whitespace command:
+
+```powershell
+git diff --check
+```
+
+Exit code: `0`; no whitespace errors were reported. Git emitted only the repository's existing LF-to-CRLF working-copy warnings.
+
+### Fix Commit
+
+- `9ed58dd8993d98b8edea992a94b3cb4453f5bfd2` `fix: keep canvas assets and text bounds coherent`
+
+### Fix Self-Review
+
+- A same-ID prop URL replacement immediately produces an empty current image map until the replacement decode completes. The previous decoded entry cannot paint or participate in topmost hit testing during the passive-effect window.
+- An old callback before controller sync may publish only its old URL-tagged entry; current props reject it synchronously. After replacement sync, the old callback is deactivated and does not publish at all.
+- URL reuse across asset IDs still decodes once per active URL, while each published asset entry retains the URL needed for current-generation validation. Borrowed URLs are never revoked by the canvas.
+- Glyph measurement uses `actualBoundingBoxLeft` and `actualBoundingBoxRight`, with a width-based fallback for test doubles or implementations without actual bounds. Spaces with supported zero ink bounds advance the pen without inventing visible extents.
+- Negative spacing cannot collapse bounds: every glyph contributes its actual min/max at its pen position, so reversed pen movement expands the union correctly. The same union determines render origins and hit bounds for left, center, and right alignment.
+- Outline geometry matches Canvas stroke semantics by expanding horizontal and outer vertical bounds by half of `context.lineWidth` per side.
+- The required focused suite, clean typecheck, and whitespace check all passed after the final code change.
+
+### Fix Concerns
+
+- Vertical layout intentionally retains the specified 1.2 line-height box; actual glyph ascent/descent does not replace that design contract.
+- Hit testing remains rectangular rather than alpha- or glyph-path-aware, unchanged from Task 4 scope.
+- No known functional concerns remain from the review findings.
