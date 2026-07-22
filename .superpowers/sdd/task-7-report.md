@@ -13,7 +13,7 @@ Acceptance test commit: `6aa315bf7b3a81657d611294031d6938c0e7b257` (`test: verif
 - `test-results/phase-2a/desktop-layers-1440x900.png`: regenerated acceptance artifact (gitignored).
 - `test-results/phase-2a/mobile-layers-390x844.png`: regenerated acceptance artifact (gitignored).
 
-No production source or editor bundle-vocabulary assertion changed. `.superpowers/sdd/progress.md` was not edited.
+In the initial acceptance commit, no production source, editor bundle-vocabulary assertion, or `.superpowers/sdd/progress.md` entry changed. The controller updated the ledger later during gate bookkeeping.
 
 ## Acceptance Coverage
 
@@ -60,7 +60,7 @@ The owner must sign in through Vercel to open the private preview in a browser.
 - Verified mobile ordering by actual drawer input order before, during, and after reordering.
 - Kept existing behavioral assertions intact and strengthened the asynchronous import readiness condition found by the full suite.
 - Inspected both final artifacts after regeneration and confirmed the requested exact filenames and dimensions.
-- Confirmed no production deployment, no secrets in this report, no progress-ledger edit, and no unrelated worktree changes.
+- Confirmed no production deployment, no secrets in this report, no progress-ledger edit in the initial acceptance commit, and no unrelated worktree changes.
 
 ## Concerns
 
