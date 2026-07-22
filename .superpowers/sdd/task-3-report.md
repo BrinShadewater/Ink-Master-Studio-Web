@@ -1,328 +1,136 @@
-# Phase 2A Task 3 Report
+# Task 3: Pure Deterministic Look Processor
+
+Status: implementation complete; pending review.
 
 ## Scope
 
-Implemented project-scoped multi-asset hydration, object-URL ownership, individual asset deletion, and concurrency-safe additional image import. `EditorApp` temporarily derives the existing source-only canvas inputs from `assetsById` and `assetUrlsById`; no compositor or layer UI was added.
+Implemented the one pure byte-level rendering authority for normalized
+`VariationLook` recipes. No worker, React, DOM, canvas, storage, URL, CSS filter,
+or UI code was added.
 
-## Changed Files
+## TDD Evidence
 
-- `editor/projectRepository.ts`: added `deleteEditorAsset(assetId)` for isolated memory and IndexedDB deletion.
-- `editor/useEditorWorkspace.ts`: added project asset indexing/validation, `AssetUrlRegistry`, multi-asset hook state, guarded secondary import, registry cleanup on project transitions/unmount, and active-project deletion handling.
-- `components/editor/EditorApp.tsx`: mechanically derives the legacy canvas source asset and URL from the new workspace maps.
-- `tests/editor-repository.test.ts`: covers isolated asset deletion in memory and IndexedDB.
-- `tests/editor-workspace.test.ts`: covers registry lifecycle, complete asset hydration, validation gates, import ordering, stale/failed import cleanup, source identity, and delete/open races.
-- `.superpowers/sdd/task-3-report.md`: this report.
-
-The progress ledger was not edited.
-
-## Red TDD Evidence
-
-Initial Task 3 red command:
-
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
-```
-
-Exit code: `1`
-
-Result:
-
-```text
-SyntaxError: '../editor/projectRepository' does not provide an export named 'deleteEditorAsset'
-SyntaxError: '../editor/useEditorWorkspace' does not provide an export named 'ADDITIONAL_IMAGE_IMPORT_ERROR'
-tests 2
-pass 0
-fail 2
-```
-
-This was the expected missing-feature failure before production implementation.
-
-Self-review exposed a second deletion race, so a regression test was added before its fix. Red command:
-
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
-```
-
-Exit code: `1`
-
-Result:
-
-```text
-SyntaxError: '../editor/useEditorWorkspace' does not provide an export named 'shouldClearWorkspaceAfterDelete'
-tests 13
-pass 12
-fail 1
-```
-
-This proved the still-active deleted-project clearing rule did not yet exist.
-
-## Green Verification
-
-Focused command after the final fix:
-
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
-```
-
-Exit code: `0`
-
-```text
-tests 38
-pass 38
-fail 0
-cancelled 0
-skipped 0
-todo 0
-```
-
-Typecheck command:
-
-```powershell
-npm run typecheck
-```
-
-Exit code: `0`; `tsc --noEmit` completed without diagnostics.
-
-Full verification command:
-
-```powershell
-npm test
-```
-
-Exit code: `0`. Typecheck and Vite production build succeeded; the production-style test passed; the TypeScript suite reported `329` passed and `0` failed.
-
-Editor E2E command:
-
-```powershell
-npx playwright test tests/e2e/canvas-editor.spec.ts
-```
-
-Exit code: `0`; `8` passed and `0` failed.
-
-`git diff --check` also completed with exit code `0` before the feature commit.
-
-## Commits
-
-- `74a8e9c793e2c0ab758ab843aedcdccf4c5c65fd` `feat: hydrate and import multiple editor assets`
-
-## Self-Review
-
-- Opening a project loads every project asset and rejects any image layer whose asset is absent. Stale opens cannot synchronize the registry or replace a newer workspace.
-- Registry identity is asset-ID based because editor assets are immutable and duplicate IDs are rejected by the repository. Removed and disposed URLs are deleted from ownership immediately, preventing double revocation.
-- Secondary import captures project identity before decode, saves the asset before adding the layer, then checks navigation generation, active project ID, mount state, and deletion leases before dispatch.
-- Successful additional imports append a normalized image layer and update asset maps without changing `sourceAssetId` or `sourceMetadata`.
-- Stale imports and dispatch failures call isolated asset deletion. Cleanup cannot delete the project, source asset, or sibling assets.
-- A completed deletion clears URLs whenever its target is still active, even if a newer open attempt failed. A delayed deletion cannot clear a successfully opened different project.
-- Switching projects synchronizes the full registry, active-project deletion synchronizes it to empty, and unmount disposes all remaining URLs.
-- `EditorApp` retains the current source-only renderer by looking up the immutable source ID in the new maps. Multi-layer rendering and UI remain outside Task 3.
-
-## Concerns
-
-- `importLayerFile` is intentionally exposed only at the workspace API in this task; there is no layer-import UI until a later layer UI task.
-- The current canvas still renders only the immutable source asset through the temporary compatibility derivation. The shared ordered-layer compositor is intentionally deferred.
-- No known functional concerns remain within Task 3 scope.
-
-## Fix Review
-
-### Findings Addressed
-
-1. Same-project reopen reconciliation: a newer reopen can hydrate an additional asset while its originating import is still pending. Successful stale cleanup now reconciles the latest active workspace generation, `assetsByIdRef`, React asset state, URL state, and `AssetUrlRegistry`. Reconciliation preserves source, sibling, concurrent, and currently referenced assets.
-2. Orphan cleanup failure: additional-image cleanup retries isolated `deleteEditorAsset(assetId)` up to three times. Successful retry retains the existing stable import error; permanent failure reports the explicit stable cleanup error `Could not clean up the failed image import. Reopen the project and try again.`
-3. Temporary renderer compatibility: `EditorCanvas` now receives only the active variation image layer whose `assetId` equals immutable `project.sourceAssetId`. Secondary/text selection remains available to the inspector but cannot mismatch the source-only canvas bitmap.
-
-### Fix Files
-
-- `editor/useEditorWorkspace.ts`: bounded cleanup retries, reference checks before and after async deletion, restoration if a reference appears during deletion, generation-safe workspace reconciliation, and explicit cleanup-failure reporting.
-- `components/editor/EditorApp.tsx`: added `getCompatibilitySourceLayer` and separated selected inspector state from source-only canvas state.
-- `tests/editor-workspace.test.ts`: added real repository/registry same-project reopen coverage, transient/permanent cleanup tests, and referenced-asset retention coverage.
-- `tests/editor-shell.test.ts`: added source-layer compatibility coverage for secondary and text selection.
-- `.superpowers/sdd/task-3-report.md`: appended this Fix Review.
-
-The progress ledger was not edited.
-
-### Fix Red Evidence
+### RED
 
 Command:
 
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts tests/editor-shell.test.ts
-```
-
-Exit code: `1`
-
 ```text
-SyntaxError: '../components/editor/EditorApp' does not provide an export named 'getCompatibilitySourceLayer'
-SyntaxError: '../editor/useEditorWorkspace' does not provide an export named 'ADDITIONAL_IMAGE_IMPORT_CLEANUP_ERROR'
-tests 14
-pass 12
-fail 2
-cancelled 0
-skipped 0
-todo 0
+npx tsx --test tests/editor-look-processor.test.ts
 ```
 
-The failures were expected because the reviewed compatibility and cleanup-failure contracts did not exist.
+Result: exit 1, 0 passed, 1 failed. Node reported `ERR_MODULE_NOT_FOUND` for
+`editor/lookProcessor`, which was the expected failure because the production
+module did not yet exist.
 
-### Fix Green Verification
-
-Covering command:
-
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts tests/editor-shell.test.ts
-```
-
-Exit code: `0`
-
-```text
-tests 51
-pass 51
-fail 0
-cancelled 0
-skipped 0
-todo 0
-```
-
-Typecheck command:
-
-```powershell
-npm run typecheck
-```
-
-Exit code: `0`
-
-```text
-> inkmaster-studio@0.0.0 typecheck
-> tsc --noEmit
-```
-
-Editor Playwright command:
-
-```powershell
-npx playwright test tests/e2e/canvas-editor.spec.ts
-```
-
-Exit code: `0`
-
-```text
-Running 8 tests using 1 worker
-8 passed (25.2s)
-```
-
-`git diff --check` completed with exit code `0` before the fix commit.
-
-### Fix Commit
-
-- `b8cf741675a9c0947d66ecbc0c7daf6eb3e700eb` `fix: reconcile stale editor asset imports`
-
-### Fix Self-Review
-
-- The same-project race test uses the real memory repository. It blocks the import after asset persistence, reopens the same project so the orphan is hydrated and receives a URL, then resumes stale cleanup and proves repository, ref-equivalent state, React-equivalent state, URL state, and registry ownership all drop only that ID.
-- Reconciliation reads the latest refs after cleanup and applies synchronously only while its captured generation still owns authority and the same project remains active. It clones the latest map, so concurrent sibling imports are retained.
-- `projectReferencesEditorAsset` checks immutable source identity and every image layer in every variation. Cleanup checks before deletion and after deletion; a reference appearing during the asynchronous delete causes the immutable asset to be restored instead of removed from the workspace.
-- Cleanup retries only `deleteAsset(asset.id)`. It cannot cascade to the project, source, or sibling assets. Permanent cleanup failure does not falsely reconcile state or revoke a URL for an asset that may remain persisted.
-- The compatibility helper searches the active variation by immutable source asset ID rather than selection. Canvas transform dispatch targets that same source layer, while the inspector continues to receive the selected image layer.
-
-### Fix Concerns
-
-- No known functional concerns remain from the three review findings.
-- Multi-layer rendering remains intentionally deferred to Task 4; the compatibility path is explicitly source-only until then.
-
-## Restoration Race Fix Review
-
-### Finding Addressed
-
-The one-time restoration path now captures the current workspace generation before restoring a referenced asset. After `saveAsset(asset)` resolves, retention requires all of the following to remain true: the hook is mounted, the captured authority generation still owns the workspace, the same project is active, no deletion lease blocks that project, and the current project still references the asset.
-
-If any condition changed during restoration, the workflow performs one final bounded isolated cleanup and reconciles workspace state only through the current-generation helper. The state machine permits at most one restoration and never returns to restoration after final cleanup. Final cleanup or reconciliation failure reports the deterministic terminal error `Could not converge cleanup for the failed image import. Reopen the project and try again.`
-
-### Files
-
-- `editor/useEditorWorkspace.ts`: added restoration generation capture, post-restore lifecycle/reference validation, one final bounded cleanup, and the terminal convergence error.
-- `tests/editor-workspace.test.ts`: added a real repository/registry delayed-restoration race and a bounded terminal-failure test.
-- `.superpowers/sdd/task-3-report.md`: appended this evidence and self-review.
-
-The progress ledger was not edited.
-
-### Red Evidence
+### Initial GREEN
 
 Command:
 
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
+```text
+npx tsx --test tests/editor-look-processor.test.ts
 ```
 
-Exit code: `1`
+Result: exit 0, 11 passed, 0 failed. This covered Original isolation, literal
+goldens for all eight processed defaults, Rec. 709 luminance, Strength 0/50/100,
+partial-alpha premultiplied interpolation, zero-alpha RGB cleanup, both halftone
+background modes, seeded equality/inequality, canonical anchors, Distressed Print
+coverage, every normalized parameter, and malformed frames.
+
+### Final Focused GREEN
+
+Command:
 
 ```text
-tests 44
-pass 42
-fail 2
-cancelled 0
-skipped 0
-todo 0
-
-a delayed restoration is cleaned again after its reference and workspace authority disappear
-AssertionError: 1 !== 2
-
-restoration convergence failure has bounded cleanup and no restore oscillation
-AssertionError: 1 !== 4
+npx tsx --test tests/editor-look-processor.test.ts tests/editor-look-model.test.ts
 ```
 
-Both failures were expected: the old path performed only the initial deletion and never revalidated or cleaned the completed restoration.
+Result: exit 0, 17 passed, 0 failed: 11 processor tests and 6 Look model tests.
 
-### Green Evidence
-
-Focused command:
-
-```powershell
-npx tsx --test tests/editor-workspace.test.ts tests/editor-repository.test.ts
-```
-
-Exit code: `0`
+Additional commands:
 
 ```text
-tests 44
-pass 44
-fail 0
-cancelled 0
-skipped 0
-todo 0
-```
-
-Typecheck command:
-
-```powershell
 npm run typecheck
-```
-
-Exit code: `0`
-
-```text
-> inkmaster-studio@0.0.0 typecheck
-> tsc --noEmit
-```
-
-Whitespace verification command:
-
-```powershell
 git diff --check
 ```
 
-Exit code: `0`; no whitespace errors were reported.
+Both exited 0 with no diagnostics. No broad verify command was run.
 
-### Commit
+## Algorithms Locked
 
-- `0316bc52b85817708892db64c264a997f23bf297` `fix: bound editor asset restoration cleanup`
+- Shared bytes clamp and `Math.round` each named stage. Luminance uses fixed
+  Rec. 709 coefficients. Standard contrast operates around 127.5 with
+  `1 + contrast / 100`; High Contrast uses `1 + contrast / 50`. Saturation
+  expands or contracts channels around luminance.
+- Strength interpolates alpha and premultiplied RGB at `strength / 100`, then
+  unpremultiplies. A rounded zero output alpha always produces zero RGB.
+- Clean Photo applies contrast, saturation, then an alpha-aware separable
+  three-tap box blur and a clarity difference bounded to +/-64. Edge samples
+  clamp to the nearest pixel.
+- High Contrast maps the black point to zero, applies the stronger contrast
+  curve, then saturation. Monochrome applies rounded Rec. 709 luminance,
+  brightness in byte units, then contrast.
+- Duotone offsets rounded luminance by `balance / 100` and interpolates parsed
+  shadow/highlight bytes. Posterized applies contrast before the specified
+  per-channel levels formula.
+- Graphic Halftone maps pixel centers into canonical 4096-space, rotates around
+  the canonical center, and compares radial cell distance with a square-root
+  luminance radius. Transparent mode emits source-alpha ink only within source
+  coverage; solid mode fills every pixel with opaque ink or background.
+- Vintage Ink mixes source RGB with a warm `[38, 30, 28]` to `[245, 226, 186]`
+  luminance map, contracts the tonal endpoints for fade, then adds a shared
+  zero-mean seeded grain offset.
+- Distressed Print combines 65 percent fine and 35 percent coarse canonical hash
+  noise. Wear reduction is combined with a four-pixel Manhattan alpha-edge
+  factor and partial-alpha factor; it cannot create coverage outside the source.
+- Canonical texture uses integer pixel-center coordinates and a normalized
+  lattice. The documented `Math.imul` avalanche constants are `0x9e3779b1`,
+  `0x85ebca77`, `0xc2b2ae3d`, `0x7feb352d`, and `0x846ca68b`.
 
-### Self-Review
+## Golden Fixture Review
 
-- The real repository regression persists the imported asset, deletes it once, introduces a current-project reference during deletion, and blocks the single restoration. Before restoration resolves, it changes authority generation, active project, deletion blocking, mount state, and the current reference.
-- The invalid restoration is deleted a second time. The test proves the imported record is absent, the replacement workspace maps and URL map do not retain it, its URL is revoked exactly once, and both projects' source assets plus the sibling asset remain persisted.
-- Restoration acceptance is centralized in `isRestorationCurrent`, which checks mount state, captured generation ownership, active project identity, deletion lease state, and current project references after the asynchronous save.
-- Cleanup has a fixed transition bound: one initial cleanup, zero or one restoration, then zero or one final cleanup with three delete attempts. No branch can restore twice or loop.
-- Initial cleanup failure retains the existing cleanup-failure message. Restore/final-cleanup failure uses the terminal convergence message, so users receive one deterministic outcome for a workflow that cannot settle.
+The fixed 4-by-4 fixture includes black, white, primary/secondary colors,
+midtones, partial alpha, and colored zero-alpha input. Expected arrays for all
+eight processed default Looks were calculated before production code in a
+separate arithmetic pass and stored literally. They were then reviewed against
+identity/endpoints and representative Rec. 709, duotone, posterization,
+halftone, alpha, and seeded-texture samples. Tests do not call processor helpers
+to generate their expectations.
 
-### Concerns
+## Files
 
-- No known functional concerns remain for the restoration race.
-- The terminal error intentionally stops after bounded attempts; it does not oscillate between save and delete when storage remains unavailable.
+- `editor/lookProcessor.ts`: pure frame contract, validation, algorithms,
+  canonical hash, Strength blend, and processor entry point.
+- `tests/editor-look-processor.test.ts`: 11 byte-level and behavioral tests.
+- `tests/fixtures/looks/README.md`: formulas, canonical constants, alpha rules,
+  and golden review policy.
+- `.superpowers/sdd/progress.md`: Task 3 marked implementation complete and
+  pending review.
+- `.superpowers/sdd/task-3-report.md`: this report.
+
+## Self-Review
+
+- All eight processed defaults have exact 64-byte expected arrays; Original has
+  byte identity plus independent-buffer coverage.
+- Frame validation checks positive integer dimensions, maximum safe byte length,
+  `Uint8ClampedArray` type, and exact `width * height * 4` length before output or
+  processing allocations. Every malformed case throws `Invalid Look frame.`
+- Tonal Looks preserve source alpha before Strength. Transparent halftone and
+  distress stay inside source coverage; solid halftone deliberately fills the
+  complete frame. Partial and zero alpha behavior is explicit.
+- Strength 0, 50, and 100 and a partial-alpha color transition are locked at the
+  byte level. Zero final alpha clears hidden RGB.
+- Duplicate seeds match, changed seeds differ, every normalized parameter changes
+  the review frame, and equivalent 8-by-8/16-by-16 normalized lattice samples
+  match exact hash values.
+- The processor imports only Look types and contains no runtime random, clock,
+  React, DOM, canvas, CSS filter, storage, URL, or mutable ambient-state access.
+- Self-review found no contract issue requiring a code change.
+
+## Concerns
+
+No known implementation concerns. The formulas intentionally become a persisted
+rendering contract through their golden bytes; future algorithm changes require
+independent fixture recalculation and review. Worker transport and UI integration
+remain out of scope for later tasks.
+
+Commit subject: `feat: add deterministic Look pixel processor`.
