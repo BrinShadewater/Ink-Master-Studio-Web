@@ -2,6 +2,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
 import path from 'node:path';
 
 const artifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'task-7', name);
+const phase2aArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2a', name);
 
 const createPngFixture = async (page: Page, width: number, height: number): Promise<Buffer> => {
   const bytes = await page.evaluate(async ({ fixtureWidth, fixtureHeight }) => {
@@ -39,6 +40,15 @@ const createPngFixture = async (page: Page, width: number, height: number): Prom
 const uploadFixture = async (page: Page, width: number, height: number, name: string) => {
   const buffer = await createPngFixture(page, width, height);
   await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer,
+  });
+};
+
+const uploadLayerFixture = async (page: Page, width: number, height: number, name: string) => {
+  const buffer = await createPngFixture(page, width, height);
+  await page.locator('input[type="file"][aria-label="Add layer image file"]').setInputFiles({
     name,
     mimeType: 'image/png',
     buffer,
@@ -107,6 +117,267 @@ const readPersistedEditorState = async (page: Page, projectName: string) => page
     };
   })
 ), projectName);
+
+interface PersistedComposition {
+  selectedLayerId: string;
+  layers: Array<{
+    id: string;
+    type: 'image' | 'text';
+    name: string;
+    visible: boolean;
+    opacity: number;
+    transform: { x: number; y: number; scale: number; rotation: number; flipX: boolean; flipY: boolean };
+    assetId?: string;
+    crop?: { x: number; y: number; width: number; height: number };
+    adjustments?: { brightness: number; contrast: number; saturation: number };
+    text?: string;
+    fontFamily?: string;
+    fontSize?: number;
+    color?: string;
+    align?: string;
+    letterSpacing?: number;
+    outlineWidth?: number;
+    outlineColor?: string;
+  }>;
+}
+
+const readPersistedComposition = async (page: Page, projectName: string) => page.evaluate((name) => (
+  new Promise<PersistedComposition | null>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+      request.onerror = () => {
+        database.close();
+        reject(request.error ?? new Error('Could not read editor projects.'));
+      };
+      request.onsuccess = () => {
+        const project = request.result.find((candidate) => candidate.name === name);
+        const variation = project?.variations.find(
+          (candidate: { id: string }) => candidate.id === project.activeVariationId,
+        );
+        database.close();
+        resolve(variation ? {
+          selectedLayerId: variation.selectedLayerId,
+          layers: variation.layers.map((layer: PersistedComposition['layers'][number]) => ({
+            id: layer.id,
+            type: layer.type,
+            name: layer.name,
+            visible: layer.visible,
+            opacity: layer.opacity,
+            transform: layer.transform,
+            ...(layer.type === 'image' ? {
+              assetId: layer.assetId,
+              crop: layer.crop,
+              adjustments: layer.adjustments,
+            } : {}),
+            ...(layer.type === 'text' ? {
+              text: layer.text,
+              fontFamily: layer.fontFamily,
+              fontSize: layer.fontSize,
+              color: layer.color,
+              align: layer.align,
+              letterSpacing: layer.letterSpacing,
+              outlineWidth: layer.outlineWidth,
+              outlineColor: layer.outlineColor,
+            } : {}),
+          })),
+        } : null);
+      };
+    };
+  })
+), projectName);
+
+const readCanvasPixels = (canvas: Locator) => canvas.evaluate((element) => {
+  const target = element as HTMLCanvasElement;
+  return target.toDataURL('image/png');
+});
+
+test('composes ordered image and text layers with persistence on desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  const canvas = page.getByLabel('Design canvas');
+
+  await uploadFixture(page, 1200, 800, 'phase-2a-base.png');
+  await uploadLayerFixture(page, 640, 960, 'phase-2a-overlay.png');
+  await expect(page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+
+  await page.getByLabel('Layer name: Text').fill('Phase 2A headline');
+  await page.getByLabel('Layer name: Text').press('Enter');
+  await page.getByLabel('Content', { exact: true }).fill('INK\nIN ORDER');
+  await page.getByLabel('Content', { exact: true }).blur();
+  await page.getByLabel('Font', { exact: true }).selectOption('Georgia');
+  await page.getByLabel('Size', { exact: true }).fill('88');
+  await page.getByLabel('Size', { exact: true }).press('Enter');
+  await page.getByLabel('Fill color', { exact: true }).fill('#111827');
+  await page.getByLabel('Fill color', { exact: true }).blur();
+  await page.getByRole('button', { name: 'Align center', exact: true }).click();
+  await page.getByLabel('Letter spacing', { exact: true }).fill('3');
+  await page.getByLabel('Letter spacing', { exact: true }).blur();
+  await page.getByLabel('Outline width', { exact: true }).fill('3');
+  await page.getByLabel('Outline width', { exact: true }).blur();
+  await page.getByLabel('Outline color', { exact: true }).fill('#f8fafc');
+  await page.getByLabel('Outline color', { exact: true }).blur();
+
+  await page.getByRole('button', { name: 'Move layer down' }).click();
+  const overlayRow = page.locator('li').filter({
+    has: page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' }),
+  });
+  await overlayRow.getByRole('button', { name: 'Select layer phase-2a-overlay.png' }).click();
+  await overlayRow.getByRole('button', { name: 'Hide layer' }).click();
+  await expect(overlayRow.getByRole('button', { name: 'Show layer' })).toBeVisible();
+  await page.getByRole('button', { name: 'Select layer Phase 2A headline' }).click();
+  await page.getByRole('button', { name: 'Duplicate layer' }).click();
+  const duplicateButton = page.getByRole('button', { name: 'Select layer Phase 2A headline copy' });
+  await expect(duplicateButton).toHaveAttribute('aria-pressed', 'true');
+  const duplicateLayerId = await duplicateButton.getAttribute('value');
+  expect(duplicateLayerId).toBeTruthy();
+  const sourceTextRow = page.locator('li').filter({
+    has: page.getByRole('button', { name: 'Select layer Phase 2A headline', exact: true }),
+  });
+  await sourceTextRow.getByRole('button', { name: 'Hide layer' }).click();
+  await expect(sourceTextRow.getByRole('button', { name: 'Show layer' })).toBeVisible();
+
+  const baseButton = page.getByRole('button', { name: 'Select layer phase-2a-base.png' });
+  const baseLayerId = await baseButton.getAttribute('value');
+  expect(baseLayerId).toBeTruthy();
+  await baseButton.click();
+  await expect(canvas).toHaveAttribute('data-selected-layer-id', baseLayerId!);
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) throw new Error('Canvas bounds are unavailable.');
+  const center = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 };
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.down();
+  await page.mouse.move(center.x + canvasBox.width * 0.1, center.y - canvasBox.height * 0.08);
+  await page.mouse.up();
+  await expect(canvas).toHaveAttribute('data-selected-layer-id', duplicateLayerId!);
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.5');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.5');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+
+  const expectedLayerNames = [
+    'phase-2a-base.png',
+    'Phase 2A headline',
+    'Phase 2A headline copy',
+    'phase-2a-overlay.png',
+  ];
+  await expect.poll(async () => (await readPersistedComposition(page, 'phase-2a-base'))?.layers.map(({ name }) => name))
+    .toEqual(expectedLayerNames);
+  const beforeReload = await readPersistedComposition(page, 'phase-2a-base');
+  expect(beforeReload).not.toBeNull();
+  expect(beforeReload?.layers[1].visible).toBe(false);
+  expect(beforeReload?.layers[3].visible).toBe(false);
+  expect(beforeReload?.layers[2]).toMatchObject({
+    id: duplicateLayerId,
+    type: 'text',
+    text: 'INK\nIN ORDER',
+    fontFamily: 'Georgia',
+    fontSize: 88,
+    color: '#111827',
+    align: 'center',
+    letterSpacing: 3,
+    outlineWidth: 3,
+    outlineColor: '#f8fafc',
+    transform: { x: 0.6, y: 0.42 },
+  });
+  await expectCanvasPainted(canvas);
+  const canvasBeforeReload = await readCanvasPixels(canvas);
+  await page.screenshot({
+    path: phase2aArtifactPath('desktop-layers-1440x900.png'),
+    animations: 'disabled',
+  });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects' }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: 'phase-2a-base' }).click();
+  await expect.poll(() => readPersistedComposition(page, 'phase-2a-base')).toEqual(beforeReload);
+  await expect(canvas).toHaveAttribute('data-selected-layer-id', duplicateLayerId!);
+  await expect(duplicateButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('INK\nIN ORDER');
+  await expect(page.getByLabel('Font', { exact: true })).toHaveValue('Georgia');
+  await expect(page.getByLabel('Size', { exact: true })).toHaveValue('88');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+  await expectCanvasPainted(canvas);
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
+});
+
+test('manages layers on mobile without covering the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 900, 1200, 'phase-2a-mobile.png');
+  const canvas = page.getByLabel('Design canvas');
+
+  await page.getByRole('button', { name: 'Layers' }).click();
+  let drawer = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole('button', { name: 'Add text', exact: true }).click();
+  await expect(drawer).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Layers' }).click();
+  drawer = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
+  const mobileLayerNames = drawer.locator('input[aria-label^="Layer name:"]');
+  const readMobileLayerNames = () => mobileLayerNames.evaluateAll((inputs) =>
+    inputs.map((input) => (input as HTMLInputElement).value));
+  await expect.poll(readMobileLayerNames).toEqual(['Text', 'phase-2a-mobile.png']);
+  await drawer.getByRole('button', { name: 'Move layer down' }).click();
+  await expect.poll(readMobileLayerNames).toEqual(['phase-2a-mobile.png', 'Text']);
+  await drawer.getByRole('button', { name: 'Move layer up' }).click();
+  await expect.poll(readMobileLayerNames).toEqual(['Text', 'phase-2a-mobile.png']);
+  await drawer.getByRole('button', { name: 'Close layers' }).click();
+  await expect(drawer).toHaveCount(0);
+
+  await page.getByLabel('Content', { exact: true }).fill('MOBILE LAYERS');
+  await page.getByLabel('Content', { exact: true }).blur();
+  await page.getByLabel('Font', { exact: true }).selectOption('Impact');
+  await page.getByLabel('Size', { exact: true }).fill('64');
+  await page.getByLabel('Size', { exact: true }).press('Enter');
+  await page.getByLabel('Fill color', { exact: true }).fill('#111827');
+  await page.getByLabel('Fill color', { exact: true }).blur();
+  await page.getByRole('button', { name: 'Align center', exact: true }).click();
+  await page.getByLabel('Outline width', { exact: true }).fill('2');
+  await page.getByLabel('Outline width', { exact: true }).blur();
+  await page.getByLabel('Outline color', { exact: true }).fill('#f8fafc');
+  await page.getByLabel('Outline color', { exact: true }).blur();
+  await expectCanvasPainted(canvas);
+
+  const layout = await page.evaluate(() => {
+    const bounds = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLElement)) throw new Error(`Missing ${selector}`);
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+    };
+    return {
+      viewportWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      canvas: bounds('canvas[aria-label="Design canvas"]'),
+      inspector: bounds('aside[aria-label="Inspector"]'),
+      toolbar: bounds('nav[aria-label="Editor tools"]'),
+      drawerCount: document.querySelectorAll('[role="dialog"][aria-labelledby="mobile-layers-title"]').length,
+    };
+  });
+  expect(layout.viewportWidth).toBe(390);
+  expect(layout.scrollWidth).toBe(390);
+  expect(layout.drawerCount).toBe(0);
+  expect(layout.canvas.height).toBeGreaterThanOrEqual(160);
+  expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.inspector.top + 1);
+  expect(layout.inspector.bottom).toBeLessThanOrEqual(layout.toolbar.top + 1);
+
+  await page.getByLabel('Content', { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: phase2aArtifactPath('mobile-layers-390x844.png'),
+    animations: 'disabled',
+  });
+});
 
 test('imports, edits, duplicates, autosaves, reloads, and reopens a local project', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -253,6 +524,9 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
     { width: 900, height: 1600, name: 'drag-portrait.png' },
   ]) {
     await uploadFixture(page, fixture.width, fixture.height, fixture.name);
+    await expect(page.getByLabel('Project name')).toHaveValue(path.parse(fixture.name).name);
+    await expect(page.getByRole('button', { name: `Select layer ${fixture.name}` }))
+      .toHaveAttribute('aria-pressed', 'true');
     const canvas = page.getByLabel('Design canvas');
     await expectCanvasPainted(canvas);
     const box = await canvas.boundingBox();
