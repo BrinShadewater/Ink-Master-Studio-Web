@@ -262,9 +262,12 @@ const normalizeTextLayer = (value: unknown): TextLayer | null => {
 const normalizeLayer = (value: unknown): DesignLayer | null =>
   normalizeImageLayer(value) ?? normalizeTextLayer(value);
 
+const normalizeLegacyLook = () => createDefaultLook('original');
+
 const normalizeVariation = (
   value: unknown,
   normalizeLayerValue: (layer: unknown) => DesignLayer | null = normalizeLayer,
+  normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
 ): DesignVariation | null => {
   if (!isRecord(value) || !nonEmptyString(value.id) || !Array.isArray(value.layers)) return null;
   const layers = value.layers.map(normalizeLayerValue).filter((layer): layer is DesignLayer => layer !== null);
@@ -276,7 +279,7 @@ const normalizeVariation = (
     name: nonEmptyString(value.name) ? value.name : 'Original',
     layers,
     selectedLayerId,
-    look: normalizeVariationLook(value.look),
+    look: normalizeLookValue(value.look),
   };
 };
 
@@ -305,11 +308,12 @@ const migrateProjectFields = (
   sourceAssetId: string,
   sourceMetadata: SourceMetadata,
   normalizeLayerValue: (layer: unknown) => DesignLayer | null = normalizeLayer,
+  normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
 ): EditorProject => {
   if (!nonEmptyString(value.id)) throw new Error('Project does not contain a valid id.');
   if (!Array.isArray(value.variations)) throw new Error('Project does not contain a valid variation.');
   const variations = value.variations
-    .map((variation) => normalizeVariation(variation, normalizeLayerValue))
+    .map((variation) => normalizeVariation(variation, normalizeLayerValue, normalizeLookValue))
     .filter((variation): variation is DesignVariation => variation !== null);
   if (variations.length === 0) throw new Error('Project does not contain a valid variation.');
   if (!finiteNumber(value.createdAt)) throw new Error('Project does not contain a valid createdAt.');
@@ -335,16 +339,28 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
   }
   if (value.schemaVersion === 1) {
     const variations = Array.isArray(value.variations)
-      ? value.variations.map((variation) => normalizeVariation(variation, normalizeImageLayer)) : [];
+      ? value.variations.map((variation) => normalizeVariation(variation, normalizeImageLayer, normalizeLegacyLook)) : [];
     const firstImageLayer = variations.find((variation): variation is DesignVariation => variation !== null)
       ?.layers.find(isImageLayer);
     const sourceAsset = firstImageLayer && findAsset(assets, firstImageLayer.assetId);
     if (!sourceAsset) throw new Error('Project source image not found.');
-    return migrateProjectFields(value, sourceAsset.id, sourceMetadataFromAsset(sourceAsset), normalizeImageLayer);
+    return migrateProjectFields(
+      value,
+      sourceAsset.id,
+      sourceMetadataFromAsset(sourceAsset),
+      normalizeImageLayer,
+      normalizeLegacyLook,
+    );
   }
 
   if (!nonEmptyString(value.sourceAssetId)) throw new Error('Project source image not found.');
   const sourceAsset = findAsset(assets, value.sourceAssetId);
   if (!sourceAsset) throw new Error('Project source image not found.');
-  return migrateProjectFields(value, sourceAsset.id, normalizeSourceMetadata(value.sourceMetadata, sourceAsset));
+  return migrateProjectFields(
+    value,
+    sourceAsset.id,
+    normalizeSourceMetadata(value.sourceMetadata, sourceAsset),
+    normalizeLayer,
+    value.schemaVersion === 2 ? normalizeLegacyLook : normalizeVariationLook,
+  );
 };

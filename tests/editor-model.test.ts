@@ -144,6 +144,52 @@ test('upgrades a version one project from its matching stored asset without chan
   });
 });
 
+test('migrates injected schema one Looks to Original', () => {
+  const asset = createEditorAsset('project_schema_one', new Blob(['source']), {
+    name: 'source.png', width: 10, height: 10,
+  });
+  const project = migrateEditorProject({
+    schemaVersion: 1,
+    id: 'project_schema_one',
+    name: 'Legacy',
+    createdAt: 100,
+    activeVariationId: 'variation_schema_one',
+    variations: [{
+      id: 'variation_schema_one',
+      name: 'Original',
+      selectedLayerId: 'layer_schema_one',
+      look: { id: 'high-contrast', strength: 100, contrast: 55, blackPoint: 12, saturation: 5 },
+      layers: [{ type: 'image', id: 'layer_schema_one', assetId: asset.id }],
+    }],
+  }, [asset]);
+
+  assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
+});
+
+test('migrates injected schema two Looks to Original', () => {
+  const asset = createEditorAsset('project_schema_two', new Blob(['source']), {
+    name: 'source.png', width: 10, height: 10,
+  });
+  const project = migrateEditorProject({
+    schemaVersion: 2,
+    id: 'project_schema_two',
+    name: 'Legacy',
+    createdAt: 100,
+    sourceAssetId: asset.id,
+    sourceMetadata: { name: asset.name, mimeType: asset.mimeType, width: asset.width, height: asset.height },
+    activeVariationId: 'variation_schema_two',
+    variations: [{
+      id: 'variation_schema_two',
+      name: 'Original',
+      selectedLayerId: 'layer_schema_two',
+      look: { id: 'duotone', strength: 100, shadowColor: '#111827', highlightColor: '#f59e0b', balance: 0 },
+      layers: [{ type: 'image', id: 'layer_schema_two', assetId: asset.id }],
+    }],
+  }, [asset]);
+
+  assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
+});
+
 test('normalizes saved schema three Look recipes', () => {
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,

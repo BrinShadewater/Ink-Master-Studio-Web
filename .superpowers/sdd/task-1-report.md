@@ -47,3 +47,39 @@ GREEN commands:
 ## Concerns
 
 None.
+
+## Fix Review: Legacy Look Migration
+
+Resolved the review finding that schema-1 and schema-2 records could preserve injected non-Original Look recipes. Legacy migrations now explicitly produce Original for every retained variation; only schema 3 normalizes `value.look`.
+
+### Changed Files
+
+- Modified `editor/model.ts`
+- Modified `tests/editor-model.test.ts`
+- Modified `tests/editor-repository.test.ts`
+- Modified `.superpowers/sdd/task-1-report.md`
+
+### TDD Evidence
+
+RED command: `npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts`
+
+RED result: exit 1 with 21 passing and 3 failing tests. The failures showed injected `high-contrast`, `duotone`, and stored `vintage-ink` recipes surviving schema-1/schema-2 migration instead of becoming Original.
+
+GREEN command: `npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts`
+
+GREEN result: exit 0 with 24 passing and 0 failing tests.
+
+Required verification command: `npx tsx --test tests/editor-look-model.test.ts tests/editor-model.test.ts tests/editor-repository.test.ts`
+
+Required verification result: exit 0 with 30 passing and 0 failing tests.
+
+`npm run typecheck`: exit 0.
+
+`git diff --check`: exit 0 with no whitespace errors; Git emitted only CRLF conversion warnings.
+
+### Self-Review
+
+- Schema 1 continues to use image-only layer normalization and derives its source asset from the retained image layer.
+- Schema 2 retains source metadata, source asset ID, layer IDs, text content, and selection while ignoring any injected Look field.
+- Schema 3 remains the sole path that calls `normalizeVariationLook` for persisted recipes.
+- The fake IndexedDB reopen/save/reopen regression verifies the stored schema-2 project persists as schema 3 with Original.

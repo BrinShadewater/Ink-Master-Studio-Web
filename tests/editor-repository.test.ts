@@ -385,7 +385,7 @@ test('hydrates stored version one projects with matching project assets', async 
   });
 });
 
-test('migrates stored schema two projects to schema three when saved', async () => {
+test('migrates stored schema two projects with injected Looks to schema three Original when saved', async () => {
   await withFakeIndexedDb(async (factory) => {
     await saveJob(createStudioJob('Initialize editor stores'));
     const asset = createEditorAsset('project_schema_two', new Blob(['source'], { type: 'image/png' }), {
@@ -404,6 +404,7 @@ test('migrates stored schema two projects to schema three when saved', async () 
         id: 'variation_schema_two',
         name: 'Original',
         selectedLayerId: 'text_schema_two',
+        look: { id: 'vintage-ink', strength: 100, warmth: 45, fade: 25, grain: 20, seed: 7 },
         layers: [
           { type: 'image', id: 'layer_schema_two', assetId: asset.id },
           {
