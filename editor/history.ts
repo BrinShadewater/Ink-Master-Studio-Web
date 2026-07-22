@@ -14,6 +14,14 @@ import {
   type TextLayer,
   type TextLayerStyle,
 } from './model';
+import {
+  createDefaultLook,
+  isSeededLook,
+  normalizeVariationLook,
+  replaceLookSeed,
+  serializeVariationLook,
+  type VariationLook,
+} from './lookModel';
 import { normalizeTextContent, normalizeTextStyle } from './textNormalization';
 
 export type EditorCommand =
@@ -36,12 +44,16 @@ export type EditorCommand =
   | { type: 'set-opacity'; layerId: string; opacity: number; historyGroup?: string }
   | { type: 'set-text-content'; layerId: string; text: string; historyGroup?: string }
   | { type: 'set-text-style'; layerId: string; style: TextLayerStyle; historyGroup?: string }
+  | { type: 'set-look'; look: VariationLook; historyGroup?: string }
+  | { type: 'reroll-look-seed'; seed: number }
+  | { type: 'reset-look' }
   | { type: 'end-history-group' }
   | { type: 'undo' }
   | { type: 'redo' };
 
 export interface VariationEditState {
   layers: DesignLayer[];
+  look: VariationLook;
 }
 
 export interface VariationHistory {
@@ -65,6 +77,7 @@ const cloneEditStates = (states: VariationEditState[]) => states.map(cloneEditSt
 
 const getEditState = (variation: DesignVariation): VariationEditState => ({
   layers: structuredClone(variation.layers),
+  look: structuredClone(variation.look),
 });
 
 const createVariationHistory = (): VariationHistory => ({
@@ -123,6 +136,9 @@ const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
   layer.letterSpacing === style.letterSpacing && layer.outlineWidth === style.outlineWidth &&
   layer.outlineColor === style.outlineColor;
 
+const sameLook = (left: VariationLook, right: VariationLook) =>
+  serializeVariationLook(left) === serializeVariationLook(right);
+
 const getActiveLayer = (project: EditorProject, layerId: string): DesignLayer | undefined => {
   const variation = project.variations.find(({ id }) => id === project.activeVariationId);
   return variation?.layers.find(({ id }) => id === layerId);
@@ -156,6 +172,7 @@ const replaceVariationEditState = (
   const variation = next.variations.find(({ id }) => id === variationId);
   if (!variation) return next;
   variation.layers = structuredClone(state.layers);
+  variation.look = structuredClone(state.look);
   variation.selectedLayerId = variation.layers.some(({ id }) => id === variation.selectedLayerId)
     ? variation.selectedLayerId : variation.layers[variation.layers.length - 1].id;
   return next;
@@ -459,6 +476,31 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const next = updateActiveLayer(history.present, command.layerId, (layer) =>
         isTextLayer(layer) ? { ...layer, ...style } : layer);
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+    }
+    case 'set-look': {
+      const look = normalizeVariationLook(command.look);
+      const current = getActiveVariation(history.present);
+      if (sameLook(current.look, look)) return history;
+      const next = cloneProject(history.present);
+      getActiveVariation(next).look = look;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup);
+    }
+    case 'reroll-look-seed': {
+      const current = getActiveVariation(history.present);
+      if (!isSeededLook(current.look)) return history;
+      const look = normalizeVariationLook(replaceLookSeed(current.look, command.seed));
+      if (sameLook(current.look, look)) return history;
+      const next = cloneProject(history.present);
+      getActiveVariation(next).look = look;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'reset-look': {
+      const current = getActiveVariation(history.present);
+      const look = createDefaultLook('original');
+      if (sameLook(current.look, look)) return history;
+      const next = cloneProject(history.present);
+      getActiveVariation(next).look = look;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
   }
 };

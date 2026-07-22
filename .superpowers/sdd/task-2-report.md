@@ -1,18 +1,16 @@
-# Phase 2A Task 2 Report
+# Phase 2B Task 2 Report: Variation-Scoped Look History
 
 ## Scope
 
-Implemented deterministic variation-scoped image and text layer commands, typed selected-layer accessors, and selection-safe per-variation undo/redo. The workspace source lookup now reads `project.sourceAssetId`; asset hydration remains out of scope for Task 3.
+Implemented variation-scoped, undoable Look recipes in the editor reducer. This task changes reducer/history behavior and focused tests only; it does not add processor, worker, or UI behavior.
 
 ## Changed Files
 
-- `editor/model.ts`: exported `TextLayerStyle` and approved text-style option lists.
-- `editor/history.ts`: added generalized selected-layer accessors, layer commands, text normalization, and layers-only variation history snapshots.
-- `editor/useEditorWorkspace.ts`: loads the persisted project source asset rather than inferring it from the selected layer.
-- `tests/editor-history.test.ts`: added focused coverage for ordered layer operations, undo/redo selection behavior, nullable accessors, and text normalization.
-- `.superpowers/sdd/task-2-report.md`: this delivery report.
+- `editor/history.ts`: snapshots and restores `look` with layers; adds normalized `set-look`, seeded `reroll-look-seed`, and `reset-look` commands.
+- `tests/editor-history.test.ts`: covers Look normalization, stable no-ops, groups, advanced parameters, reset, reroll, layer ordering, selection preservation, variation isolation, cloning, and outgoing group closure.
+- `.superpowers/sdd/progress.md`: marks Phase 2B Task 2 complete.
 
-## Red TDD Evidence
+## RED TDD Evidence
 
 Command:
 
@@ -20,71 +18,33 @@ Command:
 npx tsx --test tests/editor-history.test.ts
 ```
 
-Exit code: `1`
+Result: exit `1`; 20 passing and 8 failing tests.
 
-Output:
+The new Look tests failed before implementation because `reduceEditorHistory` had no Look command cases. `set-look` returned `undefined`, while `reset-look` and `reroll-look-seed` also lacked their required no-op behavior.
 
-```text
-SyntaxError: The requested module '../editor/history' does not provide an export named 'getSelectedLayer'
-tests 1
-pass 0
-fail 1
-```
+## GREEN Evidence
 
-The failure was expected: the generalized selected-layer API did not exist before implementation.
+After implementation, the focused history command passed with 28 passing and 0 failing tests.
 
-## Green Verification
-
-Command:
+Final required verification:
 
 ```powershell
-npx tsx --test tests/editor-model.test.ts tests/editor-history.test.ts
-```
-
-Exit code: `0`
-
-Output:
-
-```text
-tests 21
-pass 21
-fail 0
-cancelled 0
-skipped 0
-todo 0
-```
-
-Command:
-
-```powershell
+npx tsx --test tests/editor-history.test.ts tests/editor-model.test.ts
 npm run typecheck
+git diff --check
 ```
 
-Exit code: `0`
+Result: exit `0`; 37 passing and 0 failing tests, typecheck passed, and `git diff --check` found no whitespace errors. Git emitted only CRLF conversion warnings.
 
-Output:
-
-```text
-> inkmaster-studio@0.0.0 typecheck
-> tsc --noEmit
-```
-
-`git diff --check` also completed without whitespace errors before the implementation commit.
-
-## Commits
-
-- `01877dbe7b4665e8ca7d3059373edef604a26700` `feat: add ordered image and text layer commands`
+During the first final verification, TypeScript flagged four test-only discriminated-union accesses. The test fixtures were made explicitly duotone and the vintage-ink Look was narrowed before reading `seed`; the subsequent final verification above passed.
 
 ## Self-Review
 
-- Layer order remains bottom-to-top. Adds append, duplication inserts directly above the source, and moves swap adjacent positions with no-op edge guards.
-- Every mutation records the active variation's pre-edit layers only. Undo/redo preserves the currently selected layer when retained, otherwise selects the restored topmost layer.
-- `select-layer` updates `selectedLayerId` and `updatedAt` without adding a past state.
-- Generic operations work on the discriminated layer union; crop and adjustments retain image-only checks.
-- Text content retains line breaks and is capped at 500 characters. Text styles normalize to approved families/alignment, bounded numeric values, and canonical six-digit hex colors.
-- New commands and source lookup were typechecked without changing the progress ledger, UI, compositor, or Task 3 asset-hydration behavior.
+- `VariationEditState` stores structured clones of both `layers` and `look`; restoration updates only those fields, retaining current layer selection when that layer remains and leaving project/variation metadata and source metadata untouched.
+- `set-look` normalizes the complete recipe and compares stable serialized recipes before recording an optional history group.
+- `reset-look` records Original only when the active recipe differs. `reroll-look-seed` rejects non-seeded recipes, normalizes the unsigned seed through the Task 1 helper, and creates a discrete history entry only for a changed recipe.
+- Existing per-variation stacks, 100-state cap, redo invalidation, and outgoing-group closure remain centralized in `recordVariationEdit` and `closeVariationHistoryGroup`; focused Look coverage exercises the relevant boundaries.
 
 ## Concerns
 
-- No known functional concerns within Task 2 scope.
-- The renderer, layer-panel UI, and additional asset hydration remain intentionally deferred to later tasks.
+None. Pixel processing and UI integration remain intentionally deferred to later tasks.

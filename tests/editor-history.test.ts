@@ -5,15 +5,23 @@ import {
   canRedoActiveVariation,
   canUndoActiveVariation,
   createEditorHistory,
+  getActiveVariation,
   getSelectedLayer,
   getSelectedImageLayer,
   getSelectedTextLayer,
   reduceEditorHistory,
 } from '../editor/history';
+import { createDefaultLook } from '../editor/lookModel';
 
 const makeHistory = () => {
   const asset = createEditorAsset('project_history', new Blob(['x']), { name: 'x.png', width: 100, height: 100 });
   return createEditorHistory(createEditorProject('History', asset));
+};
+
+const getVintageInkSeed = (history: ReturnType<typeof makeHistory>) => {
+  const look = getActiveVariation(history.present).look;
+  if (look.id !== 'vintage-ink') throw new Error('Expected a vintage ink Look.');
+  return look.seed;
 };
 
 test('undoes and redoes a transform without mutating the original source state', () => {
@@ -467,4 +475,166 @@ test('deletes variations immutably with adjacent fallback and history cleanup', 
   assert.equal(history.present.activeVariationId, variationA);
   const finalHistory = reduceEditorHistory(history, { type: 'delete-variation', variationId: variationA });
   assert.equal(finalHistory, history);
+});
+
+test('applies normalized Look recipes as discrete edits and ignores stable no-op recipes', () => {
+  let history = makeHistory();
+  const initialLook = getActiveVariation(history.present).look;
+  history = reduceEditorHistory(history, {
+    type: 'set-look',
+    look: { ...createDefaultLook('duotone'), shadowColor: '#234' },
+  });
+
+  assert.deepEqual(getActiveVariation(history.present).look, {
+    id: 'duotone', strength: 100, shadowColor: '#223344', highlightColor: '#f59e0b', balance: 0,
+  });
+  assert.equal(history.variationHistory[history.present.activeVariationId].past.length, 1);
+
+  const unchanged = reduceEditorHistory(history, {
+    type: 'set-look',
+    look: { ...createDefaultLook('duotone'), shadowColor: '#223344' },
+  });
+  assert.equal(unchanged, history);
+
+  const undone = reduceEditorHistory(history, { type: 'undo' });
+  const redone = reduceEditorHistory(undone, { type: 'redo' });
+  assert.deepEqual(getActiveVariation(undone.present).look, initialLook);
+  assert.equal(getActiveVariation(redone.present).look.id, 'duotone');
+});
+
+test('groups continuous Look strength edits into one undo step', () => {
+  let history = makeHistory();
+  const variationId = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-look', look: createDefaultLook('duotone') });
+  for (const strength of [80, 60, 40]) {
+    history = reduceEditorHistory(history, {
+      type: 'set-look',
+      look: { ...createDefaultLook('duotone'), strength },
+      historyGroup: 'look-strength',
+    });
+  }
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+
+  assert.equal(history.variationHistory[variationId].past.length, 2);
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getActiveVariation(history.present).look.strength, 100);
+});
+
+test('normalizes advanced Look parameters and restores them through undo', () => {
+  let history = makeHistory();
+  history = reduceEditorHistory(history, {
+    type: 'set-look',
+    look: {
+      ...createDefaultLook('graphic-halftone'), strength: 63.6, cellSize: 99.2, angle: -10,
+      foregroundColor: '#A3c', background: 'solid', backgroundColor: '#f0c',
+    },
+  });
+
+  assert.deepEqual(getActiveVariation(history.present).look, {
+    id: 'graphic-halftone', strength: 64, cellSize: 32, angle: 0,
+    foregroundColor: '#aa33cc', background: 'solid', backgroundColor: '#ff00cc',
+  });
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.deepEqual(getActiveVariation(history.present).look, createDefaultLook('original'));
+});
+
+test('resets a Look to Original only when needed', () => {
+  let history = makeHistory();
+  assert.equal(reduceEditorHistory(history, { type: 'reset-look' }), history);
+
+  history = reduceEditorHistory(history, { type: 'set-look', look: createDefaultLook('monochrome') });
+  const reset = reduceEditorHistory(history, { type: 'reset-look' });
+  assert.deepEqual(getActiveVariation(reset.present).look, createDefaultLook('original'));
+  assert.equal(reset.variationHistory[reset.present.activeVariationId].past.length, 2);
+  assert.equal(reduceEditorHistory(reset, { type: 'reset-look' }), reset);
+
+  const undone = reduceEditorHistory(reset, { type: 'undo' });
+  assert.equal(getActiveVariation(undone.present).look.id, 'monochrome');
+});
+
+test('rerolls only seeded Looks as one discrete undoable edit', () => {
+  let history = makeHistory();
+  assert.equal(reduceEditorHistory(history, { type: 'reroll-look-seed', seed: 9 }), history);
+
+  history = reduceEditorHistory(history, {
+    type: 'set-look', look: createDefaultLook('vintage-ink', 4),
+  });
+  const rerolled = reduceEditorHistory(history, { type: 'reroll-look-seed', seed: -1 });
+  assert.equal(getActiveVariation(rerolled.present).look.id, 'vintage-ink');
+  assert.equal(getVintageInkSeed(rerolled), 4_294_967_295);
+  assert.equal(rerolled.variationHistory[rerolled.present.activeVariationId].past.length, 2);
+
+  const undone = reduceEditorHistory(rerolled, { type: 'undo' });
+  assert.equal(getVintageInkSeed(undone), 4);
+  const redone = reduceEditorHistory(undone, { type: 'redo' });
+  assert.equal(getVintageInkSeed(redone), 4_294_967_295);
+});
+
+test('orders layer and Look edits independently while preserving selection outside history', () => {
+  let history = makeHistory();
+  const imageLayer = getSelectedImageLayer(history.present);
+  if (!imageLayer) throw new Error('Expected a source image layer.');
+  const textLayer = { ...createTextLayer('Caption'), id: 'look_selection' };
+  history = reduceEditorHistory(history, { type: 'add-text-layer', layer: textLayer });
+  history = reduceEditorHistory(history, { type: 'select-layer', layerId: imageLayer.id });
+  history = reduceEditorHistory(history, { type: 'set-opacity', layerId: imageLayer.id, opacity: 0.4 });
+  history = reduceEditorHistory(history, { type: 'set-look', look: createDefaultLook('high-contrast') });
+  history = reduceEditorHistory(history, { type: 'select-layer', layerId: textLayer.id });
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getActiveVariation(history.present).look.id, 'original');
+  assert.equal(getActiveVariation(history.present).layers.find(({ id }) => id === imageLayer.id)?.opacity, 0.4);
+  assert.equal(getSelectedLayer(history.present).id, textLayer.id);
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getActiveVariation(history.present).layers.find(({ id }) => id === imageLayer.id)?.opacity, 1);
+  assert.equal(getSelectedLayer(history.present).id, textLayer.id);
+});
+
+test('keeps Look edits isolated by variation and clones a duplicate Look recipe', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  history = reduceEditorHistory(history, {
+    type: 'set-look', look: { ...createDefaultLook('duotone'), shadowColor: '#223344' },
+  });
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'Alternate' });
+  const variationB = history.present.activeVariationId;
+  const sourceLook = history.present.variations.find(({ id }) => id === variationA)?.look;
+  const copiedLook = getActiveVariation(history.present).look;
+  assert.deepEqual(copiedLook, sourceLook);
+  assert.notEqual(copiedLook, sourceLook);
+
+  history = reduceEditorHistory(history, { type: 'set-look', look: createDefaultLook('clean-photo') });
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  assert.equal(getActiveVariation(history.present).look.id, 'duotone');
+  assert.equal(canUndoActiveVariation(history), true);
+
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationB });
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(getActiveVariation(history.present).look.id, 'duotone');
+});
+
+test('switching variations closes an outgoing Look history group', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-look', look: createDefaultLook('duotone') });
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'B' });
+  const variationB = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-look',
+    look: { ...createDefaultLook('duotone'), strength: 80 },
+    historyGroup: 'look-strength',
+  });
+
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationB });
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-look',
+    look: { ...createDefaultLook('duotone'), strength: 60 },
+    historyGroup: 'look-strength',
+  });
+  history = reduceEditorHistory(history, { type: 'undo' });
+
+  assert.equal(getActiveVariation(history.present).look.strength, 80);
 });
