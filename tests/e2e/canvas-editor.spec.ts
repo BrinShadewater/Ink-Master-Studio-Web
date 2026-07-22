@@ -141,6 +141,27 @@ interface PersistedComposition {
   }>;
 }
 
+interface PersistedAssetSnapshot {
+  id: string;
+  projectId: string;
+  name: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  blobIsBlob: boolean;
+  blobType: string;
+  blobSize: number;
+  blobDigest: string;
+  decodedWidth: number;
+  decodedHeight: number;
+}
+
+interface PersistedWorkspaceSnapshot {
+  projectId: string;
+  composition: PersistedComposition;
+  assets: PersistedAssetSnapshot[];
+}
+
 const readPersistedComposition = async (page: Page, projectName: string) => page.evaluate((name) => (
   new Promise<PersistedComposition | null>((resolve, reject) => {
     const openRequest = indexedDB.open('inkmaster-studio');
@@ -188,6 +209,112 @@ const readPersistedComposition = async (page: Page, projectName: string) => page
     };
   })
 ), projectName);
+
+const readPersistedWorkspace = async (page: Page, projectName: string) => page.evaluate(async (name) => {
+  const records = await new Promise<{ projects: any[]; assets: any[] }>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const transaction = database.transaction(['editor-projects', 'editor-assets']);
+      const projectsRequest = transaction.objectStore('editor-projects').getAll();
+      const assetsRequest = transaction.objectStore('editor-assets').getAll();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not read editor workspace.'));
+      transaction.oncomplete = () => {
+        database.close();
+        resolve({ projects: projectsRequest.result, assets: assetsRequest.result });
+      };
+    };
+  });
+  const project = records.projects.find((candidate) => candidate.name === name);
+  const variation = project?.variations.find(
+    (candidate: { id: string }) => candidate.id === project.activeVariationId,
+  );
+  if (!project || !variation) return null;
+
+  const assets = await Promise.all(records.assets
+    .filter((asset) => asset.projectId === project.id)
+    .map(async (asset): Promise<PersistedAssetSnapshot> => {
+      const blobIsBlob = asset.blob instanceof Blob;
+      const digestBytes = blobIsBlob
+        ? new Uint8Array(await crypto.subtle.digest('SHA-256', await asset.blob.arrayBuffer()))
+        : new Uint8Array();
+      const bitmap = blobIsBlob ? await createImageBitmap(asset.blob) : null;
+      const snapshot = {
+        id: asset.id,
+        projectId: asset.projectId,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        width: asset.width,
+        height: asset.height,
+        blobIsBlob,
+        blobType: blobIsBlob ? asset.blob.type : '',
+        blobSize: blobIsBlob ? asset.blob.size : 0,
+        blobDigest: [...digestBytes].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
+        decodedWidth: bitmap?.width ?? 0,
+        decodedHeight: bitmap?.height ?? 0,
+      };
+      bitmap?.close();
+      return snapshot;
+    }));
+
+  return {
+    projectId: project.id,
+    composition: {
+      selectedLayerId: variation.selectedLayerId,
+      layers: variation.layers.map((layer: PersistedComposition['layers'][number]) => ({
+        id: layer.id,
+        type: layer.type,
+        name: layer.name,
+        visible: layer.visible,
+        opacity: layer.opacity,
+        transform: layer.transform,
+        ...(layer.type === 'image' ? {
+          assetId: layer.assetId,
+          crop: layer.crop,
+          adjustments: layer.adjustments,
+        } : {}),
+        ...(layer.type === 'text' ? {
+          text: layer.text,
+          fontFamily: layer.fontFamily,
+          fontSize: layer.fontSize,
+          color: layer.color,
+          align: layer.align,
+          letterSpacing: layer.letterSpacing,
+          outlineWidth: layer.outlineWidth,
+          outlineColor: layer.outlineColor,
+        } : {}),
+      })),
+    },
+    assets,
+  } satisfies PersistedWorkspaceSnapshot;
+}, projectName);
+
+const expectPersistedImageAssets = (
+  snapshot: PersistedWorkspaceSnapshot,
+  expected: Record<string, { width: number; height: number }>,
+) => {
+  const imageLayers = snapshot.composition.layers.filter((layer) => layer.type === 'image');
+  expect(imageLayers.map(({ name }) => name).sort()).toEqual(Object.keys(expected).sort());
+  expect(snapshot.assets).toHaveLength(imageLayers.length);
+  for (const layer of imageLayers) {
+    const asset = snapshot.assets.find(({ id }) => id === layer.assetId);
+    expect(asset, `persisted asset for ${layer.name}`).toBeDefined();
+    expect(asset).toMatchObject({
+      projectId: snapshot.projectId,
+      name: layer.name,
+      mimeType: 'image/png',
+      width: expected[layer.name].width,
+      height: expected[layer.name].height,
+      blobIsBlob: true,
+      blobType: 'image/png',
+      decodedWidth: expected[layer.name].width,
+      decodedHeight: expected[layer.name].height,
+    });
+    expect(asset!.blobSize).toBeGreaterThan(0);
+    expect(asset!.blobDigest).toMatch(/^[0-9a-f]{64}$/);
+  }
+};
 
 const readCanvasPixels = (canvas: Locator) => canvas.evaluate((element) => {
   const target = element as HTMLCanvasElement;
@@ -290,6 +417,14 @@ test('composes ordered image and text layers with persistence on desktop', async
   });
   await expectCanvasPainted(canvas);
   const canvasBeforeReload = await readCanvasPixels(canvas);
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const workspaceBeforeReload = await readPersistedWorkspace(page, 'phase-2a-base');
+  expect(workspaceBeforeReload).not.toBeNull();
+  expectPersistedImageAssets(workspaceBeforeReload!, {
+    'phase-2a-base.png': { width: 1200, height: 800 },
+    'phase-2a-overlay.png': { width: 640, height: 960 },
+  });
   await page.screenshot({
     path: phase2aArtifactPath('desktop-layers-1440x900.png'),
     animations: 'disabled',
@@ -308,6 +443,22 @@ test('composes ordered image and text layers with persistence on desktop', async
   await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
   await expectCanvasPainted(canvas);
   await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
+  const workspaceAfterReopen = await readPersistedWorkspace(page, 'phase-2a-base');
+  expect(workspaceAfterReopen).toEqual(workspaceBeforeReload);
+  expectPersistedImageAssets(workspaceAfterReopen!, {
+    'phase-2a-base.png': { width: 1200, height: 800 },
+    'phase-2a-overlay.png': { width: 640, height: 960 },
+  });
+
+  const reopenedOverlayRow = page.locator('li').filter({
+    has: page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' }),
+  });
+  await reopenedOverlayRow.getByRole('button', { name: 'Show layer' }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(canvasBeforeReload);
+  const canvasWithOverlay = await readCanvasPixels(canvas);
+  expect(canvasWithOverlay).not.toBe(canvasBeforeReload);
+  await reopenedOverlayRow.getByRole('button', { name: 'Hide layer' }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
 });
 
 test('manages layers on mobile without covering the canvas', async ({ page }) => {
@@ -315,6 +466,10 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
   await page.goto('/');
   await uploadFixture(page, 900, 1200, 'phase-2a-mobile.png');
   const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const canvasBeforeText = await readCanvasPixels(canvas);
 
   await page.getByRole('button', { name: 'Layers' }).click();
   let drawer = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
@@ -348,16 +503,64 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
   await page.getByLabel('Outline color', { exact: true }).fill('#f8fafc');
   await page.getByLabel('Outline color', { exact: true }).blur();
   await expectCanvasPainted(canvas);
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('MOBILE LAYERS');
+  await expect(page.getByLabel('Font', { exact: true })).toHaveValue('Impact');
+  await expect(page.getByLabel('Size', { exact: true })).toHaveValue('64');
+  await expect(page.getByLabel('Fill color', { exact: true })).toHaveValue('#111827');
+  await expect(page.getByLabel('Outline color', { exact: true })).toHaveValue('#f8fafc');
+  await expect(page.getByRole('button', { name: 'Align center', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Letter spacing', { exact: true })).toHaveValue('0');
+  await expect(page.getByLabel('Outline width', { exact: true })).toHaveValue('2');
+  await expect(page.getByLabel('Opacity', { exact: true })).toHaveValue('100');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.5');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.5');
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(canvasBeforeText);
+  const canvasWithText = await readCanvasPixels(canvas);
+  expect(canvasWithText).not.toBe(canvasBeforeText);
+
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const mobileWorkspace = await readPersistedWorkspace(page, 'phase-2a-mobile');
+  expect(mobileWorkspace).not.toBeNull();
+  expect(mobileWorkspace?.composition.layers.map(({ type, name }) => ({ type, name }))).toEqual([
+    { type: 'image', name: 'phase-2a-mobile.png' },
+    { type: 'text', name: 'Text' },
+  ]);
+  const persistedMobileText = mobileWorkspace?.composition.layers[1];
+  expect(persistedMobileText).toMatchObject({
+    type: 'text',
+    name: 'Text',
+    visible: true,
+    opacity: 1,
+    text: 'MOBILE LAYERS',
+    fontFamily: 'Impact',
+    fontSize: 64,
+    color: '#111827',
+    align: 'center',
+    letterSpacing: 0,
+    outlineWidth: 2,
+    outlineColor: '#f8fafc',
+    transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+  });
+  expect(mobileWorkspace?.composition.selectedLayerId).toBe(persistedMobileText?.id);
 
   const layout = await page.evaluate(() => {
     const bounds = (selector: string) => {
       const element = document.querySelector(selector);
       if (!(element instanceof HTMLElement)) throw new Error(`Missing ${selector}`);
       const rect = element.getBoundingClientRect();
-      return { top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
     };
     return {
       viewportWidth: document.documentElement.clientWidth,
+      viewportHeight: document.documentElement.clientHeight,
       scrollWidth: document.documentElement.scrollWidth,
       canvas: bounds('canvas[aria-label="Design canvas"]'),
       inspector: bounds('aside[aria-label="Inspector"]'),
@@ -366,11 +569,23 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
     };
   });
   expect(layout.viewportWidth).toBe(390);
+  expect(layout.viewportHeight).toBe(844);
   expect(layout.scrollWidth).toBe(390);
   expect(layout.drawerCount).toBe(0);
+  for (const region of [layout.canvas, layout.inspector, layout.toolbar]) {
+    expect(region.width).toBeGreaterThan(0);
+    expect(region.height).toBeGreaterThan(0);
+    expect(region.left).toBeGreaterThanOrEqual(0);
+    expect(region.top).toBeGreaterThanOrEqual(0);
+    expect(region.right).toBeLessThanOrEqual(390);
+    expect(region.bottom).toBeLessThanOrEqual(844);
+    expect(region.right).toBeGreaterThan(region.left);
+    expect(region.bottom).toBeGreaterThan(region.top);
+  }
   expect(layout.canvas.height).toBeGreaterThanOrEqual(160);
   expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.inspector.top + 1);
   expect(layout.inspector.bottom).toBeLessThanOrEqual(layout.toolbar.top + 1);
+  expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.toolbar.top + 1);
 
   await page.getByLabel('Content', { exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({
