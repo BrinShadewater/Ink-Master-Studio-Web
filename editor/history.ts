@@ -4,8 +4,6 @@ import {
   isImageLayer,
   isTextLayer,
   normalizeTransform,
-  TEXT_ALIGNMENTS,
-  TEXT_FONT_FAMILIES,
   type CropRect,
   type DesignLayer,
   type DesignVariation,
@@ -16,6 +14,7 @@ import {
   type TextLayer,
   type TextLayerStyle,
 } from './model';
+import { normalizeTextContent, normalizeTextStyle } from './textNormalization';
 
 export type EditorCommand =
   | { type: 'rename-project'; name: string }
@@ -74,6 +73,18 @@ const createVariationHistory = (): VariationHistory => ({
   activeHistoryGroup: null,
 });
 
+const closeVariationHistoryGroup = (
+  variationHistory: EditorHistory['variationHistory'],
+  variationId: string,
+): EditorHistory['variationHistory'] => {
+  const current = variationHistory[variationId];
+  if (!current?.activeHistoryGroup) return variationHistory;
+  return {
+    ...variationHistory,
+    [variationId]: { ...current, activeHistoryGroup: null },
+  };
+};
+
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, Number.isFinite(value) ? value : minimum));
 
@@ -105,25 +116,6 @@ const sameCrop = (left: CropRect, right: CropRect) =>
 
 const sameAdjustments = (left: ImageAdjustments, right: ImageAdjustments) =>
   left.brightness === right.brightness && left.contrast === right.contrast && left.saturation === right.saturation;
-
-const normalizeHexColor = (color: string, fallback: string): string => {
-  const value = typeof color === 'string' ? color.trim() : '';
-  const full = /^#?([0-9a-f]{6})$/i.exec(value);
-  if (full) return `#${full[1].toLowerCase()}`;
-  const short = /^#?([0-9a-f]{3})$/i.exec(value);
-  return short ? `#${short[1].split('').map((character) => character.repeat(2)).join('').toLowerCase()}` : fallback;
-};
-
-const normalizeTextStyle = (style: TextLayerStyle): TextLayerStyle => ({
-  fontFamily: TEXT_FONT_FAMILIES.includes(style.fontFamily as TextLayer['fontFamily'])
-    ? style.fontFamily : 'Arial',
-  fontSize: clamp(style.fontSize, 8, 400),
-  color: normalizeHexColor(style.color, '#000000'),
-  align: TEXT_ALIGNMENTS.includes(style.align as TextLayer['align']) ? style.align : 'left',
-  letterSpacing: clamp(style.letterSpacing, -2, 40),
-  outlineWidth: clamp(style.outlineWidth, 0, 20),
-  outlineColor: normalizeHexColor(style.outlineColor, '#000000'),
-});
 
 const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
   layer.fontFamily === style.fontFamily && layer.fontSize === style.fontSize &&
@@ -306,11 +298,16 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
     case 'select-variation': {
       if (!history.present.variations.some(({ id }) => id === command.variationId) ||
         history.present.activeVariationId === command.variationId) return history;
+      const outgoingVariationId = history.present.activeVariationId;
       const next = cloneProject(history.present);
       next.activeVariationId = command.variationId;
-      return { ...history, present: withUpdatedAt(next, history.present) };
+      return {
+        present: withUpdatedAt(next, history.present),
+        variationHistory: closeVariationHistoryGroup(history.variationHistory, outgoingVariationId),
+      };
     }
     case 'duplicate-variation': {
+      const outgoingVariationId = history.present.activeVariationId;
       const next = cloneProject(history.present);
       const duplicate = duplicateVariation(getActiveVariation(history.present), command.name);
       next.variations = [...next.variations, duplicate];
@@ -318,7 +315,7 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       return {
         present: withUpdatedAt(next, history.present),
         variationHistory: {
-          ...history.variationHistory,
+          ...closeVariationHistoryGroup(history.variationHistory, outgoingVariationId),
           [duplicate.id]: createVariationHistory(),
         },
       };
@@ -448,7 +445,7 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-text-content': {
-      const text = command.text.slice(0, 500);
+      const text = normalizeTextContent(command.text);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || !isTextLayer(current) || current.text === text) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) =>

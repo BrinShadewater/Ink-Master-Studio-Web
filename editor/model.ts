@@ -1,3 +1,12 @@
+import {
+  normalizeTextContent,
+  normalizeTextStyle,
+  TEXT_ALIGNMENTS,
+  TEXT_FONT_FAMILIES,
+} from './textNormalization';
+
+export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
+
 export const EDITOR_PROJECT_SCHEMA_VERSION = 2 as const;
 
 export type EditorTool = 'select' | 'crop' | 'adjust';
@@ -127,7 +136,7 @@ export const createTextLayer = (text = 'Text'): TextLayer => ({
   visible: true,
   opacity: 1,
   transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
-  text: text.trim() || 'Text',
+  text: normalizeTextContent(text),
   fontFamily: 'Arial',
   fontSize: 48,
   color: '#000000',
@@ -223,11 +232,9 @@ const normalizeImageLayer = (value: unknown): ImageLayer | null => {
   };
 };
 
-export const TEXT_FONT_FAMILIES = ['Arial', 'Georgia', 'Impact', 'Trebuchet MS'] as const;
-export const TEXT_ALIGNMENTS = ['left', 'center', 'right'] as const;
-
 const normalizeTextLayer = (value: unknown): TextLayer | null => {
   if (!isRecord(value) || value.type !== 'text' || !nonEmptyString(value.id)) return null;
+  const style = normalizeTextStyle(value, { fontSize: 48, letterSpacing: 0, outlineWidth: 0 });
   return {
     id: value.id,
     type: 'text',
@@ -235,16 +242,8 @@ const normalizeTextLayer = (value: unknown): TextLayer | null => {
     visible: value.visible === undefined ? true : Boolean(value.visible),
     opacity: clamp(finiteNumber(value.opacity) ? value.opacity : 1, 0, 1),
     transform: normalizeTransformRecord(value.transform),
-    text: nonEmptyString(value.text) ? value.text : 'Text',
-    fontFamily: TEXT_FONT_FAMILIES.includes(value.fontFamily as TextLayer['fontFamily'])
-      ? value.fontFamily as TextLayer['fontFamily'] : 'Arial',
-    fontSize: clamp(finiteNumber(value.fontSize) ? value.fontSize : 48, 8, 400),
-    color: nonEmptyString(value.color) ? value.color : '#000000',
-    align: TEXT_ALIGNMENTS.includes(value.align as TextLayer['align'])
-      ? value.align as TextLayer['align'] : 'left',
-    letterSpacing: clamp(finiteNumber(value.letterSpacing) ? value.letterSpacing : 0, -20, 100),
-    outlineWidth: clamp(finiteNumber(value.outlineWidth) ? value.outlineWidth : 0, 0, 50),
-    outlineColor: nonEmptyString(value.outlineColor) ? value.outlineColor : '#000000',
+    text: normalizeTextContent(value.text),
+    ...style,
   };
 };
 

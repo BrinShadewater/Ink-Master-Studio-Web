@@ -43,7 +43,7 @@ test('rejects malformed project records instead of inventing source references',
   );
 });
 
-test('normalizes text layer values while retaining a usable text layer', () => {
+test('normalizes text layer values to the command and inspector contract', () => {
   const project = migrateEditorProject({
     schemaVersion: 2,
     id: 'project_a',
@@ -60,7 +60,7 @@ test('normalizes text layer values while retaining a usable text layer', () => {
         {
           type: 'text', id: 'text_a', name: '', visible: 0, opacity: 2,
           transform: { x: 9, scale: 0 }, text: 42, fontFamily: 'Comic Sans MS', fontSize: -12,
-          color: '', align: 'justify', letterSpacing: -100, outlineWidth: -4, outlineColor: '',
+          color: 'red', align: 'justify', letterSpacing: 100, outlineWidth: 99, outlineColor: '#12',
         },
       ],
     }],
@@ -82,8 +82,8 @@ test('normalizes text layer values while retaining a usable text layer', () => {
   assert.equal(textLayer.fontSize, 8);
   assert.equal(textLayer.color, '#000000');
   assert.equal(textLayer.align, 'left');
-  assert.equal(textLayer.letterSpacing, -20);
-  assert.equal(textLayer.outlineWidth, 0);
+  assert.equal(textLayer.letterSpacing, 40);
+  assert.equal(textLayer.outlineWidth, 20);
   assert.equal(textLayer.outlineColor, '#000000');
 });
 

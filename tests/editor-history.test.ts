@@ -391,6 +391,45 @@ test('variation selection never enters undo history or lets undo switch variatio
   assert.equal(history.present.activeVariationId, variationB);
 });
 
+test('switching variations closes the outgoing history group', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  const layerA = getSelectedImageLayer(history.present).id;
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'B' });
+  const variationB = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-opacity', layerId: layerA, opacity: 0.8, historyGroup: 'inspector-opacity',
+  });
+
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationB });
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-opacity', layerId: layerA, opacity: 0.6, historyGroup: 'inspector-opacity',
+  });
+  history = reduceEditorHistory(history, { type: 'undo' });
+
+  assert.equal(getSelectedImageLayer(history.present).opacity, 0.8);
+});
+
+test('duplicating a variation closes the source history group', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  const layerA = getSelectedImageLayer(history.present).id;
+  history = reduceEditorHistory(history, {
+    type: 'set-opacity', layerId: layerA, opacity: 0.8, historyGroup: 'inspector-opacity',
+  });
+
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'B' });
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-opacity', layerId: layerA, opacity: 0.6, historyGroup: 'inspector-opacity',
+  });
+  history = reduceEditorHistory(history, { type: 'undo' });
+
+  assert.equal(getSelectedImageLayer(history.present).opacity, 0.8);
+});
+
 test('variation undo preserves project and variation metadata changed after the edit', () => {
   let history = makeHistory();
   const variationId = history.present.activeVariationId;

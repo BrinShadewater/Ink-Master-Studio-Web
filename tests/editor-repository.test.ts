@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { indexedDB as fakeIndexedDb } from 'fake-indexeddb';
-import { createEditorAsset, createEditorProject } from '../editor/model';
+import { createEditorAsset, createEditorProject, createTextLayer } from '../editor/model';
 import {
   deleteEditorAsset, deleteEditorProject, getEditorAsset, getEditorProject,
   listEditorProjects, saveEditorAsset, saveEditorProject,
@@ -88,6 +88,36 @@ test('round-trips project JSON and source blob as separate records', async () =>
   await deleteEditorProject(project.id);
   assert.equal(await getEditorProject(project.id), null);
   assert.equal(await getEditorAsset(asset.id), null);
+});
+
+test('preserves exact text content through save normalization and reopen', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
+    name: 'source.png', width: 1200, height: 800,
+  });
+  const project = createEditorProject('Text content', asset);
+  const contents = ['', '   ', 'first line\nsecond line', `long line\n${'x'.repeat(600)}`];
+  const expected = contents.map((content) => content.slice(0, 500));
+  const textLayers = contents.map((content, index) => ({
+    ...createTextLayer('placeholder'),
+    id: `text_${index}`,
+    text: content,
+  }));
+  project.variations[0].layers.push(...textLayers);
+
+  await saveEditorAsset(asset);
+  const saved = await saveEditorProject(project);
+  const reopened = await getEditorProject(projectId);
+  const savedText = saved.variations[0].layers
+    .filter((layer) => layer.type === 'text')
+    .map((layer) => layer.text);
+  const reopenedText = reopened?.variations[0].layers
+    .filter((layer) => layer.type === 'text')
+    .map((layer) => layer.text);
+
+  assert.deepEqual(savedText, expected);
+  assert.deepEqual(reopenedText, expected);
+  await deleteEditorProject(projectId);
 });
 
 test('normalizes malformed schema two projects with their stored source asset before saving', async () => {
