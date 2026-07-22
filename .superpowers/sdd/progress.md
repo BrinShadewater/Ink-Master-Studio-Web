@@ -35,7 +35,7 @@ Phase 2B Looks and Compare Board (plan commit 0499f81)
 Execution location: current checkout on main (continuing the owner-approved canvas-reset workflow).
 Execution base: 0499f81.
 Task 1: complete (commits f5f448d..04e778c, spec compliant and quality approved after forcing Original for injected legacy Look fields; 30 focused tests, typecheck, and diff check reported passing). Rendering, history, and deterministic texture checks remain assigned to Tasks 2 through 5.
-Task 2: complete (variation-scoped Look undo history; 37 focused tests, typecheck, and diff check passed; RED/GREEN evidence in `.superpowers/sdd/task-2-report.md`).
+Task 2: complete (commits ee5a806..eb048b7, spec compliant and quality approved; 37 focused tests, typecheck, and diff check reported passing).
 Task 3: pending.
 Task 4: pending.
 Task 5: pending.
