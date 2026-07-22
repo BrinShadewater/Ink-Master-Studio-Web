@@ -106,7 +106,7 @@ Exit code: `0`; Git emitted only the repository's LF-to-CRLF working-copy warnin
 - Phase-one bounds remain X/Y `-2..3` at `0.01`, scale `5..400` percent, rotation `-180..180`, opacity `0..100`, crop edges `0..45`, and adjustments `-100..100`.
 - Image reset values and group names remain unchanged. Transform plus opacity still use `inspector-select-reset` and end as one undo group; crop and adjustment resets retain their existing groups and defaults.
 - Shared range controls still end on pointer up, key up, and blur. Existing X/Y numeric keyboard and blur behavior and ungrouped flip behavior remain unchanged.
-- Text content is a controlled multiline textarea with `maxLength=500`; reducer slicing remains authoritative. Every content change uses `inspector-text-content`, and only blur ends that group.
+- Text content is a controlled multiline textarea with `maxLength=500`; reducer slicing remains authoritative. Every content change uses `inspector-text-content`, and blur, inspector unmount, or a selected text-layer change ends that group.
 - Text style commands always send the complete authoritative `TextLayerStyle`. Font size is `8..400`, letter spacing `-2..40`, and outline width `0..20`; reducer normalization remains the final guard.
 - Text numeric/range/color controls use stable history groups and explicit pointer/key/blur endings where applicable. Font and alignment are discrete edits.
 - Fill and outline are native color swatches. Alignment uses Lucide `AlignLeft`, `AlignCenter`, and `AlignRight` icons with pressed state, accessible names, and titles.
