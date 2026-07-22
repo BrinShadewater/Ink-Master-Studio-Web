@@ -94,6 +94,7 @@ const createLayerPanelVariation = (): DesignVariation => {
     name: 'Original',
     layers: [bottom, top],
     selectedLayerId: top.id,
+    look: { id: 'original', strength: 100 },
   };
 };
 

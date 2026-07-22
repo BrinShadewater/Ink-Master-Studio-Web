@@ -42,6 +42,20 @@ const seedRawEditorProject = async (factory: IDBFactory, project: object, asset?
   }
 };
 
+const readRawEditorProject = async (factory: IDBFactory, id: string): Promise<unknown> => {
+  const database = await openDatabase(factory);
+  try {
+    const transaction = database.transaction('editor-projects', 'readonly');
+    const request = transaction.objectStore('editor-projects').get(id);
+    let result: unknown;
+    request.onsuccess = () => { result = request.result; };
+    await completeTransaction(transaction);
+    return result;
+  } finally {
+    database.close();
+  }
+};
+
 const createLegacyDatabase = (factory: IDBFactory, job: ReturnType<typeof createStudioJob>) => new Promise<void>((resolve, reject) => {
   const request = factory.open(DATABASE_NAME, 1);
   request.onupgradeneeded = () => {
@@ -120,7 +134,7 @@ test('preserves exact text content through save normalization and reopen', async
   await deleteEditorProject(projectId);
 });
 
-test('normalizes malformed schema two projects with their stored source asset before saving', async () => {
+test('normalizes malformed schema three projects with their stored source asset before saving', async () => {
   const projectId = `project_${crypto.randomUUID()}`;
   const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
     name: 'source.png', width: 1200, height: 800,
@@ -155,7 +169,7 @@ test('normalizes malformed schema two projects with their stored source asset be
   assert.deepEqual(await getEditorProject(projectId), saved);
 });
 
-test('rejects schema two saves whose source asset is not stored for the project', async () => {
+test('rejects schema three saves whose source asset is not stored for the project', async () => {
   const projectId = `project_${crypto.randomUUID()}`;
   const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
     name: 'source.png', width: 1200, height: 800,
@@ -164,6 +178,19 @@ test('rejects schema two saves whose source asset is not stored for the project'
 
   await assert.rejects(saveEditorProject(project), /Project source image not found/);
   assert.equal(await getEditorProject(projectId), null);
+});
+
+test('rejects saves declared with a non-current schema before repository normalization', async () => {
+  const projectId = `project_${crypto.randomUUID()}`;
+  const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
+    name: 'source.png', width: 1200, height: 800,
+  });
+  const project = createEditorProject('Unsupported schema', asset);
+
+  await assert.rejects(
+    saveEditorProject({ ...project, schemaVersion: 2 } as unknown as typeof project),
+    /Unsupported editor project schema/,
+  );
 });
 
 test('rejects duplicate source asset ids without replacing memory records', async () => {
@@ -340,7 +367,8 @@ test('hydrates stored version one projects with matching project assets', async 
     await seedRawEditorProject(factory, legacyProject, asset);
 
     const project = await getEditorProject('project_legacy');
-    assert.equal(project?.schemaVersion, 2);
+    assert.equal(project?.schemaVersion, 3);
+    assert.deepEqual(project?.variations[0].look, { id: 'original', strength: 100 });
     assert.equal(project?.sourceAssetId, asset.id);
     assert.deepEqual(project?.sourceMetadata, {
       name: 'legacy-source.webp', mimeType: 'image/webp', width: 1440, height: 960,
@@ -354,6 +382,62 @@ test('hydrates stored version one projects with matching project assets', async 
     const assets = await repository.getEditorAssetsForProject('project_legacy');
     assert.equal(assets.length, 1);
     assert.equal(assets[0].id, asset.id);
+  });
+});
+
+test('migrates stored schema two projects to schema three when saved', async () => {
+  await withFakeIndexedDb(async (factory) => {
+    await saveJob(createStudioJob('Initialize editor stores'));
+    const asset = createEditorAsset('project_schema_two', new Blob(['source'], { type: 'image/png' }), {
+      name: 'source.png', width: 1200, height: 800,
+    });
+    const rawSchemaTwo = {
+      schemaVersion: 2,
+      id: 'project_schema_two',
+      name: 'Schema two',
+      createdAt: 100,
+      updatedAt: 200,
+      sourceAssetId: asset.id,
+      sourceMetadata: { name: asset.name, mimeType: asset.mimeType, width: asset.width, height: asset.height },
+      activeVariationId: 'variation_schema_two',
+      variations: [{
+        id: 'variation_schema_two',
+        name: 'Original',
+        selectedLayerId: 'text_schema_two',
+        layers: [
+          { type: 'image', id: 'layer_schema_two', assetId: asset.id },
+          {
+            type: 'text', id: 'text_schema_two', name: 'Caption', visible: true, opacity: 1,
+            transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+            text: 'first line\nsecond line', fontFamily: 'Arial', fontSize: 48, color: '#000000',
+            align: 'left', letterSpacing: 0, outlineWidth: 0, outlineColor: '#000000',
+          },
+        ],
+      }],
+      productVariants: [],
+    };
+    await seedRawEditorProject(factory, rawSchemaTwo, asset);
+
+    const hydrated = await getEditorProject(rawSchemaTwo.id);
+    assert.equal(hydrated?.schemaVersion, 3);
+    assert.deepEqual(hydrated?.variations[0].look, { id: 'original', strength: 100 });
+    await saveEditorProject(hydrated!);
+
+    const stored = await readRawEditorProject(factory, rawSchemaTwo.id) as typeof rawSchemaTwo & {
+      look?: unknown;
+      variations: Array<typeof rawSchemaTwo.variations[number] & { look: unknown }>;
+    };
+    assert.equal(stored.schemaVersion, 3);
+    assert.deepEqual(stored.variations[0].look, { id: 'original', strength: 100 });
+
+    const reopened = await getEditorProject(rawSchemaTwo.id);
+    assert.deepEqual(reopened?.sourceMetadata, rawSchemaTwo.sourceMetadata);
+    assert.equal(reopened?.sourceAssetId, rawSchemaTwo.sourceAssetId);
+    assert.deepEqual(reopened?.variations[0].layers.map((layer) => layer.id), ['layer_schema_two', 'text_schema_two']);
+    assert.equal(reopened?.variations[0].selectedLayerId, 'text_schema_two');
+    const textLayer = reopened?.variations[0].layers.find((layer) => layer.id === 'text_schema_two');
+    assert.equal(textLayer?.type, 'text');
+    if (textLayer?.type === 'text') assert.equal(textLayer.text, 'first line\nsecond line');
   });
 });
 

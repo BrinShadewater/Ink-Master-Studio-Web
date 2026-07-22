@@ -1,167 +1,49 @@
-# Task 1 Implementation Report
+# Task 1 Report: Schema 3 And Normalized Look Model
 
-## Scope
+## Implementation
 
-Implemented Phase 2A Task 1: schema-version-2 editor projects, text-layer model foundations, pure legacy migration, project-scoped asset lookup, and repository hydration.
+- Added the dependency-free `editor/lookModel.ts` discriminated `VariationLook` union, defaults, normalization, stable serialization, seeded-Look helpers, and seed generation fallback.
+- Upgraded `EditorProject` to schema 3 and added `DesignVariation.look`, initialized as Original for new projects and normalized during all project migrations.
+- Preserved schema-1 asset-assisted migration, schema-2 source identity, exact text persistence, layer IDs, selected-layer IDs, and repository save normalization.
 
-## Changed Files
+## Files
 
-- `editor/model.ts`
-  - Set `EDITOR_PROJECT_SCHEMA_VERSION` to `2`.
-  - Added `SourceMetadata`, `TextLayer`, `DesignLayer`, `isImageLayer`, `isTextLayer`, and `createTextLayer`.
-  - Added immutable source asset fields to new projects.
-  - Changed `migrateEditorProject` to accept assets, migrate schema 1 records, normalize schema 2 image/text layers, preserve image IDs and asset IDs, and reject missing source assets with `Project source image not found.`.
-- `editor/projectRepository.ts`
-  - Added `getEditorAssetsForProject(projectId)` using the IndexedDB `projectId` index or cloned memory records.
-  - Hydrates assets before migrating projects in `getEditorProject` and `listEditorProjects`.
-  - Restricts project saves to schema 2 and does not write asset blobs.
-- `tests/editor-model.test.ts`
-  - Added schema 2 source metadata, text normalization, and asset-assisted schema 1 migration coverage.
-- `tests/editor-repository.test.ts`
-  - Added direct IndexedDB legacy-record hydration and missing-source rejection coverage.
+- Added `editor/lookModel.ts`
+- Added `tests/editor-look-model.test.ts`
+- Modified `editor/model.ts`
+- Modified `tests/editor-model.test.ts`
+- Modified `tests/editor-repository.test.ts`
+- Modified `tests/editor-shell.test.ts`
+- Modified `.superpowers/sdd/progress.md`
 
 ## TDD Evidence
 
-### Red: model
+RED command: `npx tsx --test tests/editor-look-model.test.ts`
 
-Command:
+RED result: exit 1 with `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../editor/lookModel'`; 0 passing and 1 failing file.
 
-```powershell
-npx tsx --test tests/editor-model.test.ts
-```
+Schema RED command: `npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts`
 
-Observed output before implementation:
+Schema RED result: exit 1 with 14 passing and 8 failing tests. Failures showed schema version `2 !== 3`, missing variation Look state, rejected schema 3, and save-time schema validation still accepting version 2.
 
-```text
-tests 6
-pass 3
-fail 3
-1 !== 2
-Error: Unsupported editor project schema.
-1 !== 2
-```
+GREEN commands:
 
-The failures showed that new projects were still schema 1, schema 2 migration was unsupported, and legacy records were not upgraded.
+- `npx tsx --test tests/editor-look-model.test.ts`: 6 passing, 0 failing.
+- `npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts`: 22 passing, 0 failing.
+- `npx tsx --test tests/editor-look-model.test.ts tests/editor-model.test.ts tests/editor-repository.test.ts`: 28 passing, 0 failing.
 
-### Red: repository
+## Verification
 
-Command:
-
-```powershell
-npx tsx --test tests/editor-repository.test.ts
-```
-
-Observed output before repository hydration implementation:
-
-```text
-tests 8
-pass 3
-fail 5
-TypeError: Cannot read properties of undefined (reading 'find')
-```
-
-The failures showed repository reads were not supplying stored project assets to migration and no project-scoped asset lookup existed.
-
-### Green: focused suite
-
-Command:
-
-```powershell
-npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts
-```
-
-Observed output:
-
-```text
-tests 14
-pass 14
-fail 0
-```
-
-## Commits
-
-- Implementation: `2ecfb4137a1ea9924dfbb52dd99c2ff73c0c04be` - `feat: migrate editor projects to layered schema`
+- `npm run typecheck`: passed, exit 0.
+- `git diff --check`: passed, exit 0 with no whitespace errors. Git emitted only existing CRLF conversion warnings.
 
 ## Self-Review
 
-- Confirmed v1 migration derives source metadata from the stored matching asset and preserves migrated image layer and asset identifiers.
-- Confirmed schema 2 records require a matching source asset and normalize retained variations, selected-layer fallback, and text/image values.
-- Confirmed IndexedDB lookup uses the existing `projectId` index and memory lookup returns cloned records.
-- Confirmed project save only stores cloned project JSON and does not write asset blobs.
-- Ran `git diff --check`; no whitespace errors were reported.
+- `editor/lookModel.ts` does not import `editor/model.ts`, so no model cycle is introduced.
+- Numeric values round before clamping; invalid numeric values use documented defaults; colors normalize to lowercase six-digit hex; seeded values use unsigned 32-bit normalization.
+- Schema 1, 2, and 3 migration routes retain required source and layer identity while adding or normalizing Look recipes.
+- Focused tests cover every Look ID, documented numeric boundaries, malformed schema-3 Look normalization, duplication isolation, and an IndexedDB schema-2 reopen/save/reopen migration.
 
 ## Concerns
 
-- `npm run typecheck` currently fails in the intentionally untouched `editor/history.ts` because Task 2 must update its image-only assumptions for `DesignLayer`. Reported errors are at lines 51, 95, 107, and 170. No later-task file was edited for this Task 1 implementation.
-
-## Fix Review
-
-### Findings Addressed
-
-1. Restored a clean typecheck by widening history edit-state and update helpers to `DesignLayer[]` while guarding image-only crop and adjustment mutations with `isImageLayer`. `getSelectedImageLayer` now rejects selected non-image layers with its existing stable error instead of returning an invalid type.
-2. Changed `saveEditorProject` to hydrate its stored project assets and call `migrateEditorProject` before persistence. Malformed schema-2 metadata, variations, selections, and text layers are normalized; projects without a stored source asset are rejected.
-
-### Files
-
-- `editor/history.ts`
-- `editor/projectRepository.ts`
-- `tests/editor-history.test.ts`
-- `tests/editor-repository.test.ts`
-
-### Commands And Results
-
-Red command before the fixes:
-
-```powershell
-npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts tests/editor-history.test.ts
-```
-
-```text
-tests 26
-pass 23
-fail 3
-Missing expected exception.
-Expected malformed source metadata to normalize from the stored asset.
-Missing expected rejection for an unstored source asset.
-```
-
-Green command after the fixes:
-
-```powershell
-npx tsx --test tests/editor-model.test.ts tests/editor-repository.test.ts tests/editor-history.test.ts
-```
-
-```text
-tests 26
-pass 26
-fail 0
-```
-
-Typecheck:
-
-```powershell
-npm run typecheck
-```
-
-```text
-> inkmaster-studio@0.0.0 typecheck
-> tsc --noEmit
-```
-
-Exit code: `0`.
-
-### Commit
-
-- `fc006433e863dfef93cccd4bfede87c183660a9d` - `fix: validate layered editor project saves`
-
-### Self-Review
-
-- Confirmed existing image-only history behavior remains unchanged for image layers.
-- Confirmed crop and adjustment commands do not mutate text layers, while transform and opacity retain their existing generic update path.
-- Confirmed valid schema-2 saves still round-trip and malformed saves are normalized before both memory and IndexedDB persistence.
-- Confirmed missing source assets reject before a project record is written.
-- Ran `git diff --check`; no whitespace errors were reported.
-
-### Concerns
-
-- None.
+None.

@@ -7,12 +7,13 @@ import {
   migrateEditorProject,
 } from '../editor/model';
 
-test('creates a schema two project that records immutable source metadata without embedding its blob', () => {
+test('creates a schema three project that records immutable source metadata without embedding its blob', () => {
   const asset = createEditorAsset('project_a', new Blob(['pixels'], { type: 'image/png' }), {
     name: 'still.png', width: 1600, height: 900,
   });
   const project = createEditorProject('Film still', asset);
-  assert.equal(project.schemaVersion, 2);
+  assert.equal(project.schemaVersion, 3);
+  assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(project.sourceAssetId, asset.id);
   assert.deepEqual(project.sourceMetadata, {
     name: 'still.png', mimeType: 'image/png', width: 1600, height: 900,
@@ -32,6 +33,8 @@ test('duplicates a variation without sharing nested edit state', () => {
   const source = createEditorProject('Poster', asset);
   const duplicate = duplicateVariation(source.variations[0], 'High contrast');
   duplicate.layers[0].transform.x = 0.25;
+  assert.deepEqual(duplicate.look, source.variations[0].look);
+  assert.notEqual(duplicate.look, source.variations[0].look);
   assert.equal(source.variations[0].layers[0].transform.x, 0.5);
   assert.notEqual(duplicate.id, source.variations[0].id);
 });
@@ -70,6 +73,8 @@ test('normalizes text layer values to the command and inspector contract', () =>
   }]);
 
   const textLayer = project.variations[0].layers[0];
+  assert.equal(project.schemaVersion, 3);
+  assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(textLayer.type, 'text');
   assert.equal(textLayer.name, 'Text');
   assert.equal(textLayer.visible, false);
@@ -112,7 +117,8 @@ test('upgrades a version one project from its matching stored asset without chan
     }],
   }, [asset]);
 
-  assert.equal(project.schemaVersion, 2);
+  assert.equal(project.schemaVersion, 3);
+  assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(project.sourceAssetId, asset.id);
   assert.deepEqual(project.sourceMetadata, {
     name: 'source.webp', mimeType: 'image/webp', width: 1200, height: 800,
@@ -138,8 +144,33 @@ test('upgrades a version one project from its matching stored asset without chan
   });
 });
 
+test('normalizes saved schema three Look recipes', () => {
+  const asset = createEditorAsset('project_a', new Blob(['source']), {
+    name: 'source.png', width: 10, height: 10,
+  });
+  const project = migrateEditorProject({
+    schemaVersion: 3,
+    id: 'project_a',
+    name: 'Poster',
+    createdAt: 100,
+    sourceAssetId: asset.id,
+    sourceMetadata: { name: asset.name, mimeType: asset.mimeType, width: asset.width, height: asset.height },
+    activeVariationId: 'variation_a',
+    variations: [{
+      id: 'variation_a', name: 'Original', selectedLayerId: 'layer_a',
+      look: { id: 'duotone', strength: 100.4, shadowColor: '#ABC', highlightColor: 'invalid', balance: -80 },
+      layers: [{ type: 'image', id: 'layer_a', assetId: asset.id }],
+    }],
+  }, [asset]);
+
+  assert.equal(project.schemaVersion, 3);
+  assert.deepEqual(project.variations[0].look, {
+    id: 'duotone', strength: 100, shadowColor: '#aabbcc', highlightColor: '#f59e0b', balance: -50,
+  });
+});
+
 test('rejects unsupported schemas and records without a valid created timestamp', () => {
-  assert.throws(() => migrateEditorProject({ schemaVersion: 3 }, []), /Unsupported editor project schema/);
+  assert.throws(() => migrateEditorProject({ schemaVersion: 4 }, []), /Unsupported editor project schema/);
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,
   });

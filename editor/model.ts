@@ -4,10 +4,15 @@ import {
   TEXT_ALIGNMENTS,
   TEXT_FONT_FAMILIES,
 } from './textNormalization';
+import {
+  createDefaultLook,
+  normalizeVariationLook,
+  type VariationLook,
+} from './lookModel';
 
 export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
-export const EDITOR_PROJECT_SCHEMA_VERSION = 2 as const;
+export const EDITOR_PROJECT_SCHEMA_VERSION = 3 as const;
 
 export type EditorTool = 'select' | 'crop' | 'adjust';
 
@@ -76,6 +81,7 @@ export interface DesignVariation {
   name: string;
   layers: DesignLayer[];
   selectedLayerId: string;
+  look: VariationLook;
 }
 
 export interface EditorProject {
@@ -154,7 +160,13 @@ export const createEditorProject = (name: string, asset: EditorAsset): EditorPro
     crop: { x: 0, y: 0, width: 1, height: 1 },
     adjustments: { brightness: 0, contrast: 0, saturation: 0 },
   };
-  const variation: DesignVariation = { id: createEditorId('variation'), name: 'Original', layers: [layer], selectedLayerId: layer.id };
+  const variation: DesignVariation = {
+    id: createEditorId('variation'),
+    name: 'Original',
+    layers: [layer],
+    selectedLayerId: layer.id,
+    look: createDefaultLook('original'),
+  };
   return {
     schemaVersion: EDITOR_PROJECT_SCHEMA_VERSION, id: asset.projectId, name: name.trim() || 'Untitled design',
     createdAt: timestamp, updatedAt: timestamp, activeVariationId: variation.id,
@@ -264,6 +276,7 @@ const normalizeVariation = (
     name: nonEmptyString(value.name) ? value.name : 'Original',
     layers,
     selectedLayerId,
+    look: normalizeVariationLook(value.look),
   };
 };
 
@@ -317,7 +330,7 @@ const migrateProjectFields = (
 };
 
 export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): EditorProject => {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION)) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION)) {
     throw new Error('Unsupported editor project schema.');
   }
   if (value.schemaVersion === 1) {

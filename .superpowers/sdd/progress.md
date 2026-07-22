@@ -34,7 +34,7 @@ Phase 2B Looks and Compare Board (plan commit 0499f81)
 
 Execution location: current checkout on main (continuing the owner-approved canvas-reset workflow).
 Execution base: 0499f81.
-Task 1: pending.
+Task 1: complete (Look model and schema-3 migration; 28 focused tests and typecheck passed).
 Task 2: pending.
 Task 3: pending.
 Task 4: pending.
