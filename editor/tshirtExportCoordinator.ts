@@ -124,7 +124,7 @@ export class TShirtExportCoordinator {
     let resolve!: (outcome: TShirtExportOutcome) => void;
     const promise = new Promise<TShirtExportOutcome>((complete) => { resolve = complete; });
     const pending: PendingExport = {
-      snapshot,
+      snapshot: request.snapshot,
       worker,
       resolve,
       onMessage: () => undefined,

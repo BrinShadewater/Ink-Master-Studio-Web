@@ -115,6 +115,41 @@ test('snapshot data and byte copies remain immutable after source state changes'
   );
 });
 
+test('captures all asset records and Blob references before asynchronous reads', async () => {
+  const input = makeInput();
+  let release!: (bytes: ArrayBuffer) => void;
+  const deferredBytes = new Promise<ArrayBuffer>((resolve) => { release = resolve; });
+  const capturedBlob = new Blob(['origin'], { type: 'image/png' });
+  Object.defineProperty(capturedBlob, 'arrayBuffer', {
+    value: () => deferredBytes,
+  });
+  input.assetsById[input.source.id] = { ...input.source, blob: capturedBlob };
+  const pending = createTShirtPngExportSnapshot({
+    requestId: 10,
+    fingerprint: input.fingerprint,
+    presetId: 'standard-tee',
+    variation: input.variation,
+    placement: input.placement,
+    assetsById: input.assetsById,
+  });
+
+  input.variation.layers[0].name = 'Changed while capturing';
+  input.placement.x = 0.1;
+  input.assetsById[input.source.id] = {
+    ...input.source,
+    blob: new Blob(['change'], { type: 'image/png' }),
+  };
+  release(new TextEncoder().encode('origin').buffer);
+
+  const snapshot = await pending;
+  assert.equal(snapshot.variation.layers[0].name, 'source.png');
+  assert.notEqual(snapshot.placement.x, input.placement.x);
+  assert.deepEqual(
+    [...new Uint8Array(snapshot.assets.find(({ id }) => id === input.source.id)!.bytes)],
+    [...new TextEncoder().encode('origin')],
+  );
+});
+
 test('rejects incomplete artwork and a stale semantic fingerprint', async () => {
   const input = makeInput();
   const base = {

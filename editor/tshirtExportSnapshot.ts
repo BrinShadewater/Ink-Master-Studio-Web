@@ -34,6 +34,19 @@ const referencedAssetIds = (variation: DesignVariation): string[] => {
   return [...ids].sort();
 };
 
+const semanticAssetIds = (variation: DesignVariation): string[] => {
+  const ids = new Set<string>();
+  for (const layer of variation.layers) {
+    if (layer.type === 'image') {
+      ids.add(layer.assetId);
+      if (layer.backgroundRemoval.preparedAssetId) ids.add(layer.backgroundRemoval.preparedAssetId);
+      if (layer.backgroundRemoval.correctionAssetId) ids.add(layer.backgroundRemoval.correctionAssetId);
+    }
+    if (layer.type === 'trace' && layer.svgAssetId) ids.add(layer.svgAssetId);
+  }
+  return [...ids].sort();
+};
+
 const completeAsset = (id: string, asset: EditorAsset | undefined): asset is EditorAsset =>
   Boolean(asset) &&
   asset.id === id &&
@@ -43,7 +56,19 @@ const completeAsset = (id: string, asset: EditorAsset | undefined): asset is Edi
   Number.isFinite(asset.height) && asset.height > 0 &&
   asset.blob instanceof Blob && asset.blob.size > 0 && asset.blob.type === asset.mimeType;
 
-const snapshotAsset = async (id: string, asset: EditorAsset): Promise<TShirtExportAssetSnapshot> => ({
+const captureAsset = (id: string, asset: EditorAsset): EditorAsset => ({
+  id,
+  projectId: asset.projectId,
+  name: asset.name,
+  mimeType: asset.mimeType,
+  width: asset.width,
+  height: asset.height,
+  createdAt: asset.createdAt,
+  blob: asset.blob,
+  ...(asset.role ? { role: asset.role } : {}),
+});
+
+const snapshotAsset = async (asset: EditorAsset): Promise<TShirtExportAssetSnapshot> => ({
   id: asset.id,
   name: asset.name,
   mimeType: asset.mimeType,
@@ -58,24 +83,38 @@ export const createTShirtPngExportSnapshot = async (
 ): Promise<TShirtPngExportSnapshot> => {
   const variation = structuredClone(input.variation);
   const placement = structuredClone(input.placement);
-  const ids = referencedAssetIds(input.variation);
-  const assets: TShirtExportAssetSnapshot[] = [];
-  for (const id of ids) {
+  const requestId = input.requestId;
+  const fingerprint = input.fingerprint;
+  const presetId = input.presetId;
+  const exportIds = referencedAssetIds(variation);
+  const capturedAssetsById: Record<string, EditorAsset> = {};
+  for (const id of semanticAssetIds(variation)) {
     const asset = input.assetsById[id];
     if (!completeAsset(id, asset)) throw new Error(INCOMPLETE_ARTWORK_MESSAGE);
-    const captured = await snapshotAsset(id, asset);
-    if (captured.bytes.byteLength === 0) throw new Error(INCOMPLETE_ARTWORK_MESSAGE);
-    assets.push(captured);
+    capturedAssetsById[id] = captureAsset(id, asset);
   }
-  if (createTShirtExportFingerprint(input) !== input.fingerprint) {
+  const capturedSnapshots = await Promise.all(Object.values(capturedAssetsById).map(snapshotAsset));
+  if (capturedSnapshots.some(({ bytes }) => bytes.byteLength === 0)) {
+    throw new Error(INCOMPLETE_ARTWORK_MESSAGE);
+  }
+  if (createTShirtExportFingerprint({
+    presetId,
+    variation,
+    placement,
+    assetsById: capturedAssetsById,
+  }) !== fingerprint) {
     throw new Error(INCOMPLETE_ARTWORK_MESSAGE);
   }
   return {
-    requestId: input.requestId,
-    fingerprint: input.fingerprint,
-    presetId: input.presetId,
+    requestId,
+    fingerprint,
+    presetId,
     variation,
     placement,
-    assets,
+    assets: exportIds.map((id) => {
+      const asset = capturedSnapshots.find((candidate) => candidate.id === id);
+      if (!asset) throw new Error(INCOMPLETE_ARTWORK_MESSAGE);
+      return asset;
+    }),
   };
 };

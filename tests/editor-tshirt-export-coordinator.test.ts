@@ -98,6 +98,25 @@ test('latest request wins, transfers cloned bytes, and returns a fresh PNG buffe
   coordinator.dispose();
 });
 
+test('retains dispatched request identity after the caller mutates its snapshot', async () => {
+  const worker = new FakeWorker();
+  const coordinator = new TShirtExportCoordinator(() => worker, { timeoutMs: 25 });
+  const callerSnapshot = snapshot(10, 'captured-identity');
+  const pending = coordinator.render(callerSnapshot);
+
+  callerSnapshot.requestId = 99;
+  callerSnapshot.fingerprint = 'mutated-after-render';
+  ready(worker, 0);
+
+  assert.deepEqual(await pending, {
+    status: 'ready',
+    fingerprint: 'captured-identity',
+    pngBytes: new Uint8Array([9, 8, 7]),
+    metadata,
+  });
+  coordinator.dispose();
+});
+
 test('accepts monotonic matching progress and rejects malformed or mismatched completion', async () => {
   const worker = new FakeWorker();
   const progress: number[] = [];
@@ -187,6 +206,18 @@ test('validates exact worker message shapes and creates a named module worker', 
   assert.equal(isTShirtExportWorkerMessage({
     type: 'ready', requestId: 1, fingerprint: 'fingerprint', pngBytes: new ArrayBuffer(0), metadata,
   }), false);
+  const withHiddenKey = {
+    type: 'progress' as const, requestId: 1, fingerprint: 'fingerprint',
+    stage: 'encoding-png' as const, progress: 1,
+  };
+  Object.defineProperty(withHiddenKey, 'hidden', { value: true });
+  assert.equal(isTShirtExportWorkerMessage(withHiddenKey), false);
+  const withSymbolKey = {
+    type: 'progress' as const, requestId: 1, fingerprint: 'fingerprint',
+    stage: 'encoding-png' as const, progress: 1,
+    [Symbol('extra')]: true,
+  };
+  assert.equal(isTShirtExportWorkerMessage(withSymbolKey), false);
   const original = Object.getOwnPropertyDescriptor(globalThis, 'Worker');
   const calls: Array<{ url: URL; options?: WorkerOptions }> = [];
   class WorkerStub { constructor(url: URL, options?: WorkerOptions) { calls.push({ url, options }); } }

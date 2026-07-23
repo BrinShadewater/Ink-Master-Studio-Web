@@ -68,7 +68,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const hasExactKeys = (value: Record<string, unknown>, keys: readonly string[]) =>
-  Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+  Reflect.ownKeys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 
 const isRequestId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
