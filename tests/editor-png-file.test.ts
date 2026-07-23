@@ -116,6 +116,18 @@ const fixtureRgbaPng = ({
   return new Uint8Array(bytes);
 };
 
+const pngFromChunks = (chunks: number[][]): Uint8Array => new Uint8Array([
+  ...PNG_SIGNATURE,
+  ...chunks.flat(),
+]);
+
+const includesBytes = (bytes: Uint8Array, sequence: number[]): boolean => {
+  for (let start = 0; start <= bytes.length - sequence.length; start += 1) {
+    if (sequence.every((byte, index) => bytes[start + index] === byte)) return true;
+  }
+  return false;
+};
+
 const preset: TShirtExportPreset = {
   id: 'standard-tee',
   name: 'Standard Tee',
@@ -248,6 +260,27 @@ test('requires non-empty contiguous IDAT chunks after IHDR', () => {
   assert.throws(() => parsePngFile(splitIdat), /IDAT/i);
 });
 
+test('rejects unknown critical chunks and enforces PLTE ordering', () => {
+  const ihdr = chunk('IHDR', [...uint32(2), ...uint32(3), 8, 6, 0, 0, 0]);
+  const idat = chunk('IDAT', [...zlibRgbaData(2, 3)]);
+  const iend = chunk('IEND');
+  const plte = chunk('PLTE', [0, 0, 0]);
+  const ancillary = chunk('tEXt', [107, 101, 121, 0, 118, 97, 108, 117, 101]);
+  const unknownCritical = pngFromChunks([ihdr, chunk('ABCD'), idat, iend]);
+  const validPlte = pngFromChunks([ihdr, plte, idat, iend]);
+  const duplicatePlte = pngFromChunks([ihdr, plte, plte, idat, iend]);
+  const latePlte = pngFromChunks([ihdr, idat, plte, iend]);
+  const ancillarySource = pngFromChunks([ihdr, ancillary, idat, iend]);
+
+  assert.throws(() => parsePngFile(unknownCritical), /critical/i);
+  assert.throws(() => writePngResolution(unknownCritical, 11811), /critical/i);
+  assert.doesNotThrow(() => parsePngFile(validPlte));
+  assert.throws(() => parsePngFile(duplicatePlte), /PLTE/i);
+  assert.throws(() => parsePngFile(latePlte), /PLTE/i);
+  assert.doesNotThrow(() => parsePngFile(ancillarySource));
+  assert.equal(includesBytes(writePngResolution(ancillarySource, 11811), ancillary), true);
+});
+
 test('rejects files larger than 100 MiB before parsing them', () => {
   assert.throws(() => parsePngFile(new Uint8Array(MAX_PNG_BYTES + 1)));
 });
@@ -288,7 +321,7 @@ test('separates print warnings from blockers and records receipt facts', () => {
     largestRasterLayerName: 'Source artwork',
   };
   const validation = validateTShirtPng(parsed, preset, metadata, 'fingerprint');
-  const receipt = createTShirtExportReceipt(parsed, preset, metadata, 'fingerprint', validation);
+  const receipt = createTShirtExportReceipt(parsed, preset, metadata, 'fingerprint');
 
   assert.deepEqual(validation, {
     valid: true,
@@ -328,20 +361,36 @@ test('classifies a valid Draft Proof receipt as proof-ready even without warning
   };
   const parsed = parsePngFile(writePngResolution(fixtureRgbaPng({ width: 2, height: 3 }), 5906));
   const validation = validateTShirtPng(parsed, proofPreset, renderMetadata, 'proof-fingerprint');
-  const receipt = createTShirtExportReceipt(parsed, proofPreset, renderMetadata, 'proof-fingerprint', validation);
+  const receipt = createTShirtExportReceipt(parsed, proofPreset, renderMetadata, 'proof-fingerprint');
 
   assert.equal(validation.valid, true);
   assert.deepEqual(validation.warnings, []);
   assert.equal(receipt.readiness, 'proof-ready');
 });
 
-test('refuses to create a receipt when validation has blockers', () => {
-  const parsed = parsePngFile(writePngResolution(fixtureRgbaPng({ width: 1, height: 3 }), 11811));
-  const validation = validateTShirtPng(parsed, preset, renderMetadata, 'fingerprint');
+test('recomputes validation so forged-valid data cannot produce a receipt', () => {
+  const parsed = parsePngFile(writePngResolution(fixtureRgbaPng({ width: 2, height: 3 }), 11811));
+  const forgedValid = { valid: true, blockers: [], warnings: [] };
+  const invalidDimensions = { ...parsed, width: 1 };
+  const noTransparency = {
+    ...renderMetadata,
+    alpha: { transparentPixels: 0, translucentPixels: 0, opaquePixels: 6 },
+  };
 
-  assert.equal(validation.valid, false);
   assert.throws(
-    () => createTShirtExportReceipt(parsed, preset, renderMetadata, 'fingerprint', validation),
+    () => Reflect.apply(
+      createTShirtExportReceipt,
+      undefined,
+      [invalidDimensions, preset, renderMetadata, 'fingerprint', forgedValid],
+    ),
+    /invalid PNG/i,
+  );
+  assert.throws(
+    () => Reflect.apply(
+      createTShirtExportReceipt,
+      undefined,
+      [parsed, preset, noTransparency, 'fingerprint', forgedValid],
+    ),
     /invalid PNG/i,
   );
 });

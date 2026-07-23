@@ -9,6 +9,7 @@ const MAX_PNG_BYTES = 100 * 1024 * 1024;
 const MAX_CHUNK_BYTES = MAX_PNG_BYTES - 12;
 const UINT32_MAX = 0xffffffff;
 const INCHES_PER_METER = 39.37007874015748;
+const ALLOWED_CRITICAL_CHUNKS = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND']);
 
 export interface ParsedPngFile {
   width: number;
@@ -104,6 +105,8 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
   let hasIend = false;
   let hasNonEmptyIdat = false;
   let idatSequenceEnded = false;
+  let idatSequenceStarted = false;
+  let hasPlte = false;
 
   while (offset < bytes.length) {
     if (bytes.length - offset < 12) throw new Error('PNG chunk is truncated.');
@@ -122,6 +125,14 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
     if (actualCrc !== expectedCrc) throw new Error(`PNG ${type} chunk CRC is invalid.`);
 
     if (chunks.length === 0 && type !== 'IHDR') throw new Error('PNG IHDR must be the first chunk.');
+    const firstTypeByte = bytes[offset + 4];
+    if (
+      firstTypeByte >= 65
+      && firstTypeByte <= 90
+      && !ALLOWED_CRITICAL_CHUNKS.has(type)
+    ) {
+      throw new Error(`PNG contains unsupported critical chunk ${type}.`);
+    }
     if (type === 'IHDR') {
       if (chunks.length !== 0) throw new Error('PNG contains a duplicate IHDR chunk.');
       if (length !== 13) throw new Error('PNG IHDR chunk length is invalid.');
@@ -142,10 +153,17 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
       }
     }
 
+    if (type === 'PLTE') {
+      if (hasPlte) throw new Error('PNG must not contain more than one PLTE chunk.');
+      if (idatSequenceStarted) throw new Error('PNG PLTE chunk must appear before IDAT.');
+      hasPlte = true;
+    }
+
     if (type === 'IDAT') {
       if (idatSequenceEnded) throw new Error('PNG IDAT chunks must be contiguous.');
       if (length === 0) throw new Error('PNG IDAT chunks must not be empty.');
       hasNonEmptyIdat = true;
+      idatSequenceStarted = true;
     } else if (hasNonEmptyIdat) {
       idatSequenceEnded = true;
     }
@@ -285,8 +303,8 @@ export const createTShirtExportReceipt = (
   preset: TShirtExportPreset,
   renderMetadata: TShirtExportRenderMetadata,
   fingerprint: string,
-  validation = validateTShirtPng(parsed, preset, renderMetadata, fingerprint),
 ): TShirtExportReceipt => {
+  const validation = validateTShirtPng(parsed, preset, renderMetadata, fingerprint);
   if (!validation.valid) throw new Error('Cannot create T-shirt export receipt for invalid PNG.');
   return {
     fingerprint,
