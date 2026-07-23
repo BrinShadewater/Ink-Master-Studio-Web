@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Spline,
   Trash2,
   Type,
   X,
@@ -63,7 +64,7 @@ export const layerNameDraftReducer = (
 };
 
 export const normalizeLayerNameDraft = (draft: string, type: DesignLayer['type']) =>
-  draft.trim() || (type === 'image' ? 'Image' : 'Text');
+  draft.trim() || (type === 'image' ? 'Image' : type === 'trace' ? 'Trace' : 'Text');
 
 interface LayerNameEscapeEvent {
   preventDefault: () => void;
@@ -204,7 +205,7 @@ export const LayerPanel = ({
             {[...layers].reverse().map((layer) => {
               const storedIndex = layers.findIndex(({ id }) => id === layer.id);
               const selected = layer.id === selectedLayerId;
-              const TypeIcon = layer.type === 'image' ? ImagePlus : Type;
+              const TypeIcon = layer.type === 'image' ? ImagePlus : layer.type === 'trace' ? Spline : Type;
               return (
                 <li
                   key={layer.id}

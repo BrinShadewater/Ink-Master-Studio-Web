@@ -18,6 +18,7 @@ import {
 } from './model';
 import {
   createImagePrepFingerprint,
+  createTraceSourceFingerprint,
   normalizeBackgroundRemoval,
   type BackgroundRemovalSettings,
 } from './imagePrepModel';
@@ -446,6 +447,7 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const nextVariation = getActiveVariation(next);
       const nextSource = nextVariation.layers[sourceIndex];
       if (!isImageLayer(nextSource)) return history;
+      if (command.layer.sourceFingerprint !== createTraceSourceFingerprint(nextSource)) return history;
       nextSource.visible = false;
       nextVariation.layers.splice(sourceIndex + 1, 0, structuredClone(command.layer));
       nextVariation.selectedLayerId = command.layer.id;
@@ -554,17 +556,18 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
         !command.preparedAssetId ||
         createImagePrepFingerprint(current) !== command.expectedInputFingerprint
       ) return history;
-      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
-        isImageLayer(layer)
-          ? {
-            ...layer,
-            backgroundRemoval: {
-              ...layer.backgroundRemoval,
-              preparedAssetId: command.preparedAssetId,
-              inputFingerprint: command.expectedInputFingerprint,
-            },
-          }
-          : layer);
+      const next = updateImageLayerAndStaleLinkedTraces(
+        history.present,
+        command.layerId,
+        (layer) => ({
+          ...layer,
+          backgroundRemoval: {
+            ...layer.backgroundRemoval,
+            preparedAssetId: command.preparedAssetId,
+            inputFingerprint: command.expectedInputFingerprint,
+          },
+        }),
+      );
       return next
         ? { ...history, present: withUpdatedAt(next, history.present) }
         : history;
@@ -586,7 +589,7 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       if (!current || !isTraceLayer(current) || !command.svgAssetId) return history;
       const source = getActiveLayer(history.present, current.sourceLayerId);
       if (!source || !isImageLayer(source)) return history;
-      const sourceFingerprint = createImagePrepFingerprint(source);
+      const sourceFingerprint = createTraceSourceFingerprint(source);
       const traceFingerprint = createTraceFingerprint(sourceFingerprint, current.settings);
       if (
         sourceFingerprint !== command.expectedSourceFingerprint ||

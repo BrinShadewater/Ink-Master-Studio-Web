@@ -14,6 +14,7 @@ import {
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
+import { TraceInspector } from '../components/editor/TraceInspector';
 import { CompareBoard, type CompareBoardProps } from '../components/editor/CompareBoard';
 import {
   LooksInspector,
@@ -55,6 +56,7 @@ import {
   type DesignLayer,
   type DesignVariation,
 } from '../editor/model';
+import { createDefaultTraceSettings } from '../editor/traceModel';
 import { LOOK_IDS, createDefaultLook, type LookId } from '../editor/lookModel';
 import type { LookRenderCoordinator } from '../editor/lookRenderCoordinator';
 import {
@@ -171,6 +173,7 @@ test('layer-name draft commits normalized text and restores the latest external 
   state = layerNameDraftReducer(state, { type: 'input', value: '  Front art  ' });
   assert.equal(normalizeLayerNameDraft(state.draft, 'text'), 'Front art');
   assert.equal(normalizeLayerNameDraft('   ', 'image'), 'Image');
+  assert.equal(normalizeLayerNameDraft('   ', 'trace'), 'Trace');
 
   state = layerNameDraftReducer(state, {
     type: 'sync', layerId: 'layer-a', layerName: 'Renamed elsewhere',
@@ -240,6 +243,75 @@ test('toolbar exposes Remove background only for a selected image layer', () => 
     onOpenLayers: () => undefined,
   }));
   assert.match(textMarkup, /aria-label="Remove background"[^>]*disabled=""/);
+});
+
+test('toolbar exposes Trace only for image and trace selections', () => {
+  for (const layerType of ['image', 'trace'] as const) {
+    const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+      tool: 'trace',
+      layerType,
+      onToolChange: () => undefined,
+      onOpenLayers: () => undefined,
+    }));
+    assert.match(markup, /aria-label="Trace"[^>]*aria-pressed="true"/);
+    assert.match(markup, /aria-label="Trace"[\s\S]*?lucide-scan-line/);
+    assert.doesNotMatch(markup, /aria-label="Trace"[^>]*disabled=""/);
+  }
+  const textMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    layerType: 'text',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  assert.match(textMarkup, /aria-label="Trace"[^>]*disabled=""/);
+  assert.equal(normalizeToolForSelectedLayer('trace', { type: 'text' }), 'select');
+  assert.equal(normalizeToolForSelectedLayer('trace', { type: 'trace' }), 'trace');
+});
+
+test('trace inspector exposes bounded controls, palette, retry, and source restoration', () => {
+  const settings = createDefaultTraceSettings();
+  const markup = renderToStaticMarkup(createElement(TraceInspector, {
+    traceLayer: {
+      id: 'trace-layer',
+      type: 'trace',
+      name: 'Trace',
+      sourceLayerId: 'source-layer',
+      svgAssetId: 'trace-svg',
+      visible: true,
+      opacity: 1,
+      transform: {
+        x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false,
+      },
+      settings,
+      sourceFingerprint: '',
+      sourceFrame: {
+        sourceWidth: 100,
+        sourceHeight: 80,
+        crop: { x: 0, y: 0, width: 1, height: 1 },
+      },
+    },
+    workflow: {
+      status: 'failed',
+      error: 'Vector trace failed.',
+      stale: true,
+      canGenerate: true,
+      settings,
+      updateSettings: () => undefined,
+      endSettingsEdit: () => undefined,
+      generate: () => undefined,
+      retry: () => undefined,
+    },
+    dispatch: () => undefined,
+  }));
+
+  assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="16"[^>]*step="1"/);
+  assert.match(markup, /id="editor-trace-detail"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
+  assert.match(markup, /id="editor-trace-smoothing"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
+  assert.match(markup, /id="editor-trace-blur"[^>]*min="0"[^>]*max="5"[^>]*step="1"/);
+  assert.match(markup, /aria-label="Trace palette"/);
+  assert.match(markup, /aria-label="Restore source"/);
+  assert.match(markup, />Update Trace</);
+  assert.match(markup, />Retry</);
 });
 
 test('background removal inspector exposes the bounded focused workflow', () => {

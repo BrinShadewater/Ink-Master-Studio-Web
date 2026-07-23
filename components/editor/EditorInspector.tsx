@@ -16,6 +16,8 @@ import {
   type BackgroundBrushMode,
 } from './BackgroundRemovalInspector';
 import type { BackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
+import { TraceInspector } from './TraceInspector';
+import type { TraceWorkflow } from './useTraceWorkflow';
 import { TextInspector } from './TextInspector';
 import {
   controlBounds,
@@ -71,6 +73,7 @@ export interface EditorInspectorProps {
   onBackgroundBrushModeChange?: (mode: BackgroundBrushMode) => void;
   onBackgroundBrushSizeChange?: (size: number) => void;
   onBackgroundDone?: () => void;
+  traceWorkflow?: TraceWorkflow | null;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -191,6 +194,7 @@ export const EditorInspector = ({
   onBackgroundBrushModeChange = () => undefined,
   onBackgroundBrushSizeChange = () => undefined,
   onBackgroundDone = () => undefined,
+  traceWorkflow = null,
   dispatch,
 }: EditorInspectorProps) => {
   if (project && variation && tool === 'looks') {
@@ -215,6 +219,22 @@ export const EditorInspector = ({
       <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
         <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
         <p className="mt-2 text-xs leading-5 text-neutral-500">Import artwork to edit.</p>
+      </aside>
+    );
+  }
+
+  if (
+    tool === 'trace' &&
+    traceWorkflow &&
+    (layer.type === 'image' || layer.type === 'trace')
+  ) {
+    return (
+      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+        <TraceInspector
+          traceLayer={layer.type === 'trace' ? layer : null}
+          workflow={traceWorkflow}
+          dispatch={dispatch}
+        />
       </aside>
     );
   }
@@ -247,9 +267,14 @@ export const EditorInspector = ({
           <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />
         )
       ) : (
-        <div className="p-4">
-          <h2 className="text-sm font-semibold text-neutral-100">Trace</h2>
-        </div>
+        <>
+          <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4">
+            <h2 className="text-sm font-semibold text-neutral-100">Transform</h2>
+          </div>
+          <div className="grid gap-5 p-4">
+            <TransformControls layer={layer} dispatch={dispatch} />
+          </div>
+        </>
       )}
     </aside>
   );

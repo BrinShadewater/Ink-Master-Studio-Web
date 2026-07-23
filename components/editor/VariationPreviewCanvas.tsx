@@ -220,12 +220,15 @@ const createVariationRenderKey = (
 ) => {
   const assetIds = [...new Set(
     variation.layers
-      .filter((layer): layer is Extract<DesignLayer, { type: 'image' }> => layer.type === 'image')
       .flatMap((layer) => [
-        layer.assetId,
-        ...(layer.backgroundRemoval.preparedAssetId
-          ? [layer.backgroundRemoval.preparedAssetId]
-          : []),
+        ...(layer.type === 'image'
+          ? [
+            layer.assetId,
+            ...(layer.backgroundRemoval.preparedAssetId
+              ? [layer.backgroundRemoval.preparedAssetId]
+              : []),
+          ]
+          : layer.type === 'trace' && layer.svgAssetId ? [layer.svgAssetId] : []),
       ]),
   )].sort();
   const canonical = JSON.stringify({
@@ -245,16 +248,27 @@ const hasEveryVisibleImage = (
   assetsById: Record<string, EditorAsset>,
   imagesById: Record<string, DecodedImageEntry>,
 ) => variation.layers.every((layer) => (
-  layer.type !== 'image' ||
   !layer.visible ||
-  Boolean(
-    (assetsById[layer.assetId] && imagesById[layer.assetId]) ||
-    (
-      layer.backgroundRemoval.enabled &&
-      layer.backgroundRemoval.preparedAssetId &&
-      assetsById[layer.backgroundRemoval.preparedAssetId] &&
-      imagesById[layer.backgroundRemoval.preparedAssetId]
-    ),
+  layer.type === 'text' ||
+  (
+    layer.type === 'image' &&
+    Boolean(
+      (assetsById[layer.assetId] && imagesById[layer.assetId]) ||
+      (
+        layer.backgroundRemoval.enabled &&
+        layer.backgroundRemoval.preparedAssetId &&
+        assetsById[layer.backgroundRemoval.preparedAssetId] &&
+        imagesById[layer.backgroundRemoval.preparedAssetId]
+      ),
+    )
+  ) ||
+  (
+    layer.type === 'trace' &&
+    Boolean(
+      layer.svgAssetId &&
+      assetsById[layer.svgAssetId] &&
+      imagesById[layer.svgAssetId]
+    )
   )
 ));
 

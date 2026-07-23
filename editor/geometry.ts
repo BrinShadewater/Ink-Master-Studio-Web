@@ -1,4 +1,5 @@
 import type { CropRect, ImageAdjustments, LayerTransform } from './model';
+import type { TraceSourceFrame } from './traceModel';
 
 export interface Size {
   width: number;
@@ -64,6 +65,17 @@ export const getLayerDrawRect = (
     height: round(height),
   };
 };
+
+export const getTraceLayerDrawRect = (
+  frame: TraceSourceFrame,
+  viewport: Size,
+  transform: LayerTransform,
+): Rect => getLayerDrawRect(
+  { width: frame.sourceWidth, height: frame.sourceHeight },
+  viewport,
+  transform,
+  frame.crop,
+);
 
 export const viewportDeltaToNormalized = (dx: number, dy: number, base: Size) => ({
   x: round(isUsableSize(base) ? dx / base.width : 0),

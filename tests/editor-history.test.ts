@@ -7,6 +7,7 @@ import {
 import {
   createDefaultBackgroundRemoval,
   createImagePrepFingerprint,
+  createTraceSourceFingerprint,
 } from '../editor/imagePrepModel';
 import {
   createEditorAsset,
@@ -43,7 +44,7 @@ const getVintageInkSeed = (history: ReturnType<typeof makeHistory>) => {
 };
 
 const createTraceFixture = (source: ImageLayer, svgAssetId = 'asset_trace'): TraceLayer => {
-  const sourceFingerprint = createImagePrepFingerprint(source);
+  const sourceFingerprint = createTraceSourceFingerprint(source);
   return {
     id: 'trace_layer',
     type: 'trace',
@@ -170,7 +171,6 @@ test('publishes generated results without adding history and rejects stale trace
   if (!preparedSource) throw new Error('Expected prepared source.');
   const trace = createTraceFixture(preparedSource, null as unknown as string);
   trace.svgAssetId = null;
-  trace.sourceFingerprint = '';
   history = reduceEditorHistory(history, {
     type: 'add-trace-layer',
     sourceLayerId: source.id,
@@ -182,7 +182,7 @@ test('publishes generated results without adding history and rejects stale trace
     layerId: trace.id,
     settings,
   });
-  const sourceFingerprint = createImagePrepFingerprint(preparedSource);
+  const sourceFingerprint = createTraceSourceFingerprint(preparedSource);
   const traceFingerprint = createTraceFingerprint(sourceFingerprint, settings);
   assert.strictEqual(reduceEditorHistory(history, {
     type: 'publish-trace-result',
@@ -207,6 +207,44 @@ test('publishes generated results without adding history and rejects stale trace
   assert.equal(publishedTrace.svgAssetId, 'asset_new_trace');
   assert.equal(publishedTrace.sourceFingerprint, sourceFingerprint);
   assert.deepEqual(publishedTrace.settings.palette, ['#112233']);
+});
+
+test('invalidates a linked trace when a prepared cleanup output is replaced', () => {
+  let history = makeHistory();
+  const source = getSelectedImageLayer(history.present);
+  if (!source) throw new Error('Expected source image.');
+  history = reduceEditorHistory(history, {
+    type: 'set-background-removal',
+    layerId: source.id,
+    settings: { ...source.backgroundRemoval, enabled: true },
+  });
+  const enabledSource = getSelectedImageLayer(history.present);
+  if (!enabledSource) throw new Error('Expected enabled source.');
+  const inputFingerprint = createImagePrepFingerprint(enabledSource);
+  history = reduceEditorHistory(history, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: inputFingerprint,
+    preparedAssetId: 'prepared-first',
+  });
+  const preparedSource = getSelectedImageLayer(history.present);
+  if (!preparedSource) throw new Error('Expected prepared source.');
+  history = reduceEditorHistory(history, {
+    type: 'add-trace-layer',
+    sourceLayerId: source.id,
+    layer: createTraceFixture(preparedSource),
+  });
+
+  const replaced = reduceEditorHistory(history, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: inputFingerprint,
+    preparedAssetId: 'prepared-second',
+  });
+  const linkedTrace = getActiveVariation(replaced.present).layers.find(({ type }) => type === 'trace');
+  assert.equal(linkedTrace?.type, 'trace');
+  if (linkedTrace?.type !== 'trace') throw new Error('Expected linked trace.');
+  assert.equal(linkedTrace.sourceFingerprint, '');
 });
 
 test('keeps generated assets reachable from present, undo, and redo states', () => {

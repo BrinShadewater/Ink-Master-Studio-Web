@@ -176,3 +176,12 @@ export const createImagePrepFingerprint = (
     source.backgroundRemoval.correctionAssetId ??
     '',
 }))}`;
+
+export const createTraceSourceFingerprint = (
+  source: ImagePrepFingerprintSource,
+) => `trace-source:${hashString(JSON.stringify({
+  inputFingerprint: createImagePrepFingerprint(source),
+  preparedAssetId: source.backgroundRemoval.enabled
+    ? source.backgroundRemoval.preparedAssetId ?? ''
+    : '',
+}))}`;

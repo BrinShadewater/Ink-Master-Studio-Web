@@ -9,7 +9,8 @@ import { createDefaultLook } from '../editor/lookModel';
 import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
 import type { LookRenderOutcome } from '../editor/lookRenderCoordinator';
 import type { RgbaFrame } from '../editor/lookProcessor';
-import type { DesignVariation, EditorAsset, ImageLayer } from '../editor/model';
+import type { DesignLayer, DesignVariation, EditorAsset, ImageLayer, TraceLayer } from '../editor/model';
+import { createDefaultTraceSettings } from '../editor/traceModel';
 import {
   canRetainReadyPreviewFrame,
   composeBoundedVariationFrame,
@@ -59,7 +60,7 @@ const asset = (id: string, width = 800, height = 600): EditorAsset => ({
 });
 
 const variation = (
-  layers: ImageLayer[],
+  layers: DesignLayer[],
   overrides: Partial<DesignVariation> = {},
 ): DesignVariation => ({
   id: 'variation-preview',
@@ -225,6 +226,44 @@ test('waits for every visible image and ignores hidden missing images', () => {
   }, {
     'asset-prepared': { url: 'blob:prepared', image: image('prepared') },
   }).result);
+});
+
+test('waits for a visible trace SVG and composes it through the shared preview surface', () => {
+  const trace: TraceLayer = {
+    id: 'trace-layer',
+    type: 'trace',
+    name: 'Trace',
+    sourceLayerId: 'source-layer',
+    svgAssetId: 'trace-asset',
+    visible: true,
+    opacity: 1,
+    transform,
+    settings: createDefaultTraceSettings(),
+    sourceFingerprint: 'trace-source',
+    sourceFrame: {
+      sourceWidth: 800,
+      sourceHeight: 600,
+      crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+    },
+  };
+  const design = variation([trace]);
+  const traceAsset = {
+    ...asset('trace-asset', 640, 480),
+    mimeType: 'image/svg+xml',
+    role: 'trace-svg' as const,
+  };
+
+  assert.equal(compose(design, { 'trace-asset': traceAsset }, {}).result, null);
+  assert.ok(compose(
+    design,
+    { 'trace-asset': traceAsset },
+    { 'trace-asset': { url: 'blob:trace', image: image('trace') } },
+  ).result);
+  assert.ok(compose(
+    variation([{ ...trace, visible: false }]),
+    {},
+    {},
+  ).result);
 });
 
 test('render keys use stable design identity and exclude replacement object URLs', () => {

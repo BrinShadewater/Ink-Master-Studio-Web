@@ -1,4 +1,14 @@
-import { Columns2, Crop, Layers, MousePointer2, Palette, SlidersHorizontal, WandSparkles, type LucideIcon } from 'lucide-react';
+import {
+  Columns2,
+  Crop,
+  Layers,
+  MousePointer2,
+  Palette,
+  ScanLine,
+  SlidersHorizontal,
+  WandSparkles,
+  type LucideIcon,
+} from 'lucide-react';
 import type { Ref } from 'react';
 import type { DesignLayer, EditorTool } from '../../editor/model';
 
@@ -20,6 +30,7 @@ const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
   { id: 'crop', label: 'Crop', icon: Crop },
   { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
   { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
+  { id: 'trace', label: 'Trace', icon: ScanLine },
   { id: 'looks', label: 'Looks', icon: Palette },
 ];
 
@@ -38,12 +49,17 @@ export const EditorToolbar = ({
   activeToolButtonRef,
 }: EditorToolbarProps) => (
   <nav
-    className="order-3 flex h-16 min-w-0 items-center justify-center gap-4 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
+    className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
     {layerType !== 'image' ? (
       <p id="editor-image-tools-disabled-reason" className="sr-only">
         Crop, Adjust, and Remove background are available only for image layers.
+      </p>
+    ) : null}
+    {layerType !== 'image' && layerType !== 'trace' ? (
+      <p id="editor-trace-disabled-reason" className="sr-only">
+        Trace is available only for image and trace layers.
       </p>
     ) : null}
     {compareOpen ? (
@@ -55,10 +71,13 @@ export const EditorToolbar = ({
       const selected = tool === id;
       const imageToolDisabled = layerType !== 'image' &&
         (id === 'crop' || id === 'adjust' || id === 'remove-background');
-      const disabled = compareOpen || imageToolDisabled;
+      const traceToolDisabled = id === 'trace' && layerType !== 'image' && layerType !== 'trace';
+      const disabled = compareOpen || imageToolDisabled || traceToolDisabled;
       const disabledReason = compareOpen
         ? 'editor-compare-disabled-reason'
-        : imageToolDisabled ? 'editor-image-tools-disabled-reason' : undefined;
+        : imageToolDisabled
+          ? 'editor-image-tools-disabled-reason'
+          : traceToolDisabled ? 'editor-trace-disabled-reason' : undefined;
       return (
         <button
           key={id}
@@ -68,7 +87,11 @@ export const EditorToolbar = ({
           aria-label={label}
           aria-pressed={selected}
           aria-describedby={disabledReason}
-          title={compareOpen ? `${label} is unavailable while Compare is open` : imageToolDisabled ? `${label} is available only for image layers` : label}
+          title={compareOpen
+            ? `${label} is unavailable while Compare is open`
+            : imageToolDisabled
+              ? `${label} is available only for image layers`
+              : traceToolDisabled ? 'Trace is available only for image and trace layers' : label}
           disabled={disabled}
           onClick={() => onToolChange(id)}
         >

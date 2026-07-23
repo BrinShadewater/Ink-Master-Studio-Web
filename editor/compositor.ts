@@ -2,12 +2,20 @@ import {
   buildCanvasFilter,
   getCroppedSourceRect,
   getLayerDrawRect,
+  getTraceLayerDrawRect,
   isPointInRotatedRect,
   type Point,
   type Rect,
   type Size,
 } from './geometry';
-import { isImageLayer, isTextLayer, type DesignLayer, type TextLayer } from './model';
+import {
+  isImageLayer,
+  isTextLayer,
+  isTraceLayer,
+  type DesignLayer,
+  type TextLayer,
+  type TraceLayer,
+} from './model';
 
 export interface CompositorAssets {
   metadataById: Record<string, Size>;
@@ -211,6 +219,39 @@ const renderTextLayer = (
   context.restore();
 };
 
+const renderTraceLayer = (
+  context: CanvasRenderingContext2D,
+  viewport: Size,
+  layer: TraceLayer,
+  assets: CompositorAssets,
+) => {
+  if (!layer.svgAssetId) return;
+  const image = assets.imagesById[layer.svgAssetId];
+  const source = assets.metadataById[layer.svgAssetId];
+  if (!image || !source) return;
+  const drawRect = getTraceLayerDrawRect(layer.sourceFrame, viewport, layer.transform);
+  if (drawRect.width <= 0 || drawRect.height <= 0) return;
+
+  context.save();
+  context.translate(drawRect.x + drawRect.width / 2, drawRect.y + drawRect.height / 2);
+  context.rotate(toRadians(layer.transform.rotation));
+  context.scale(layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1);
+  context.globalAlpha = layer.opacity;
+  context.filter = 'none';
+  context.drawImage(
+    image,
+    0,
+    0,
+    source.width,
+    source.height,
+    -drawRect.width / 2,
+    -drawRect.height / 2,
+    drawRect.width,
+    drawRect.height,
+  );
+  context.restore();
+};
+
 export const renderDesignLayers = (
   context: CanvasRenderingContext2D,
   viewport: Size,
@@ -221,6 +262,7 @@ export const renderDesignLayers = (
     if (!layer.visible) continue;
     if (isImageLayer(layer)) renderImageLayer(context, viewport, layer, assets);
     else if (isTextLayer(layer)) renderTextLayer(context, viewport, layer);
+    else if (isTraceLayer(layer)) renderTraceLayer(context, viewport, layer, assets);
   }
 };
 
@@ -241,6 +283,13 @@ export const hitTestDesignLayers = (
       bounds = getLayerDrawRect(source, viewport, layer.transform, layer.crop);
     } else if (isTextLayer(layer)) {
       bounds = getTextLayerBounds(context, viewport, layer);
+    } else if (isTraceLayer(layer)) {
+      if (
+        !layer.svgAssetId ||
+        !assets.metadataById[layer.svgAssetId] ||
+        !assets.imagesById[layer.svgAssetId]
+      ) continue;
+      bounds = getTraceLayerDrawRect(layer.sourceFrame, viewport, layer.transform);
     } else {
       continue;
     }

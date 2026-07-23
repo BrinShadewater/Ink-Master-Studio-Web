@@ -6,6 +6,7 @@ import {
   fitSourceInViewport,
   getCroppedSourceRect,
   getLayerDrawRect,
+  getTraceLayerDrawRect,
   isPointInRotatedRect,
   moveTransformByViewportDelta,
   viewportDeltaToNormalized,
@@ -52,6 +53,24 @@ test('derives a cropped draw rectangle around the normalized layer center', () =
       { x: 0.1, y: 0.2, width: 0.5, height: 0.5 },
     ),
     { x: -260, y: -80, width: 1120, height: 560 },
+  );
+});
+
+test('keeps a new trace aligned to its cropped source geometry', () => {
+  const source = { width: 1000, height: 500 };
+  const viewport = { width: 1200, height: 800 };
+  const transform = {
+    x: 0.25, y: 0.25, scale: 2, rotation: 0, flipX: false, flipY: false,
+  };
+  const crop = { x: 0.1, y: 0.2, width: 0.5, height: 0.5 };
+
+  assert.deepEqual(
+    getTraceLayerDrawRect({
+      sourceWidth: source.width,
+      sourceHeight: source.height,
+      crop,
+    }, viewport, transform),
+    getLayerDrawRect(source, viewport, transform, crop),
   );
 });
 

@@ -8,7 +8,8 @@ import {
 } from '../editor/compositor';
 import { moveTransformByViewportDelta, type Size } from '../editor/geometry';
 import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
-import type { DesignLayer, ImageLayer, TextLayer } from '../editor/model';
+import type { DesignLayer, ImageLayer, TextLayer, TraceLayer } from '../editor/model';
+import { createDefaultTraceSettings } from '../editor/traceModel';
 
 const transform = (
   overrides: Partial<ImageLayer['transform']> = {},
@@ -51,6 +52,25 @@ const textLayer = (id: string, overrides: Partial<TextLayer> = {}): TextLayer =>
   letterSpacing: 0,
   outlineWidth: 0,
   outlineColor: '#000000',
+  ...overrides,
+});
+
+const traceLayer = (id: string, svgAssetId: string, overrides: Partial<TraceLayer> = {}): TraceLayer => ({
+  id,
+  type: 'trace',
+  name: id,
+  sourceLayerId: 'source-layer',
+  svgAssetId,
+  visible: true,
+  opacity: 1,
+  transform: transform(),
+  settings: createDefaultTraceSettings(),
+  sourceFingerprint: 'source-current',
+  sourceFrame: {
+    sourceWidth: 400,
+    sourceHeight: 200,
+    crop: { x: 0.1, y: 0.2, width: 0.5, height: 0.5 },
+  },
   ...overrides,
 });
 
@@ -270,6 +290,66 @@ test('renders a valid prepared image with original crop geometry and falls back 
     fallbackContext.draws[0].filter,
     'brightness(120%) contrast(110%) saturate(85%)',
   );
+});
+
+test('renders and hit tests a decoded trace in layer order using source crop geometry', () => {
+  const context = new RecordingContext();
+  const bottomImage = image('bottom');
+  const traceImage = image('trace');
+  const trace = traceLayer('trace-layer', 'trace-asset', {
+    opacity: 0.65,
+    transform: transform({ x: 0.25, y: 0.75, scale: 0.5, rotation: 90, flipX: true }),
+  });
+  const assets: CompositorAssets = {
+    metadataById: {
+      bottom: { width: 400, height: 200 },
+      'trace-asset': { width: 200, height: 100 },
+    },
+    imagesById: { bottom: bottomImage, 'trace-asset': traceImage },
+  };
+
+  renderDesignLayers(
+    asContext(context),
+    { width: 1000, height: 800 },
+    [imageLayer('bottom-layer', 'bottom'), trace],
+    assets,
+  );
+
+  assert.deepEqual(context.draws.map(({ image: drawn }) => drawn), [bottomImage, traceImage]);
+  assert.deepEqual(context.draws[1].args, [0, 0, 200, 100, -115, -57.5, 230, 115]);
+  assert.equal(context.draws[1].alpha, 0.65);
+  assert.equal(context.draws[1].filter, 'none');
+  assert.deepEqual(context.draws[1].operations.slice(-3), [
+    ['translate', 250, 600],
+    ['rotate', Math.PI / 2],
+    ['scale', -1, 1],
+  ]);
+  assert.equal(
+    hitTestDesignLayers(
+      asContext(context),
+      { x: 250, y: 600 },
+      { width: 1000, height: 800 },
+      [imageLayer('bottom-layer', 'bottom'), trace],
+      assets,
+    )?.id,
+    trace.id,
+  );
+
+  const missing = new RecordingContext();
+  renderDesignLayers(
+    asContext(missing),
+    { width: 1000, height: 800 },
+    [{ ...trace, svgAssetId: 'missing' }],
+    assets,
+  );
+  assert.equal(missing.draws.length, 0);
+  assert.equal(hitTestDesignLayers(
+    asContext(missing),
+    { x: 250, y: 600 },
+    { width: 1000, height: 800 },
+    [{ ...trace, visible: false }],
+    assets,
+  ), null);
 });
 
 test('measures and renders multiline text with reference scaling, outline, alignment, and explicit spacing', () => {

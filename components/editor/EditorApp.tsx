@@ -23,9 +23,14 @@ import {
   createBrowserBackgroundRemovalWorker,
 } from '../../editor/backgroundRemovalCoordinator';
 import {
+  TraceCoordinator,
+  createBrowserTraceWorker,
+} from '../../editor/traceCoordinator';
+import {
   createTextLayer,
   type DesignLayer,
   type EditorTool,
+  type ImageLayer,
   type TextLayer,
 } from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
@@ -38,6 +43,7 @@ import { EditorTopBar } from './EditorTopBar';
 import { ProjectDrawer } from './ProjectDrawer';
 import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
 import { useBackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
+import { useTraceWorkflow } from './useTraceWorkflow';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -73,8 +79,14 @@ export const addTextLayerFromPanel = (
 export const normalizeToolForSelectedLayer = (
   tool: EditorTool,
   layer: Pick<DesignLayer, 'type'> | null,
-): EditorTool => layer?.type !== 'image' &&
+): EditorTool => (
+  layer?.type !== 'image' &&
   (tool === 'crop' || tool === 'adjust' || tool === 'remove-background')
+) || (
+  layer?.type !== 'image' &&
+  layer?.type !== 'trace' &&
+  tool === 'trace'
+)
   ? 'select'
   : tool;
 
@@ -103,6 +115,7 @@ export const EditorApp = () => {
   const [lookCoordinator, setLookCoordinator] = useState<LookRenderCoordinator | null>(null);
   const [backgroundCoordinator, setBackgroundCoordinator] =
     useState<BackgroundRemovalCoordinator | null>(null);
+  const [traceCoordinator, setTraceCoordinator] = useState<TraceCoordinator | null>(null);
   const [backgroundBrushMode, setBackgroundBrushMode] =
     useState<BackgroundBrushMode>('idle');
   const [backgroundBrushSize, setBackgroundBrushSize] = useState(32);
@@ -127,6 +140,13 @@ export const EditorApp = () => {
   const selectedLayerId = selectedLayer?.id ?? null;
   const selectedLayerType = selectedLayer?.type ?? null;
   const selectedImageLayer = selectedLayer?.type === 'image' ? selectedLayer : null;
+  const selectedTraceLayer = selectedLayer?.type === 'trace' ? selectedLayer : null;
+  const traceSourceLayer = selectedImageLayer ?? (
+    selectedTraceLayer
+      ? variation?.layers.find((candidate): candidate is ImageLayer =>
+        candidate.id === selectedTraceLayer.sourceLayerId && candidate.type === 'image') ?? null
+      : null
+  );
   const projectVariationIds = project?.variations.map(({ id }) => id) ?? [];
   const projectVariationIdKey = projectVariationIds.join('\u0000');
 
@@ -135,19 +155,23 @@ export const EditorApp = () => {
     const nextBackgroundCoordinator = new BackgroundRemovalCoordinator(
       createBrowserBackgroundRemovalWorker,
     );
+    const nextTraceCoordinator = new TraceCoordinator(createBrowserTraceWorker);
     const disposeOnPageHide = (event: PageTransitionEvent) => {
       if (!event.persisted) {
         coordinator.dispose();
         nextBackgroundCoordinator.dispose();
+        nextTraceCoordinator.dispose();
       }
     };
     window.addEventListener('pagehide', disposeOnPageHide);
     setLookCoordinator(coordinator);
     setBackgroundCoordinator(nextBackgroundCoordinator);
+    setTraceCoordinator(nextTraceCoordinator);
     return () => {
       window.removeEventListener('pagehide', disposeOnPageHide);
       coordinator.dispose();
       nextBackgroundCoordinator.dispose();
+      nextTraceCoordinator.dispose();
     };
   }, []);
 
@@ -160,6 +184,18 @@ export const EditorApp = () => {
       ? imagesById[selectedImageLayer.assetId] ?? null
       : null,
     coordinator: backgroundCoordinator,
+    dispatch: workspace.dispatch,
+    commitGeneratedAsset: workspace.commitGeneratedAsset,
+  });
+
+  const traceWorkflow = useTraceWorkflow({
+    project,
+    variationId: variation?.id ?? null,
+    sourceLayer: traceSourceLayer,
+    traceLayer: selectedTraceLayer,
+    assetsById: workspace.assetsById,
+    imagesById,
+    coordinator: traceCoordinator,
     dispatch: workspace.dispatch,
     commitGeneratedAsset: workspace.commitGeneratedAsset,
   });
@@ -442,6 +478,7 @@ export const EditorApp = () => {
                 onBackgroundBrushModeChange={setBackgroundBrushMode}
                 onBackgroundBrushSizeChange={setBackgroundBrushSize}
                 onBackgroundDone={() => setBackgroundBrushMode('idle')}
+                traceWorkflow={traceWorkflow}
                 dispatch={workspace.dispatch}
               />
             </div>
