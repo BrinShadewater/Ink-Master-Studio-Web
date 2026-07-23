@@ -22,6 +22,10 @@ export interface CompositorAssets {
   imagesById: Record<string, CanvasImageSource>;
 }
 
+export type DesignCanvasContext =
+  | CanvasRenderingContext2D
+  | OffscreenCanvasRenderingContext2D;
+
 interface MeasuredGlyph {
   character: string;
   penX: number;
@@ -53,7 +57,7 @@ const getTextDesignScale = (viewport: Size) =>
   Math.max(0, Math.min(viewport.width, viewport.height)) / REFERENCE_DESIGN_EXTENT;
 
 const measureTextLayer = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layer: TextLayer,
 ): MeasuredTextBlock => {
@@ -109,7 +113,7 @@ const measureTextLayer = (
 };
 
 export const getTextLayerBounds = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layer: TextLayer,
 ): Rect => {
@@ -127,7 +131,7 @@ export const getTextLayerBounds = (
 };
 
 const renderImageLayer = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layer: Extract<DesignLayer, { type: 'image' }>,
   assets: CompositorAssets,
@@ -182,7 +186,7 @@ const getLineOrigin = (align: TextLayer['align'], blockWidth: number, line: Meas
 };
 
 const renderTextLayer = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layer: TextLayer,
 ) => {
@@ -220,7 +224,7 @@ const renderTextLayer = (
 };
 
 const renderTraceLayer = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layer: TraceLayer,
   assets: CompositorAssets,
@@ -249,7 +253,7 @@ const renderTraceLayer = (
 };
 
 export const renderDesignLayers = (
-  context: CanvasRenderingContext2D,
+  context: DesignCanvasContext,
   viewport: Size,
   layers: DesignLayer[],
   assets: CompositorAssets,

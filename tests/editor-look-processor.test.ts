@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  MAX_EXPORT_LOOK_WORKING_BYTES,
   applyVariationLook,
   blendLookStrength,
   canonicalTextureValue,
+  estimateVariationLookWorkingBytes,
+  type LookAllocation,
   type RgbaFrame,
 } from '../editor/lookProcessor';
 import { createDefaultLook, type VariationLook } from '../editor/lookModel';
@@ -88,6 +91,68 @@ test('all eight processed defaults match reviewed byte fixtures', () => {
     assert.deepEqual([...output.pixels], defaultExpectedPixels[id], id);
     assert.notEqual(output.pixels.buffer, frame.pixels.buffer, `${id} output is isolated`);
   }
+});
+
+test('caller-owned output preserves every reviewed golden byte', () => {
+  for (const id of processedLookIds) {
+    const output = new Uint8ClampedArray(frame.pixels.length);
+    output.fill(0xaa);
+    const result = applyVariationLook(frame, createDefaultLook(id, 0), { output });
+    assert.equal(result.pixels, output, `${id} caller owns output`);
+    assert.deepEqual([...output], defaultExpectedPixels[id], id);
+  }
+});
+
+test('4500-square clarity stays below the export bound without a full-frame Float64Array', () => {
+  const width = 4500;
+  const height = 4500;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  const output = new Uint8ClampedArray(pixels.length);
+  const allocations: LookAllocation[] = [];
+  const look = { ...createDefaultLook('clean-photo'), clarity: 1 };
+  assert.ok(
+    estimateVariationLookWorkingBytes(width, height, look) <=
+      MAX_EXPORT_LOOK_WORKING_BYTES,
+  );
+  assert.ok(
+    estimateVariationLookWorkingBytes(
+      width,
+      height,
+      createDefaultLook('distressed-print'),
+    ) <= MAX_EXPORT_LOOK_WORKING_BYTES,
+  );
+
+  const result = applyVariationLook(
+    { width, height, pixels },
+    look,
+    {
+      output,
+      maxWorkingBytes: MAX_EXPORT_LOOK_WORKING_BYTES,
+      allocationTracker: (allocation) => allocations.push(allocation),
+    },
+  );
+
+  assert.equal(result.pixels, output);
+  assert.ok(allocations.some(({ kind }) => kind === 'clarity-row'));
+  assert.ok(allocations
+    .filter(({ arrayType }) => arrayType === 'Float64Array')
+    .every(({ length }) => length < pixels.length));
+});
+
+test('Look memory limits fail before allocating output or working rows', () => {
+  const allocations: LookAllocation[] = [];
+  assert.throws(
+    () => applyVariationLook(
+      frame,
+      createDefaultLook('distressed-print'),
+      {
+        maxWorkingBytes: frame.pixels.byteLength,
+        allocationTracker: (allocation) => allocations.push(allocation),
+      },
+    ),
+    { message: 'Export artwork is too large for this browser.' },
+  );
+  assert.deepEqual(allocations, []);
 });
 
 test('Monochrome uses fixed Rec. 709 luminance', () => {
