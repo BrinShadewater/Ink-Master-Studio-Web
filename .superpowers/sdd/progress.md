@@ -47,3 +47,4 @@ Phase 2C image preparation and vector trace (plan commit 552d209)
 
 Execution location: current checkout on main (owner explicitly declined an isolated worktree on 2026-07-23).
 Task 1: complete (schema 4 image-prep and trace models, variation history commands, save-before-reference generated-asset commits, present/past/future reachability cleanup, and schema 1 through 3 migration; 96 focused tests plus the full 455-test suite, production build, typecheck, and diff check passed).
+Task 2: complete (pure deterministic OKLab edge clustering and eight-neighbor removal, selected connected-region removal, canonical chamfer feathering, ordered erase/restore correction strokes, picked-color sampling, and 2048-pixel scale resolution; 8 exact pixel-fixture tests, typecheck, and diff check passed).
