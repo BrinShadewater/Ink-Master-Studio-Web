@@ -13,6 +13,7 @@ import type { DesignLayer, DesignVariation, EditorAsset, ImageLayer, TraceLayer 
 import { createDefaultTraceSettings } from '../editor/traceModel';
 import {
   canRetainReadyPreviewFrame,
+  clearPreviewBackground,
   composeBoundedVariationFrame,
   resolveCanonicalPixelSize,
   resolveBoundedPixelSize,
@@ -200,6 +201,28 @@ test('bounds composed pixel dimensions without changing aspect ratio', () => {
     resolveCanonicalPixelSize({ width: 390, height: 500 }, 2, 1600),
     { width: 780, height: 780 },
   );
+});
+
+test('clears transparent previews without filling and preserves solid backgrounds', () => {
+  const transparent = new PreviewContext();
+  clearPreviewBackground(
+    transparent as unknown as CanvasRenderingContext2D,
+    40,
+    30,
+    'transparent',
+  );
+  assert.equal(transparent.clearCount, 1);
+  assert.equal(transparent.fillCount, 0);
+
+  const solid = new PreviewContext();
+  clearPreviewBackground(
+    solid as unknown as CanvasRenderingContext2D,
+    40,
+    30,
+    '#161616',
+  );
+  assert.equal(solid.clearCount, 1);
+  assert.equal(solid.fillCount, 1);
 });
 
 test('waits for every visible image and ignores hidden missing images', () => {

@@ -27,7 +27,7 @@ import type {
   EditorAsset,
 } from '../../editor/model';
 
-export type PreviewBackground = '#1f1f1f' | '#f5f5f3' | '#161616';
+export type PreviewBackground = '#1f1f1f' | '#f5f5f3' | '#161616' | 'transparent';
 export type PreviewPixelBound = 240 | 800 | 1600;
 
 export interface VariationPreviewCanvasProps {
@@ -386,9 +386,7 @@ const paintFrame = (
   imageData.data.set(frame.pixels);
   frameContext.putImageData(imageData, 0, 0);
 
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = background;
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  clearPreviewBackground(context, canvas.width, canvas.height, background);
   const designRect = containCanonicalSurface({
     width: canvas.width,
     height: canvas.height,
@@ -403,6 +401,18 @@ const paintFrame = (
     width,
     height,
   );
+};
+
+export const clearPreviewBackground = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  background: PreviewBackground,
+) => {
+  context.clearRect(0, 0, width, height);
+  if (background === 'transparent') return;
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
 };
 
 export const useVariationPreviewSurface = ({
@@ -503,9 +513,7 @@ export const useVariationPreviewSurface = ({
       if (variationChanged) {
         const context = canvas.getContext('2d');
         if (context) {
-          context.clearRect(0, 0, canvas.width, canvas.height);
-          context.fillStyle = background;
-          context.fillRect(0, 0, canvas.width, canvas.height);
+          clearPreviewBackground(context, canvas.width, canvas.height, background);
         }
       }
       currentRenderKeyRef.current = null;
