@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createEditorAsset, createEditorProject, createTextLayer } from '../editor/model';
+import {
+  collectHistoryAssetIds,
+  findOrphanedGeneratedAssetIds,
+} from '../editor/generatedAssetLifecycle';
+import {
+  createDefaultBackgroundRemoval,
+  createImagePrepFingerprint,
+} from '../editor/imagePrepModel';
+import {
+  createEditorAsset,
+  createEditorProject,
+  createTextLayer,
+  type ImageLayer,
+  type TraceLayer,
+} from '../editor/model';
 import {
   canRedoActiveVariation,
   canUndoActiveVariation,
@@ -12,6 +26,10 @@ import {
   reduceEditorHistory,
 } from '../editor/history';
 import { createDefaultLook } from '../editor/lookModel';
+import {
+  createDefaultTraceSettings,
+  createTraceFingerprint,
+} from '../editor/traceModel';
 
 const makeHistory = () => {
   const asset = createEditorAsset('project_history', new Blob(['x']), { name: 'x.png', width: 100, height: 100 });
@@ -23,6 +41,202 @@ const getVintageInkSeed = (history: ReturnType<typeof makeHistory>) => {
   if (look.id !== 'vintage-ink') throw new Error('Expected a vintage ink Look.');
   return look.seed;
 };
+
+const createTraceFixture = (source: ImageLayer, svgAssetId = 'asset_trace'): TraceLayer => {
+  const sourceFingerprint = createImagePrepFingerprint(source);
+  return {
+    id: 'trace_layer',
+    type: 'trace',
+    name: 'Trace',
+    sourceLayerId: source.id,
+    svgAssetId,
+    visible: true,
+    opacity: source.opacity,
+    transform: structuredClone(source.transform),
+    settings: createDefaultTraceSettings(),
+    sourceFingerprint,
+    sourceFrame: {
+      sourceWidth: 100,
+      sourceHeight: 100,
+      crop: structuredClone(source.crop),
+    },
+  };
+};
+
+test('creates a trace and hides its source as one undoable edit', () => {
+  const initial = makeHistory();
+  const source = getSelectedImageLayer(initial.present);
+  if (!source) throw new Error('Expected source image.');
+  const trace = createTraceFixture(source);
+  const created = reduceEditorHistory(initial, {
+    type: 'add-trace-layer',
+    sourceLayerId: source.id,
+    layer: trace,
+  });
+
+  assert.deepEqual(
+    getActiveVariation(created.present).layers.map(({ id, visible }) => ({ id, visible })),
+    [{ id: source.id, visible: false }, { id: trace.id, visible: true }],
+  );
+  assert.equal(getActiveVariation(created.present).selectedLayerId, trace.id);
+  assert.equal(created.variationHistory[created.present.activeVariationId].past.length, 1);
+
+  const undone = reduceEditorHistory(created, { type: 'undo' });
+  assert.deepEqual(getActiveVariation(undone.present).layers.map(({ id }) => id), [source.id]);
+  assert.equal(getActiveVariation(undone.present).layers[0].visible, true);
+});
+
+test('groups cleanup controls and stales linked traces without changing source transforms', () => {
+  let history = makeHistory();
+  const source = getSelectedImageLayer(history.present);
+  if (!source) throw new Error('Expected source image.');
+  history = reduceEditorHistory(history, {
+    type: 'add-trace-layer',
+    sourceLayerId: source.id,
+    layer: createTraceFixture(source),
+  });
+  for (const tolerance of [30, 40, 50]) {
+    history = reduceEditorHistory(history, {
+      type: 'set-background-removal',
+      layerId: source.id,
+      settings: {
+        ...source.backgroundRemoval,
+        enabled: true,
+        tolerance,
+      },
+      historyGroup: 'background-tolerance',
+    });
+  }
+  const variation = getActiveVariation(history.present);
+  const changedSource = variation.layers.find(({ id }) => id === source.id);
+  const staleTrace = variation.layers.find(({ id }) => id === 'trace_layer');
+  assert.equal(changedSource?.type, 'image');
+  assert.equal(staleTrace?.type, 'trace');
+  if (changedSource?.type !== 'image' || staleTrace?.type !== 'trace') throw new Error('Expected layers.');
+  assert.equal(changedSource.backgroundRemoval.tolerance, 50);
+  assert.equal(staleTrace.sourceFingerprint, '');
+  assert.equal(history.variationHistory[history.present.activeVariationId].past.length, 2);
+
+  const moved = reduceEditorHistory(history, {
+    type: 'set-transform',
+    layerId: source.id,
+    transform: { ...changedSource.transform, x: 0.7 },
+  });
+  const movedTrace = getActiveVariation(moved.present).layers.find(({ id }) => id === 'trace_layer');
+  assert.equal(movedTrace?.type, 'trace');
+  if (movedTrace?.type !== 'trace') throw new Error('Expected trace.');
+  assert.equal(movedTrace.sourceFingerprint, '');
+});
+
+test('publishes generated results without adding history and rejects stale trace settings', () => {
+  let history = makeHistory();
+  const source = getSelectedImageLayer(history.present);
+  if (!source) throw new Error('Expected source image.');
+  const enabled = {
+    ...createDefaultBackgroundRemoval(),
+    enabled: true,
+  };
+  history = reduceEditorHistory(history, {
+    type: 'set-background-removal',
+    layerId: source.id,
+    settings: enabled,
+  });
+  const currentSource = getSelectedImageLayer(history.present);
+  if (!currentSource) throw new Error('Expected current source.');
+  const inputFingerprint = createImagePrepFingerprint(currentSource);
+  const beforeBackgroundPublish = history.variationHistory[history.present.activeVariationId].past.length;
+  history = reduceEditorHistory(history, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: inputFingerprint,
+    preparedAssetId: 'asset_prepared',
+  });
+  assert.equal(
+    getSelectedImageLayer(history.present)?.backgroundRemoval.preparedAssetId,
+    'asset_prepared',
+  );
+  assert.equal(
+    history.variationHistory[history.present.activeVariationId].past.length,
+    beforeBackgroundPublish,
+  );
+  assert.strictEqual(reduceEditorHistory(history, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: 'stale',
+    preparedAssetId: 'asset_stale',
+  }), history);
+
+  const preparedSource = getSelectedImageLayer(history.present);
+  if (!preparedSource) throw new Error('Expected prepared source.');
+  const trace = createTraceFixture(preparedSource, null as unknown as string);
+  trace.svgAssetId = null;
+  trace.sourceFingerprint = '';
+  history = reduceEditorHistory(history, {
+    type: 'add-trace-layer',
+    sourceLayerId: source.id,
+    layer: trace,
+  });
+  const settings = { ...trace.settings, detail: 70 };
+  history = reduceEditorHistory(history, {
+    type: 'set-trace-settings',
+    layerId: trace.id,
+    settings,
+  });
+  const sourceFingerprint = createImagePrepFingerprint(preparedSource);
+  const traceFingerprint = createTraceFingerprint(sourceFingerprint, settings);
+  assert.strictEqual(reduceEditorHistory(history, {
+    type: 'publish-trace-result',
+    layerId: trace.id,
+    expectedSourceFingerprint: sourceFingerprint,
+    expectedTraceFingerprint: createTraceFingerprint(sourceFingerprint, trace.settings),
+    svgAssetId: 'asset_old_trace',
+    palette: [],
+  }), history);
+
+  const published = reduceEditorHistory(history, {
+    type: 'publish-trace-result',
+    layerId: trace.id,
+    expectedSourceFingerprint: sourceFingerprint,
+    expectedTraceFingerprint: traceFingerprint,
+    svgAssetId: 'asset_new_trace',
+    palette: ['#112233'],
+  });
+  const publishedTrace = getActiveVariation(published.present).layers.find(({ id }) => id === trace.id);
+  assert.equal(publishedTrace?.type, 'trace');
+  if (publishedTrace?.type !== 'trace') throw new Error('Expected trace.');
+  assert.equal(publishedTrace.svgAssetId, 'asset_new_trace');
+  assert.equal(publishedTrace.sourceFingerprint, sourceFingerprint);
+  assert.deepEqual(publishedTrace.settings.palette, ['#112233']);
+});
+
+test('keeps generated assets reachable from present, undo, and redo states', () => {
+  let history = makeHistory();
+  const source = getSelectedImageLayer(history.present);
+  if (!source) throw new Error('Expected source image.');
+  history = reduceEditorHistory(history, {
+    type: 'add-trace-layer',
+    sourceLayerId: source.id,
+    layer: createTraceFixture(source),
+  });
+  const undone = reduceEditorHistory(history, { type: 'undo' });
+  const assets = [
+    createEditorAsset(history.present.id, new Blob(['upload']), {
+      name: 'upload.png', width: 100, height: 100,
+    }),
+    createEditorAsset(history.present.id, new Blob(['trace']), {
+      name: 'trace.svg', width: 100, height: 100,
+    }, { role: 'trace-svg' }),
+    createEditorAsset(history.present.id, new Blob(['orphan']), {
+      name: 'orphan.svg', width: 100, height: 100,
+    }, { role: 'trace-svg' }),
+  ];
+  assets[0].id = source.assetId;
+  assets[1].id = 'asset_trace';
+  assets[2].id = 'asset_orphan';
+
+  assert.ok(collectHistoryAssetIds(undone).has('asset_trace'));
+  assert.deepEqual(findOrphanedGeneratedAssetIds(assets, undone), ['asset_orphan']);
+});
 
 test('undoes and redoes a transform without mutating the original source state', () => {
   const initial = makeHistory();

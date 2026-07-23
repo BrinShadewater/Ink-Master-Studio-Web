@@ -14,6 +14,11 @@ import {
   type EditorProject,
   type ImageLayer,
 } from './model';
+import { createDefaultBackgroundRemoval } from './imagePrepModel';
+import {
+  collectProjectAssetIds,
+  findOrphanedGeneratedAssetIds,
+} from './generatedAssetLifecycle';
 import {
   deleteEditorAsset,
   deleteEditorProject,
@@ -50,11 +55,69 @@ export interface EditorWorkspace {
   dispatch: (command: EditorCommand) => void;
   importFile: (file: File) => Promise<void>;
   importLayerFile: (file: File) => Promise<void>;
+  commitGeneratedAsset: (asset: EditorAsset, command: GeneratedAssetCommand) => Promise<boolean>;
   openProject: (projectId: string) => Promise<boolean>;
   deleteProject: (projectId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
   retrySave: () => Promise<void>;
 }
+
+export type GeneratedAssetCommand =
+  | Extract<EditorCommand, { type: 'set-background-removal' }>
+  | Extract<EditorCommand, { type: 'publish-background-result' }>
+  | Extract<EditorCommand, { type: 'add-trace-layer' }>
+  | Extract<EditorCommand, { type: 'publish-trace-result' }>;
+
+export interface GeneratedAssetCommitDependencies {
+  getHistory: () => EditorHistory | null;
+  isCurrent: (projectId: string) => boolean;
+  saveAsset: (asset: EditorAsset) => Promise<unknown>;
+  deleteAsset: (assetId: string) => Promise<void>;
+  publish: (history: EditorHistory, asset: EditorAsset) => void;
+}
+
+export const commitGeneratedAssetIfCurrent = async (
+  asset: EditorAsset,
+  command: GeneratedAssetCommand,
+  dependencies: GeneratedAssetCommitDependencies,
+): Promise<boolean> => {
+  if (!asset.role) throw new Error('Generated editor asset role is required.');
+  const initial = dependencies.getHistory();
+  if (!initial || initial.present.id !== asset.projectId || !dependencies.isCurrent(asset.projectId)) {
+    return false;
+  }
+
+  await dependencies.saveAsset(asset);
+  let cleaned = false;
+  const cleanUp = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    await dependencies.deleteAsset(asset.id);
+  };
+
+  try {
+    const current = dependencies.getHistory();
+    if (!current || current.present.id !== asset.projectId ||
+      !dependencies.isCurrent(asset.projectId)) {
+      await cleanUp();
+      return false;
+    }
+    const next = reduceEditorHistory(current, command);
+    if (next === current) {
+      await cleanUp();
+      return false;
+    }
+    dependencies.publish(next, asset);
+    return true;
+  } catch (error) {
+    try {
+      await cleanUp();
+    } catch {
+      // Preserve the publication error; repository reconciliation can remove the orphan later.
+    }
+    throw error;
+  }
+};
 
 export const validateRasterImport = (file: File): string | null => {
   if (!SUPPORTED_RASTER_TYPES.includes(file.type)) return 'Choose a PNG, JPEG, or WebP image.';
@@ -229,8 +292,7 @@ export class AssetUrlRegistry {
 }
 
 export const projectReferencesEditorAsset = (project: EditorProject, assetId: string) =>
-  project.sourceAssetId === assetId || project.variations.some((variation) =>
-    variation.layers.some((layer) => isImageLayer(layer) && layer.assetId === assetId));
+  collectProjectAssetIds(project).has(assetId);
 
 export interface WorkspaceAssetReconciliation {
   assetsById: Record<string, EditorAsset>;
@@ -384,6 +446,7 @@ const createImportedImageLayer = (asset: EditorAsset): ImageLayer => ({
   transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
   crop: { x: 0, y: 0, width: 1, height: 1 },
   adjustments: { brightness: 0, contrast: 0, saturation: 0 },
+  backgroundRemoval: createDefaultBackgroundRemoval(),
 });
 
 export interface AdditionalImageImportDependencies {
@@ -508,6 +571,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   const activeProjectIdRef = useRef<string | null>(null);
   const latestRevisionRef = useRef<string | null>(null);
   const historyRef = useRef<EditorHistory | null>(null);
+  const pendingGeneratedCleanupRef = useRef(new Set<string>());
   const refreshGenerationRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -709,6 +773,45 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     });
   }, []);
 
+  const commitGeneratedAsset = useCallback(async (
+    asset: EditorAsset,
+    command: GeneratedAssetCommand,
+  ): Promise<boolean> => {
+    const operation = authorityRef.current.current();
+    try {
+      return await commitGeneratedAssetIfCurrent(asset, command, {
+        getHistory: () => historyRef.current,
+        isCurrent: (projectId) =>
+          mountedRef.current &&
+          authorityRef.current.owns(operation) &&
+          activeProjectIdRef.current === projectId &&
+          !persistenceRef.current.isBlocked(projectId),
+        saveAsset: saveEditorAsset,
+        deleteAsset: deleteEditorAsset,
+        publish: (next, generatedAsset) => {
+          const nextAssetsById = {
+            ...assetsByIdRef.current,
+            [generatedAsset.id]: generatedAsset,
+          };
+          const nextAssetUrlsById = assetUrlRegistryRef.current!.sync(Object.values(nextAssetsById));
+          historyRef.current = next;
+          assetsByIdRef.current = nextAssetsById;
+          activeProjectIdRef.current = next.present.id;
+          latestRevisionRef.current = `${next.present.id}:${next.present.updatedAt}`;
+          setHistory(next);
+          setAssetsById(nextAssetsById);
+          setAssetUrlsById(nextAssetUrlsById);
+          setError(null);
+        },
+      });
+    } catch (nextError) {
+      if (mountedRef.current && authorityRef.current.owns(operation)) {
+        setError(getErrorMessage(nextError));
+      }
+      return false;
+    }
+  }, []);
+
   const deleteProject = useCallback(async (projectId: string) => {
     const targetProjectId = projectId;
     const operation = authorityRef.current.begin();
@@ -746,6 +849,41 @@ export const useEditorWorkspace = (): EditorWorkspace => {
   }, [refreshProjects]);
 
   const historyRevision = history ? `${history.present.id}:${history.present.updatedAt}` : null;
+
+  useEffect(() => {
+    if (!history) return;
+    const operation = authorityRef.current.current();
+    const orphanIds = findOrphanedGeneratedAssetIds(Object.values(assetsById), history)
+      .filter((assetId) => !pendingGeneratedCleanupRef.current.has(assetId));
+
+    for (const assetId of orphanIds) {
+      pendingGeneratedCleanupRef.current.add(assetId);
+      void deleteEditorAsset(assetId).then(() => {
+        const currentHistory = historyRef.current;
+        const currentAsset = assetsByIdRef.current[assetId];
+        if (
+          !mountedRef.current ||
+          !authorityRef.current.owns(operation) ||
+          !currentHistory ||
+          currentHistory.present.id !== history.present.id ||
+          !currentAsset ||
+          !findOrphanedGeneratedAssetIds([currentAsset], currentHistory).includes(assetId)
+        ) return;
+        const nextAssetsById = { ...assetsByIdRef.current };
+        delete nextAssetsById[assetId];
+        const nextAssetUrlsById = assetUrlRegistryRef.current!.sync(Object.values(nextAssetsById));
+        assetsByIdRef.current = nextAssetsById;
+        setAssetsById(nextAssetsById);
+        setAssetUrlsById(nextAssetUrlsById);
+      }).catch((nextError: unknown) => {
+        if (mountedRef.current && authorityRef.current.owns(operation)) {
+          setError(getErrorMessage(nextError));
+        }
+      }).finally(() => {
+        pendingGeneratedCleanupRef.current.delete(assetId);
+      });
+    }
+  }, [assetsById, history]);
 
   const retrySave = useCallback(async () => {
     const currentHistory = historyRef.current;
@@ -807,6 +945,7 @@ export const useEditorWorkspace = (): EditorWorkspace => {
     dispatch,
     importFile,
     importLayerFile,
+    commitGeneratedAsset,
     openProject,
     deleteProject,
     refreshProjects,

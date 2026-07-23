@@ -68,6 +68,8 @@ const sectionTitle: Record<EditorTool, string> = {
   crop: 'Crop',
   adjust: 'Adjustments',
   looks: 'Looks',
+  'remove-background': 'Remove background',
+  trace: 'Trace',
 };
 
 const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -209,7 +211,13 @@ export const EditorInspector = ({
           </div>
           <TextInspector layer={layer} dispatch={dispatch} />
         </>
-      ) : <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />}
+      ) : layer.type === 'image' ? (
+        <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />
+      ) : (
+        <div className="p-4">
+          <h2 className="text-sm font-semibold text-neutral-100">Trace</h2>
+        </div>
+      )}
     </aside>
   );
 };

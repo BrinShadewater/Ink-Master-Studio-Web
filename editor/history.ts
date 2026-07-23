@@ -3,6 +3,7 @@ import {
   duplicateVariation,
   isImageLayer,
   isTextLayer,
+  isTraceLayer,
   normalizeTransform,
   type CropRect,
   type DesignLayer,
@@ -13,7 +14,13 @@ import {
   type LayerTransform,
   type TextLayer,
   type TextLayerStyle,
+  type TraceLayer,
 } from './model';
+import {
+  createImagePrepFingerprint,
+  normalizeBackgroundRemoval,
+  type BackgroundRemovalSettings,
+} from './imagePrepModel';
 import {
   createDefaultLook,
   isSeededLook,
@@ -23,6 +30,12 @@ import {
   type VariationLook,
 } from './lookModel';
 import { normalizeTextContent, normalizeTextStyle } from './textNormalization';
+import {
+  createTraceFingerprint,
+  normalizeTraceSettings,
+  serializeTraceInput,
+  type TraceSettings,
+} from './traceModel';
 
 export type EditorCommand =
   | { type: 'rename-project'; name: string }
@@ -33,6 +46,7 @@ export type EditorCommand =
   | { type: 'select-layer'; layerId: string }
   | { type: 'add-image-layer'; layer: ImageLayer }
   | { type: 'add-text-layer'; layer: TextLayer }
+  | { type: 'add-trace-layer'; sourceLayerId: string; layer: TraceLayer }
   | { type: 'rename-layer'; layerId: string; name: string }
   | { type: 'duplicate-layer'; layerId: string }
   | { type: 'delete-layer'; layerId: string }
@@ -41,6 +55,18 @@ export type EditorCommand =
   | { type: 'set-transform'; layerId: string; transform: LayerTransform; historyGroup?: string }
   | { type: 'set-crop'; layerId: string; crop: CropRect; historyGroup?: string }
   | { type: 'set-adjustments'; layerId: string; adjustments: ImageAdjustments; historyGroup?: string }
+  | { type: 'set-background-removal'; layerId: string; settings: BackgroundRemovalSettings; historyGroup?: string }
+  | { type: 'publish-background-result'; layerId: string; expectedInputFingerprint: string; preparedAssetId: string }
+  | { type: 'set-trace-settings'; layerId: string; settings: TraceSettings; historyGroup?: string }
+  | {
+    type: 'publish-trace-result';
+    layerId: string;
+    expectedSourceFingerprint: string;
+    expectedTraceFingerprint: string;
+    svgAssetId: string;
+    palette: string[];
+  }
+  | { type: 'restore-trace-source'; layerId: string }
   | { type: 'set-opacity'; layerId: string; opacity: number; historyGroup?: string }
   | { type: 'set-text-content'; layerId: string; text: string; historyGroup?: string }
   | { type: 'set-text-style'; layerId: string; style: TextLayerStyle; historyGroup?: string }
@@ -130,6 +156,14 @@ const sameCrop = (left: CropRect, right: CropRect) =>
 const sameAdjustments = (left: ImageAdjustments, right: ImageAdjustments) =>
   left.brightness === right.brightness && left.contrast === right.contrast && left.saturation === right.saturation;
 
+const sameBackgroundRemoval = (
+  left: BackgroundRemovalSettings,
+  right: BackgroundRemovalSettings,
+) => JSON.stringify(left) === JSON.stringify(right);
+
+const sameTraceSettings = (left: TraceSettings, right: TraceSettings) =>
+  serializeTraceInput(left) === serializeTraceInput(right);
+
 const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
   layer.fontFamily === style.fontFamily && layer.fontSize === style.fontSize &&
   layer.color === style.color && layer.align === style.align &&
@@ -154,6 +188,25 @@ const updateActiveLayer = (
   const variation = next.variations.find(({ id }) => id === next.activeVariationId);
   if (!variation) return null;
   variation.layers = variation.layers.map((layer) => layer.id === layerId ? update(layer) : layer);
+  return next;
+};
+
+const updateImageLayerAndStaleLinkedTraces = (
+  project: EditorProject,
+  layerId: string,
+  update: (layer: ImageLayer) => ImageLayer,
+): EditorProject | null => {
+  const current = getActiveLayer(project, layerId);
+  if (!current || !isImageLayer(current)) return null;
+  const next = cloneProject(project);
+  const variation = getActiveVariation(next);
+  variation.layers = variation.layers.map((layer) => {
+    if (layer.id === layerId && isImageLayer(layer)) return update(layer);
+    if (isTraceLayer(layer) && layer.sourceLayerId === layerId) {
+      return { ...layer, sourceFingerprint: '' };
+    }
+    return layer;
+  });
   return next;
 };
 
@@ -380,10 +433,29 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       nextVariation.selectedLayerId = layer.id;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
+    case 'add-trace-layer': {
+      const variation = getActiveVariation(history.present);
+      const sourceIndex = variation.layers.findIndex((layer) =>
+        layer.id === command.sourceLayerId && isImageLayer(layer));
+      if (
+        sourceIndex < 0 ||
+        command.layer.sourceLayerId !== command.sourceLayerId ||
+        variation.layers.some(({ id }) => id === command.layer.id)
+      ) return history;
+      const next = cloneProject(history.present);
+      const nextVariation = getActiveVariation(next);
+      const nextSource = nextVariation.layers[sourceIndex];
+      if (!isImageLayer(nextSource)) return history;
+      nextSource.visible = false;
+      nextVariation.layers.splice(sourceIndex + 1, 0, structuredClone(command.layer));
+      nextVariation.selectedLayerId = command.layer.id;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
     case 'rename-layer': {
       const current = getActiveLayer(history.present, command.layerId);
       if (!current) return history;
-      const name = command.name.trim() || (current.type === 'image' ? 'Image' : 'Text');
+      const name = command.name.trim() ||
+        (current.type === 'image' ? 'Image' : current.type === 'trace' ? 'Trace' : 'Text');
       if (current.name === name) return history;
       const next = updateActiveLayer(history.present, command.layerId, (layer) => ({ ...layer, name }));
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present)) : history;
@@ -442,17 +514,111 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const crop = normalizeCrop(command.crop);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || !isImageLayer(current) || sameCrop(current.crop, crop)) return history;
-      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
-        isImageLayer(layer) ? { ...layer, crop } : layer);
+      const next = updateImageLayerAndStaleLinkedTraces(
+        history.present,
+        command.layerId,
+        (layer) => ({ ...layer, crop }),
+      );
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
     case 'set-adjustments': {
       const adjustments = normalizeAdjustments(command.adjustments);
       const current = getActiveLayer(history.present, command.layerId);
       if (!current || !isImageLayer(current) || sameAdjustments(current.adjustments, adjustments)) return history;
-      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
-        isImageLayer(layer) ? { ...layer, adjustments } : layer);
+      const next = updateImageLayerAndStaleLinkedTraces(
+        history.present,
+        command.layerId,
+        (layer) => ({ ...layer, adjustments }),
+      );
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+    }
+    case 'set-background-removal': {
+      const settings = normalizeBackgroundRemoval(command.settings);
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isImageLayer(current) ||
+        sameBackgroundRemoval(current.backgroundRemoval, settings)) return history;
+      const next = updateImageLayerAndStaleLinkedTraces(
+        history.present,
+        command.layerId,
+        (layer) => ({ ...layer, backgroundRemoval: settings }),
+      );
+      return next
+        ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup)
+        : history;
+    }
+    case 'publish-background-result': {
+      const current = getActiveLayer(history.present, command.layerId);
+      if (
+        !current ||
+        !isImageLayer(current) ||
+        !command.preparedAssetId ||
+        createImagePrepFingerprint(current) !== command.expectedInputFingerprint
+      ) return history;
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isImageLayer(layer)
+          ? {
+            ...layer,
+            backgroundRemoval: {
+              ...layer.backgroundRemoval,
+              preparedAssetId: command.preparedAssetId,
+              inputFingerprint: command.expectedInputFingerprint,
+            },
+          }
+          : layer);
+      return next
+        ? { ...history, present: withUpdatedAt(next, history.present) }
+        : history;
+    }
+    case 'set-trace-settings': {
+      const settings = normalizeTraceSettings(command.settings);
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isTraceLayer(current) || sameTraceSettings(current.settings, settings)) {
+        return history;
+      }
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isTraceLayer(layer) ? { ...layer, settings, sourceFingerprint: '' } : layer);
+      return next
+        ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup)
+        : history;
+    }
+    case 'publish-trace-result': {
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isTraceLayer(current) || !command.svgAssetId) return history;
+      const source = getActiveLayer(history.present, current.sourceLayerId);
+      if (!source || !isImageLayer(source)) return history;
+      const sourceFingerprint = createImagePrepFingerprint(source);
+      const traceFingerprint = createTraceFingerprint(sourceFingerprint, current.settings);
+      if (
+        sourceFingerprint !== command.expectedSourceFingerprint ||
+        traceFingerprint !== command.expectedTraceFingerprint
+      ) return history;
+      const settings = normalizeTraceSettings({
+        ...current.settings,
+        palette: command.palette,
+      });
+      const next = updateActiveLayer(history.present, command.layerId, (layer) =>
+        isTraceLayer(layer)
+          ? {
+            ...layer,
+            svgAssetId: command.svgAssetId,
+            sourceFingerprint,
+            settings,
+          }
+          : layer);
+      return next
+        ? { ...history, present: withUpdatedAt(next, history.present) }
+        : history;
+    }
+    case 'restore-trace-source': {
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isTraceLayer(current)) return history;
+      const source = getActiveLayer(history.present, current.sourceLayerId);
+      if (!source || !isImageLayer(source) || source.visible) return history;
+      const next = updateActiveLayer(history.present, source.id, (layer) => ({
+        ...layer,
+        visible: true,
+      }));
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present)) : history;
     }
     case 'set-opacity': {
       const opacity = clamp(command.opacity, 0, 1);

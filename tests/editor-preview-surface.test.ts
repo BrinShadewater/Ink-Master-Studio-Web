@@ -6,6 +6,7 @@ import {
   type DecodedImageEntry,
 } from '../editor/decodedImages';
 import { createDefaultLook } from '../editor/lookModel';
+import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
 import type { LookRenderOutcome } from '../editor/lookRenderCoordinator';
 import type { RgbaFrame } from '../editor/lookProcessor';
 import type { DesignVariation, EditorAsset, ImageLayer } from '../editor/model';
@@ -42,6 +43,7 @@ const imageLayer = (
   transform,
   crop: { x: 0, y: 0, width: 1, height: 1 },
   adjustments: { brightness: 0, contrast: 0, saturation: 0 },
+  backgroundRemoval: createDefaultBackgroundRemoval(),
   ...overrides,
 });
 

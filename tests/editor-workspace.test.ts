@@ -10,11 +10,13 @@ import {
   applyImportedProjectIfCurrent,
   applyNavigationIfCurrent,
   cleanupImportedProject,
+  commitGeneratedAssetIfCurrent,
   completeImportedProjectIfCurrent,
   getAssetsByIdForProject,
   getAutosaveRetryGeneration,
   importAdditionalImageLayer,
   openEditorProjectIfCurrent,
+  projectReferencesEditorAsset,
   queueWorkspaceRevision,
   reconcileDeletedWorkspaceAssetIfCurrent,
   readRasterDimensions,
@@ -25,6 +27,7 @@ import {
 } from '../editor/useEditorWorkspace';
 import { createEditorAsset, createEditorProject, type EditorProject } from '../editor/model';
 import { createEditorHistory, reduceEditorHistory } from '../editor/history';
+import { createImagePrepFingerprint } from '../editor/imagePrepModel';
 import {
   deleteEditorAsset,
   deleteEditorProject,
@@ -46,6 +49,132 @@ const deferred = <T>() => {
 };
 
 const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
+test('persists generated assets before publishing their project references', async () => {
+  const fixture = createOpenFixture('project-generated-commit');
+  let history = createEditorHistory(fixture.project);
+  const source = history.present.variations[0].layers[0];
+  assert.equal(source.type, 'image');
+  if (source.type !== 'image') throw new Error('Expected source image.');
+  const asset = createEditorAsset(history.present.id, new Blob(['prepared'], { type: 'image/png' }), {
+    name: 'prepared.png', width: 100, height: 100,
+  }, { role: 'prepared-image' });
+  const events: string[] = [];
+
+  const committed = await commitGeneratedAssetIfCurrent(asset, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: createImagePrepFingerprint(source),
+    preparedAssetId: asset.id,
+  }, {
+    getHistory: () => history,
+    isCurrent: (projectId) => projectId === history.present.id,
+    saveAsset: async () => { events.push('save'); },
+    deleteAsset: async () => { events.push('delete'); },
+    publish: (next) => {
+      events.push('publish');
+      history = next;
+    },
+  });
+
+  assert.equal(committed, true);
+  assert.deepEqual(events, ['save', 'publish']);
+  const published = history.present.variations[0].layers[0];
+  assert.equal(published.type, 'image');
+  if (published.type !== 'image') throw new Error('Expected published image.');
+  assert.equal(published.backgroundRemoval.preparedAssetId, asset.id);
+});
+
+test('deletes a persisted generated asset when its command becomes stale', async () => {
+  const fixture = createOpenFixture('project-generated-stale');
+  const history = createEditorHistory(fixture.project);
+  const source = history.present.variations[0].layers[0];
+  assert.equal(source.type, 'image');
+  if (source.type !== 'image') throw new Error('Expected source image.');
+  const asset = createEditorAsset(history.present.id, new Blob(['prepared'], { type: 'image/png' }), {
+    name: 'prepared.png', width: 100, height: 100,
+  }, { role: 'prepared-image' });
+  const events: string[] = [];
+
+  const committed = await commitGeneratedAssetIfCurrent(asset, {
+    type: 'publish-background-result',
+    layerId: source.id,
+    expectedInputFingerprint: 'stale',
+    preparedAssetId: asset.id,
+  }, {
+    getHistory: () => history,
+    isCurrent: () => true,
+    saveAsset: async () => { events.push('save'); },
+    deleteAsset: async () => { events.push('delete'); },
+    publish: () => { events.push('publish'); },
+  });
+
+  assert.equal(committed, false);
+  assert.deepEqual(events, ['save', 'delete']);
+});
+
+test('cleans a generated asset when atomic workspace publication fails', async () => {
+  const fixture = createOpenFixture('project-generated-failure');
+  const history = createEditorHistory(fixture.project);
+  const source = history.present.variations[0].layers[0];
+  assert.equal(source.type, 'image');
+  if (source.type !== 'image') throw new Error('Expected source image.');
+  const asset = createEditorAsset(history.present.id, new Blob(['prepared'], { type: 'image/png' }), {
+    name: 'prepared.png', width: 100, height: 100,
+  }, { role: 'prepared-image' });
+  const events: string[] = [];
+
+  await assert.rejects(
+    commitGeneratedAssetIfCurrent(asset, {
+      type: 'publish-background-result',
+      layerId: source.id,
+      expectedInputFingerprint: createImagePrepFingerprint(source),
+      preparedAssetId: asset.id,
+    }, {
+      getHistory: () => history,
+      isCurrent: () => true,
+      saveAsset: async () => { events.push('save'); },
+      deleteAsset: async () => { events.push('delete'); },
+      publish: () => {
+        events.push('publish');
+        throw new Error('React publication failed.');
+      },
+    }),
+    /React publication failed/,
+  );
+  assert.deepEqual(events, ['save', 'publish', 'delete']);
+});
+
+test('treats generated image-prep and trace assets as project references', () => {
+  const fixture = createOpenFixture('project-generated-references');
+  const image = fixture.project.variations[0].layers[0];
+  assert.equal(image.type, 'image');
+  if (image.type !== 'image') throw new Error('Expected source image.');
+  image.backgroundRemoval.preparedAssetId = 'asset_prepared';
+  image.backgroundRemoval.correctionAssetId = 'asset_corrections';
+  fixture.project.variations[0].layers.push({
+    id: 'layer_trace',
+    type: 'trace',
+    name: 'Trace',
+    visible: true,
+    opacity: 1,
+    transform: { x: 0, y: 0, scale: 1, rotation: 0, flipX: false, flipY: false },
+    sourceLayerId: image.id,
+    sourceFrame: {
+      sourceWidth: 100,
+      sourceHeight: 100,
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+    },
+    settings: { colors: 6, detail: 60, smoothing: 35, blur: 0, palette: [] },
+    sourceFingerprint: 'fingerprint',
+    svgAssetId: 'asset_trace',
+  });
+
+  assert.equal(projectReferencesEditorAsset(fixture.project, 'asset_prepared'), true);
+  assert.equal(projectReferencesEditorAsset(fixture.project, 'asset_corrections'), true);
+  assert.equal(projectReferencesEditorAsset(fixture.project, 'asset_trace'), true);
+  assert.equal(projectReferencesEditorAsset(fixture.project, 'asset_missing'), false);
+});
 
 test('accepts supported local raster files through 50 MB', () => {
   assert.equal(validateRasterImport(new File(['x'], 'still.png', { type: 'image/png' })), null);

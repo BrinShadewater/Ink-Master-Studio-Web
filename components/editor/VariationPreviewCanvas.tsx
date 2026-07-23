@@ -170,7 +170,7 @@ const canonicalLayer = (layer: DesignLayer) => layer.type === 'image' ? {
     contrast: layer.adjustments.contrast,
     saturation: layer.adjustments.saturation,
   },
-} : {
+} : layer.type === 'text' ? {
   id: layer.id,
   type: layer.type,
   name: layer.name,
@@ -185,6 +185,18 @@ const canonicalLayer = (layer: DesignLayer) => layer.type === 'image' ? {
   letterSpacing: layer.letterSpacing,
   outlineWidth: layer.outlineWidth,
   outlineColor: layer.outlineColor,
+} : {
+  id: layer.id,
+  type: layer.type,
+  name: layer.name,
+  sourceLayerId: layer.sourceLayerId,
+  svgAssetId: layer.svgAssetId,
+  visible: layer.visible,
+  opacity: layer.opacity,
+  transform: canonicalTransform(layer),
+  settings: layer.settings,
+  sourceFingerprint: layer.sourceFingerprint,
+  sourceFrame: layer.sourceFrame,
 };
 
 const hashCanonicalValue = (value: string) => {

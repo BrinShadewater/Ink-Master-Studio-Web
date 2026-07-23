@@ -7,6 +7,7 @@ import {
   type CompositorAssets,
 } from '../editor/compositor';
 import { moveTransformByViewportDelta, type Size } from '../editor/geometry';
+import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
 import type { DesignLayer, ImageLayer, TextLayer } from '../editor/model';
 
 const transform = (
@@ -31,6 +32,7 @@ const imageLayer = (id: string, assetId: string, overrides: Partial<ImageLayer> 
   transform: transform(),
   crop: { x: 0, y: 0, width: 1, height: 1 },
   adjustments: { brightness: 0, contrast: 0, saturation: 0 },
+  backgroundRemoval: createDefaultBackgroundRemoval(),
   ...overrides,
 });
 

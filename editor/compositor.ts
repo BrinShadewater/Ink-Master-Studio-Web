@@ -7,7 +7,7 @@ import {
   type Rect,
   type Size,
 } from './geometry';
-import { isImageLayer, type DesignLayer, type TextLayer } from './model';
+import { isImageLayer, isTextLayer, type DesignLayer, type TextLayer } from './model';
 
 export interface CompositorAssets {
   metadataById: Record<string, Size>;
@@ -205,7 +205,7 @@ export const renderDesignLayers = (
   for (const layer of layers) {
     if (!layer.visible) continue;
     if (isImageLayer(layer)) renderImageLayer(context, viewport, layer, assets);
-    else renderTextLayer(context, viewport, layer);
+    else if (isTextLayer(layer)) renderTextLayer(context, viewport, layer);
   }
 };
 
@@ -224,8 +224,10 @@ export const hitTestDesignLayers = (
       const source = assets.metadataById[layer.assetId];
       if (!source || !assets.imagesById[layer.assetId]) continue;
       bounds = getLayerDrawRect(source, viewport, layer.transform, layer.crop);
-    } else {
+    } else if (isTextLayer(layer)) {
       bounds = getTextLayerBounds(context, viewport, layer);
+    } else {
+      continue;
     }
     if (isPointInRotatedRect(point, bounds, layer.transform.rotation)) return layer;
   }

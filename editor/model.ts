@@ -9,12 +9,22 @@ import {
   normalizeVariationLook,
   type VariationLook,
 } from './lookModel';
+import {
+  createDefaultBackgroundRemoval,
+  normalizeBackgroundRemoval,
+  type BackgroundRemovalSettings,
+} from './imagePrepModel';
+import {
+  normalizeTraceSettings,
+  type TraceSettings,
+  type TraceSourceFrame,
+} from './traceModel';
 
 export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
-export const EDITOR_PROJECT_SCHEMA_VERSION = 3 as const;
+export const EDITOR_PROJECT_SCHEMA_VERSION = 4 as const;
 
-export type EditorTool = 'select' | 'crop' | 'adjust' | 'looks';
+export type EditorTool = 'select' | 'crop' | 'adjust' | 'looks' | 'remove-background' | 'trace';
 
 export interface LayerTransform {
   x: number;
@@ -38,6 +48,7 @@ export interface ImageLayer {
   transform: LayerTransform;
   crop: CropRect;
   adjustments: ImageAdjustments;
+  backgroundRemoval: BackgroundRemovalSettings;
 }
 
 export interface SourceMetadata {
@@ -74,7 +85,21 @@ export interface TextLayerStyle {
   outlineColor: string;
 }
 
-export type DesignLayer = ImageLayer | TextLayer;
+export interface TraceLayer {
+  id: string;
+  type: 'trace';
+  name: string;
+  sourceLayerId: string;
+  svgAssetId: string | null;
+  visible: boolean;
+  opacity: number;
+  transform: LayerTransform;
+  settings: TraceSettings;
+  sourceFingerprint: string;
+  sourceFrame: TraceSourceFrame;
+}
+
+export type DesignLayer = ImageLayer | TextLayer | TraceLayer;
 
 export interface DesignVariation {
   id: string;
@@ -106,6 +131,7 @@ export interface EditorAsset {
   height: number;
   createdAt: number;
   blob: Blob;
+  role?: 'prepared-image' | 'cleanup-corrections' | 'trace-svg';
 }
 
 export const createEditorId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
@@ -126,14 +152,18 @@ export const createEditorAsset = (
   projectId: string,
   blob: Blob,
   metadata: { name: string; width: number; height: number },
+  options: { role?: EditorAsset['role'] } = {},
 ): EditorAsset => ({
   id: createEditorId('asset'), projectId, name: metadata.name, mimeType: blob.type,
   width: metadata.width, height: metadata.height, createdAt: Date.now(), blob,
+  ...(options.role ? { role: options.role } : {}),
 });
 
 export const isImageLayer = (layer: DesignLayer): layer is ImageLayer => layer.type === 'image';
 
 export const isTextLayer = (layer: DesignLayer): layer is TextLayer => layer.type === 'text';
+
+export const isTraceLayer = (layer: DesignLayer): layer is TraceLayer => layer.type === 'trace';
 
 export const createTextLayer = (text = 'Text'): TextLayer => ({
   id: createEditorId('layer'),
@@ -159,6 +189,7 @@ export const createEditorProject = (name: string, asset: EditorAsset): EditorPro
     transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
     crop: { x: 0, y: 0, width: 1, height: 1 },
     adjustments: { brightness: 0, contrast: 0, saturation: 0 },
+    backgroundRemoval: createDefaultBackgroundRemoval(),
   };
   const variation: DesignVariation = {
     id: createEditorId('variation'),
@@ -180,7 +211,14 @@ export const duplicateVariation = (source: DesignVariation, name: string): Desig
   const duplicate = structuredClone(source);
   duplicate.id = createEditorId('variation');
   duplicate.name = name.trim() || `${source.name} copy`;
-  duplicate.layers = duplicate.layers.map((layer) => ({ ...layer, id: createEditorId('layer') }));
+  const layerIds = new Map(source.layers.map((layer) => [layer.id, createEditorId('layer')]));
+  duplicate.layers = duplicate.layers.map((layer) => ({
+    ...layer,
+    id: layerIds.get(layer.id)!,
+    ...(layer.type === 'trace'
+      ? { sourceLayerId: layerIds.get(layer.sourceLayerId) ?? layer.sourceLayerId }
+      : {}),
+  }));
   duplicate.selectedLayerId = duplicate.layers[0].id;
   return duplicate;
 };
@@ -229,8 +267,18 @@ const normalizeAdjustments = (value: unknown): ImageAdjustments => {
   };
 };
 
-const normalizeImageLayer = (value: unknown): ImageLayer | null => {
+const normalizeImageLayer = (
+  value: unknown,
+  availableAssetIds?: ReadonlySet<string>,
+): ImageLayer | null => {
   if (!isRecord(value) || value.type !== 'image' || !nonEmptyString(value.id) || !nonEmptyString(value.assetId)) return null;
+  const backgroundRemoval = normalizeBackgroundRemoval(value.backgroundRemoval);
+  const preparedAvailable = !backgroundRemoval.preparedAssetId ||
+    !availableAssetIds ||
+    availableAssetIds.has(backgroundRemoval.preparedAssetId);
+  const correctionAvailable = !backgroundRemoval.correctionAssetId ||
+    !availableAssetIds ||
+    availableAssetIds.has(backgroundRemoval.correctionAssetId);
   return {
     id: value.id,
     type: 'image',
@@ -241,6 +289,14 @@ const normalizeImageLayer = (value: unknown): ImageLayer | null => {
     transform: normalizeTransformRecord(value.transform),
     crop: normalizeCrop(value.crop),
     adjustments: normalizeAdjustments(value.adjustments),
+    backgroundRemoval: {
+      ...backgroundRemoval,
+      preparedAssetId: preparedAvailable ? backgroundRemoval.preparedAssetId : null,
+      correctionAssetId: correctionAvailable ? backgroundRemoval.correctionAssetId : null,
+      inputFingerprint: preparedAvailable && correctionAvailable
+        ? backgroundRemoval.inputFingerprint
+        : '',
+    },
   };
 };
 
@@ -259,18 +315,67 @@ const normalizeTextLayer = (value: unknown): TextLayer | null => {
   };
 };
 
-const normalizeLayer = (value: unknown): DesignLayer | null =>
-  normalizeImageLayer(value) ?? normalizeTextLayer(value);
+const normalizeTraceSourceFrame = (value: unknown): TraceSourceFrame | null => {
+  if (!isRecord(value) ||
+    !finiteNumber(value.sourceWidth) || value.sourceWidth <= 0 ||
+    !finiteNumber(value.sourceHeight) || value.sourceHeight <= 0) return null;
+  return {
+    sourceWidth: value.sourceWidth,
+    sourceHeight: value.sourceHeight,
+    crop: normalizeCrop(value.crop),
+  };
+};
+
+const normalizeTraceLayer = (
+  value: unknown,
+  availableAssetIds?: ReadonlySet<string>,
+): TraceLayer | null => {
+  if (!isRecord(value) || value.type !== 'trace' ||
+    !nonEmptyString(value.id) || !nonEmptyString(value.sourceLayerId)) return null;
+  const sourceFrame = normalizeTraceSourceFrame(value.sourceFrame);
+  if (!sourceFrame) return null;
+  const requestedSvgAssetId = nonEmptyString(value.svgAssetId) ? value.svgAssetId : null;
+  const svgAssetId = requestedSvgAssetId &&
+    (!availableAssetIds || availableAssetIds.has(requestedSvgAssetId))
+    ? requestedSvgAssetId
+    : null;
+  return {
+    id: value.id,
+    type: 'trace',
+    name: nonEmptyString(value.name) ? value.name : 'Trace',
+    sourceLayerId: value.sourceLayerId,
+    svgAssetId,
+    visible: value.visible === undefined ? true : Boolean(value.visible),
+    opacity: clamp(finiteNumber(value.opacity) ? value.opacity : 1, 0, 1),
+    transform: normalizeTransformRecord(value.transform),
+    settings: normalizeTraceSettings(value.settings),
+    sourceFingerprint: svgAssetId && typeof value.sourceFingerprint === 'string'
+      ? value.sourceFingerprint
+      : '',
+    sourceFrame,
+  };
+};
+
+const createLayerNormalizer = (availableAssetIds?: ReadonlySet<string>) =>
+  (value: unknown): DesignLayer | null =>
+    normalizeImageLayer(value, availableAssetIds) ??
+    normalizeTextLayer(value) ??
+    normalizeTraceLayer(value, availableAssetIds);
 
 const normalizeLegacyLook = () => createDefaultLook('original');
 
 const normalizeVariation = (
   value: unknown,
-  normalizeLayerValue: (layer: unknown) => DesignLayer | null = normalizeLayer,
+  normalizeLayerValue: (layer: unknown) => DesignLayer | null = createLayerNormalizer(),
   normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
 ): DesignVariation | null => {
   if (!isRecord(value) || !nonEmptyString(value.id) || !Array.isArray(value.layers)) return null;
-  const layers = value.layers.map(normalizeLayerValue).filter((layer): layer is DesignLayer => layer !== null);
+  const normalizedLayers = value.layers
+    .map(normalizeLayerValue)
+    .filter((layer): layer is DesignLayer => layer !== null);
+  const imageLayerIds = new Set(normalizedLayers.filter(isImageLayer).map(({ id }) => id));
+  const layers = normalizedLayers.filter((layer) =>
+    !isTraceLayer(layer) || imageLayerIds.has(layer.sourceLayerId));
   if (layers.length === 0) return null;
   const selectedLayerId = nonEmptyString(value.selectedLayerId) && layers.some((layer) => layer.id === value.selectedLayerId)
     ? value.selectedLayerId : layers[0].id;
@@ -307,7 +412,7 @@ const migrateProjectFields = (
   value: RecordValue,
   sourceAssetId: string,
   sourceMetadata: SourceMetadata,
-  normalizeLayerValue: (layer: unknown) => DesignLayer | null = normalizeLayer,
+  normalizeLayerValue: (layer: unknown) => DesignLayer | null,
   normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
 ): EditorProject => {
   if (!nonEmptyString(value.id)) throw new Error('Project does not contain a valid id.');
@@ -334,7 +439,12 @@ const migrateProjectFields = (
 };
 
 export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): EditorProject => {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION)) {
+  if (!isRecord(value) || (
+    value.schemaVersion !== 1 &&
+    value.schemaVersion !== 2 &&
+    value.schemaVersion !== 3 &&
+    value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION
+  )) {
     throw new Error('Unsupported editor project schema.');
   }
   if (value.schemaVersion === 1) {
@@ -356,11 +466,12 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
   if (!nonEmptyString(value.sourceAssetId)) throw new Error('Project source image not found.');
   const sourceAsset = findAsset(assets, value.sourceAssetId);
   if (!sourceAsset) throw new Error('Project source image not found.');
+  const availableAssetIds = new Set(assets.map(({ id }) => id));
   return migrateProjectFields(
     value,
     sourceAsset.id,
     normalizeSourceMetadata(value.sourceMetadata, sourceAsset),
-    normalizeLayer,
+    createLayerNormalizer(availableAssetIds),
     value.schemaVersion === 2 ? normalizeLegacyLook : normalizeVariationLook,
   );
 };
