@@ -9,7 +9,7 @@ import {
   Upload,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, type RefObject } from 'react';
 import type { SaveStatus } from '../../editor/useEditorWorkspace';
 
 export interface EditorTopBarProps {
@@ -32,6 +32,7 @@ export interface EditorTopBarProps {
   onImport: () => void;
   onOpenProjects: () => void;
   onExport: () => void;
+  exportButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 export interface ProjectNameDraftState {
@@ -95,12 +96,14 @@ interface IconButtonProps {
   icon: LucideIcon;
   onClick: () => void;
   disabled?: boolean;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 const iconButtonClass = 'grid h-10 w-10 shrink-0 place-items-center border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent';
 
-const IconButton = ({ label, icon: Icon, onClick, disabled = false }: IconButtonProps) => (
+const IconButton = ({ label, icon: Icon, onClick, disabled = false, buttonRef }: IconButtonProps) => (
   <button
+    ref={buttonRef}
     type="button"
     className={iconButtonClass}
     aria-label={label}
@@ -138,6 +141,7 @@ export const EditorTopBar = ({
   onImport,
   onOpenProjects,
   onExport,
+  exportButtonRef,
 }: EditorTopBarProps) => {
   const [projectNameState, updateProjectNameState] = useReducer(
     projectNameDraftReducer,
@@ -270,7 +274,7 @@ export const EditorTopBar = ({
         <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
         <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
-        <IconButton label="Export" icon={Download} disabled={!projectId} onClick={onExport} />
+        <IconButton label="Export" icon={Download} disabled={!projectId} onClick={onExport} buttonRef={exportButtonRef} />
         <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
       </div>
     </header>

@@ -1,5 +1,5 @@
 import { Download, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type {
   DesignVariation,
   EditorAsset,
@@ -15,6 +15,7 @@ export interface ExportMenuProps {
   projectName: string;
   variation: DesignVariation | null;
   assetsById: Record<string, EditorAsset>;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }
 
@@ -59,6 +60,7 @@ export const ExportMenu = ({
   projectName,
   variation,
   assetsById,
+  returnFocusRef,
   onClose,
 }: ExportMenuProps) => {
   const [status, setStatus] = useState<'idle' | 'building' | 'failed'>('idle');
@@ -67,6 +69,7 @@ export const ExportMenu = ({
     open,
     onClose,
     initialFocusRef: closeRef,
+    returnFocusRef,
   });
   const eligibility = variation
     ? getSvgExportEligibility(variation, assetsById)

@@ -49,6 +49,7 @@ import { useTraceWorkflow } from './useTraceWorkflow';
 import { ExportMenu } from './ExportMenu';
 import { ProductCanvas } from './ProductCanvas';
 import { useProductMockup } from './useProductMockup';
+import { ProductExportDialog } from './ProductExportDialog';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -134,6 +135,7 @@ export const EditorApp = () => {
   const [compareBackground, setCompareBackground] = useState<CompareBackground>('neutral');
   const [compareZoom, setCompareZoom] = useState(100);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const layerFileInputRef = useRef<HTMLInputElement>(null);
   const layersButtonRef = useRef<HTMLButtonElement>(null);
   const compareButtonRef = useRef<HTMLButtonElement>(null);
@@ -397,6 +399,7 @@ export const EditorApp = () => {
         onImport={() => fileInputRef.current?.click()}
         onOpenProjects={() => setProjectsOpen(true)}
         onExport={() => setExportOpen(true)}
+        exportButtonRef={exportButtonRef}
       />
 
       <section className={compareOpen
@@ -620,13 +623,11 @@ export const EditorApp = () => {
         dispatch={workspace.dispatch}
       />
 
-      <ExportMenu
-        open={exportOpen}
-        projectName={project?.name ?? 'Untitled design'}
-        variation={variation}
-        assetsById={workspace.assetsById}
-        onClose={() => setExportOpen(false)}
-      />
+      {tool === 'product' && project && variation && product ? (
+        <ProductExportDialog open={exportOpen} projectName={project.name} variation={variation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
+      ) : (
+        <ExportMenu open={exportOpen} projectName={project?.name ?? 'Untitled design'} variation={variation} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
+      )}
     </main>
   );
 };
