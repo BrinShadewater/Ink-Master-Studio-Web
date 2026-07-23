@@ -4,6 +4,219 @@ import path from 'node:path';
 const artifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'task-7', name);
 const phase2aArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2a', name);
 
+type LookRecipeSnapshot = Record<string, string | number>;
+
+interface LookWorkerHarnessSnapshot {
+  created: number;
+  terminated: number;
+  active: number;
+  held: number;
+  delayedImages: number;
+  requests: Array<{
+    requestId: number;
+    renderKey: string;
+    maxDimension: number;
+    look: LookRecipeSnapshot;
+  }>;
+}
+
+interface LookWorkerRule {
+  action: 'fail' | 'hold';
+  lookId: string;
+  minimumDimension: number;
+  maximumDimension?: number;
+}
+
+const installLookWorkerHarness = async (page: Page) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    const counterStorageKey = 'task-5-look-worker-counters';
+    const storedCounters = JSON.parse(sessionStorage.getItem(counterStorageKey) ?? 'null') as {
+      created?: number;
+      terminated?: number;
+      active?: number;
+    } | null;
+    const counters = {
+      created: storedCounters?.created ?? 0,
+      terminated: storedCounters?.terminated ?? 0,
+      active: storedCounters?.active ?? 0,
+    };
+    const requests: LookWorkerHarnessSnapshot['requests'] = [];
+    const rules: LookWorkerRule[] = [];
+    const held: Array<{
+      owner: LookWorkerProxy;
+      message: Record<string, unknown>;
+      transfer: Transferable[];
+    }> = [];
+    const delayedImages: Array<{ image: HTMLImageElement; source: string }> = [];
+    let delayNextImage = false;
+
+    const persistCounters = () => {
+      sessionStorage.setItem(counterStorageKey, JSON.stringify(counters));
+    };
+
+    class LookWorkerProxy extends EventTarget {
+      private readonly nativeWorker: Worker;
+      private terminated = false;
+
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super();
+        this.nativeWorker = new NativeWorker(scriptURL, options);
+        counters.created += 1;
+        counters.active += 1;
+        persistCounters();
+        this.nativeWorker.addEventListener('message', (event) => {
+          this.dispatchEvent(new MessageEvent('message', { data: event.data }));
+        });
+        this.nativeWorker.addEventListener('error', () => this.dispatchEvent(new Event('error')));
+        this.nativeWorker.addEventListener('messageerror', () => this.dispatchEvent(new Event('messageerror')));
+      }
+
+      postMessage(message: unknown, transfer: Transferable[] = []): void {
+        if (!message || typeof message !== 'object') {
+          this.nativeWorker.postMessage(message, transfer);
+          return;
+        }
+        const record = message as Record<string, unknown>;
+        const look = record.look;
+        if (!look || typeof look !== 'object' || typeof record.renderKey !== 'string') {
+          this.nativeWorker.postMessage(message, transfer);
+          return;
+        }
+        const recipe = JSON.parse(JSON.stringify(look)) as LookRecipeSnapshot;
+        const maxDimension = Math.max(Number(record.width) || 0, Number(record.height) || 0);
+        requests.push({
+          requestId: Number(record.requestId),
+          renderKey: record.renderKey,
+          maxDimension,
+          look: recipe,
+        });
+        const ruleIndex = rules.findIndex((rule) => (
+          rule.lookId === recipe.id &&
+          maxDimension >= rule.minimumDimension &&
+          (rule.maximumDimension === undefined || maxDimension <= rule.maximumDimension)
+        ));
+        if (ruleIndex < 0) {
+          this.nativeWorker.postMessage(message, transfer);
+          return;
+        }
+
+        const [rule] = rules.splice(ruleIndex, 1);
+        if (rule.action === 'hold') {
+          held.push({ owner: this, message: record, transfer });
+          return;
+        }
+        queueMicrotask(() => this.fail(record));
+      }
+
+      fail(message: Record<string, unknown>): void {
+        this.dispatchEvent(new MessageEvent('message', {
+          data: {
+            requestId: message.requestId,
+            renderKey: message.renderKey,
+            message: 'Look preview failed.',
+          },
+        }));
+      }
+
+      release(message: Record<string, unknown>, transfer: Transferable[]): void {
+        this.nativeWorker.postMessage(message, transfer);
+      }
+
+      terminate(): void {
+        if (this.terminated) return;
+        this.terminated = true;
+        for (let index = held.length - 1; index >= 0; index -= 1) {
+          if (held[index].owner === this) held.splice(index, 1);
+        }
+        counters.terminated += 1;
+        counters.active -= 1;
+        persistCounters();
+        this.nativeWorker.terminate();
+      }
+    }
+
+    Object.defineProperty(window, 'Worker', {
+      configurable: true,
+      writable: true,
+      value: LookWorkerProxy,
+    });
+
+    const sourceDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+    if (!sourceDescriptor?.get || !sourceDescriptor.set) {
+      throw new Error('HTML image source descriptor is unavailable.');
+    }
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: sourceDescriptor.configurable,
+      enumerable: sourceDescriptor.enumerable,
+      get: sourceDescriptor.get,
+      set(source: string) {
+        if (delayNextImage) {
+          delayNextImage = false;
+          delayedImages.push({ image: this, source: String(source) });
+          return;
+        }
+        sourceDescriptor.set!.call(this, source);
+      },
+    });
+
+    const harness = {
+      enqueue(rule: LookWorkerRule) {
+        rules.push(rule);
+      },
+      failHeld() {
+        const pending = held.shift();
+        if (pending) pending.owner.fail(pending.message);
+      },
+      releaseHeld() {
+        const pending = held.shift();
+        if (pending) pending.owner.release(pending.message, pending.transfer);
+      },
+      delayNextImage() {
+        delayNextImage = true;
+      },
+      releaseDelayedImage() {
+        const pending = delayedImages.shift();
+        if (pending) sourceDescriptor.set!.call(pending.image, pending.source);
+      },
+      snapshot(): LookWorkerHarnessSnapshot {
+        return {
+          ...counters,
+          held: held.length,
+          delayedImages: delayedImages.length,
+          requests: structuredClone(requests),
+        };
+      },
+    };
+    Object.defineProperty(window, '__task5LookWorkerHarness', {
+      configurable: true,
+      value: harness,
+    });
+  });
+};
+
+const getLookWorkerHarness = (page: Page) => page.evaluate(() => (
+  (window as typeof window & {
+    __task5LookWorkerHarness: { snapshot(): LookWorkerHarnessSnapshot };
+  }).__task5LookWorkerHarness.snapshot()
+));
+
+const enqueueLookWorkerRule = (page: Page, rule: LookWorkerRule) => page.evaluate((nextRule) => {
+  (window as typeof window & {
+    __task5LookWorkerHarness: { enqueue(value: LookWorkerRule): void };
+  }).__task5LookWorkerHarness.enqueue(nextRule);
+}, rule);
+
+const invokeLookWorkerHarness = (
+  page: Page,
+  command: 'delayNextImage' | 'failHeld' | 'releaseDelayedImage' | 'releaseHeld',
+) => page.evaluate((nextCommand) => {
+  const harness = (window as typeof window & {
+    __task5LookWorkerHarness: Record<typeof nextCommand, () => void>;
+  }).__task5LookWorkerHarness;
+  harness[nextCommand]();
+}, command);
+
 const createPngFixture = async (page: Page, width: number, height: number): Promise<Buffer> => {
   const bytes = await page.evaluate(async ({ fixtureWidth, fixtureHeight }) => {
     const canvas = document.createElement('canvas');
@@ -113,6 +326,29 @@ const readPersistedEditorState = async (page: Page, projectName: string) => page
               x: layer.transform.x,
             }
           : null);
+      };
+    };
+  })
+), projectName);
+
+const readPersistedLook = async (page: Page, projectName: string) => page.evaluate((name) => (
+  new Promise<LookRecipeSnapshot | null>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+      request.onerror = () => {
+        database.close();
+        reject(request.error ?? new Error('Could not read editor projects.'));
+      };
+      request.onsuccess = () => {
+        const project = request.result.find((candidate) => candidate.name === name);
+        const variation = project?.variations.find(
+          (candidate: { id: string }) => candidate.id === project.activeVariationId,
+        );
+        database.close();
+        resolve(variation?.look ? structuredClone(variation.look) as LookRecipeSnapshot : null);
       };
     };
   })
@@ -1124,4 +1360,214 @@ test('imports by drop, revokes object URLs, and deletes the local project', asyn
     const events = (window as unknown as { __task7ObjectUrlEvents: { created: string[]; revoked: string[] } }).__task7ObjectUrlEvents;
     return events.created.every((url) => events.revoked.includes(url));
   })).toBe(true);
+});
+
+test('@task5-review applies the exact seeded thumbnail recipe that was previewed', async ({ page }) => {
+  await installLookWorkerHarness(page);
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'look-seed-apply.png');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+
+  await expect.poll(async () => {
+    const snapshot = await getLookWorkerHarness(page);
+    return snapshot.requests.find(({ look, maxDimension }) => (
+      look.id === 'vintage-ink' && maxDimension <= 240
+    ))?.look ?? null;
+  }).not.toBeNull();
+  const candidateLook = (await getLookWorkerHarness(page)).requests.find(({ look, maxDimension }) => (
+    look.id === 'vintage-ink' && maxDimension <= 240
+  ))?.look;
+  expect(candidateLook).toBeDefined();
+
+  await page.getByRole('button', { name: 'Vintage Ink', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Vintage Ink', exact: true }))
+    .toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => readPersistedLook(page, 'look-seed-apply')).toEqual(candidateLook);
+  await expect.poll(async () => {
+    const snapshot = await getLookWorkerHarness(page);
+    return [...snapshot.requests].reverse().find(({ look, maxDimension }) => (
+      look.id === 'vintage-ink' && maxDimension > 240
+    ))?.look ?? null;
+  }).toEqual(candidateLook);
+});
+
+test('@task5-review commits complete Look controls and separates native color history', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'look-control-history.png');
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  await page.getByText('More', { exact: true }).click();
+
+  await page.getByLabel('Strength range', { exact: true }).fill('64');
+  await expect.poll(() => readPersistedLook(page, 'look-control-history')).toEqual({
+    id: 'duotone',
+    strength: 64,
+    shadowColor: '#111827',
+    highlightColor: '#f59e0b',
+    balance: 0,
+  });
+  await page.getByLabel('Balance range', { exact: true }).fill('-18');
+  await expect.poll(() => readPersistedLook(page, 'look-control-history')).toEqual({
+    id: 'duotone',
+    strength: 64,
+    shadowColor: '#111827',
+    highlightColor: '#f59e0b',
+    balance: -18,
+  });
+
+  const shadowColor = page.getByLabel('Shadow color', { exact: true });
+  await shadowColor.fill('#223344');
+  await expect.poll(() => readPersistedLook(page, 'look-control-history')).toMatchObject({
+    id: 'duotone', strength: 64, balance: -18, shadowColor: '#223344',
+  });
+  await shadowColor.fill('#556677');
+  await expect.poll(() => readPersistedLook(page, 'look-control-history')).toMatchObject({
+    id: 'duotone', strength: 64, balance: -18, shadowColor: '#556677',
+  });
+
+  const undo = page.getByRole('button', { name: 'Undo', exact: true });
+  await undo.click();
+  await expect(shadowColor).toHaveValue('#223344');
+  await undo.click();
+  await expect(shadowColor).toHaveValue('#111827');
+  await undo.click();
+  await expect(page.getByLabel('Balance range', { exact: true })).toHaveValue('0');
+  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('64');
+  await undo.click();
+  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('100');
+
+  const highlightColor = page.getByLabel('Highlight color', { exact: true });
+  await highlightColor.evaluate((input) => {
+    const colorInput = input as HTMLInputElement;
+    colorInput.value = '#123456';
+    colorInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  });
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByText('More', { exact: true }).click();
+  await page.getByLabel('Highlight color', { exact: true }).fill('#abcdef');
+  await undo.click();
+  await expect(page.getByLabel('Highlight color', { exact: true })).toHaveValue('#123456');
+
+  const balance = page.getByLabel('Balance range', { exact: true });
+  await balance.fill('9');
+  await expect(balance).toHaveValue('9');
+  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  await undo.click();
+  await expect(page.getByLabel('Balance range', { exact: true })).toHaveValue('9');
+  await undo.click();
+  await expect(page.getByLabel('Balance range', { exact: true })).toHaveValue('0');
+});
+
+test('@task5-review keeps preview failure authority keyed through pending, Retry, and stale work', async ({ page }) => {
+  await installLookWorkerHarness(page);
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'look-failure-authority.png');
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  const originalCanvas = await readCanvasPixels(canvas);
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalCanvas);
+  const lastReadyCanvas = await readCanvasPixels(canvas);
+
+  await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
+  await page.getByLabel('Strength range', { exact: true }).fill('80');
+  await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+  await invokeLookWorkerHarness(page, 'failHeld');
+  await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry Look preview' })).toBeVisible();
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+
+  const recipeBeforeRetry = await readPersistedLook(page, 'look-failure-authority');
+  await page.getByRole('button', { name: 'Retry Look preview' }).click();
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(lastReadyCanvas);
+  await expect.poll(() => readPersistedLook(page, 'look-failure-authority')).toEqual(recipeBeforeRetry);
+
+  await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
+  await page.getByLabel('Strength range', { exact: true }).fill('70');
+  await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
+
+  await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
+  await page.getByLabel('Strength range', { exact: true }).fill('60');
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
+  await page.getByLabel('Strength range', { exact: true }).fill('50');
+  await expect.poll(async () => {
+    const requests = (await getLookWorkerHarness(page)).requests;
+    return requests.some(({ look, maxDimension }) => look.strength === 50 && maxDimension > 240);
+  }).toBe(true);
+  await invokeLookWorkerHarness(page, 'failHeld');
+  await page.waitForTimeout(100);
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+
+  await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
+  await page.getByLabel('Strength range', { exact: true }).fill('40');
+  await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
+  await invokeLookWorkerHarness(page, 'delayNextImage');
+  await uploadFixture(page, 800, 1000, 'look-composition-unavailable.png');
+  await expect(page.getByLabel('Project name')).toHaveValue('look-composition-unavailable');
+  await expect.poll(async () => (await getLookWorkerHarness(page)).delayedImages).toBe(1);
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await invokeLookWorkerHarness(page, 'releaseDelayedImage');
+  await expectCanvasPainted(canvas);
+});
+
+test('@task5-review disposes the browser worker and pending surfaces on navigation', async ({ page }) => {
+  await installLookWorkerHarness(page);
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'look-worker-cleanup.png');
+  await enqueueLookWorkerRule(page, {
+    action: 'hold',
+    lookId: 'monochrome',
+    minimumDimension: 0,
+    maximumDimension: 240,
+  });
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await invokeLookWorkerHarness(page, 'failHeld');
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
+  await page.getByLabel('Strength range', { exact: true }).fill('75');
+  await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
+  await expect.poll(async () => (await getLookWorkerHarness(page)).active).toBe(1);
+
+  await page.goto('/privacy');
+  await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
+  const afterNavigation = await getLookWorkerHarness(page);
+  expect(afterNavigation.active).toBe(0);
+  expect(afterNavigation.terminated).toBe(afterNavigation.created);
+  expect(afterNavigation.held).toBe(0);
+});
+
+test('@task5-review preserves direct canvas drag geometry with a processed Look', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/');
+  await uploadFixture(page, 1600, 900, 'look-active-drag.png');
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  const originalCanvas = await readCanvasPixels(canvas);
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalCanvas);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Canvas bounds are unavailable.');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4);
+  await page.mouse.up();
+  await expect(page.getByLabel('X position')).toHaveValue('0.6');
+  await expect(page.getByLabel('Y position')).toHaveValue('0.4');
 });

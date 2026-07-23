@@ -149,25 +149,49 @@ interface ColorLookControlProps {
   id: string;
   label: string;
   value: string;
-  onChange: (value: string) => void;
-  onEnd: () => void;
+  onInput: (value: string) => void;
+  onCommit: (value: string) => void;
 }
 
-const ColorLookControl = ({ id, label, value, onChange, onEnd }: ColorLookControlProps) => (
-  <div className="flex items-center justify-between gap-3">
-    <label className="text-xs font-medium text-neutral-300" htmlFor={id}>{label}</label>
-    <input
-      id={id}
-      type="color"
-      value={value}
-      className="h-9 w-12 border border-neutral-700 bg-neutral-950 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-      onChange={(event) => onChange(event.currentTarget.value)}
-      onPointerUp={onEnd}
-      onKeyUp={onEnd}
-      onBlur={onEnd}
-    />
-  </div>
-);
+const ColorLookControl = ({ id, label, value, onInput, onCommit }: ColorLookControlProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return undefined;
+    // React treats color onChange as live input; the native event marks the picker commit.
+    let active = true;
+    const commitNativeChange = () => {
+      const committedValue = input.value;
+      queueMicrotask(() => {
+        if (active) commitRef.current(committedValue);
+      });
+    };
+    input.addEventListener('change', commitNativeChange);
+    return () => {
+      active = false;
+      input.removeEventListener('change', commitNativeChange);
+    };
+  }, []);
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <label className="text-xs font-medium text-neutral-300" htmlFor={id}>{label}</label>
+      <input
+        ref={inputRef}
+        id={id}
+        type="color"
+        value={value}
+        className="h-9 w-12 border border-neutral-700 bg-neutral-950 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+        onInput={(event) => onInput(event.currentTarget.value)}
+        onChange={() => undefined}
+        onBlur={(event) => onCommit(event.currentTarget.value)}
+      />
+    </div>
+  );
+};
 
 const commandButtonClass = 'flex h-9 items-center justify-center gap-2 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
@@ -252,15 +276,21 @@ export const LooksInspector = ({
             id="editor-look-shadow-color"
             label="Shadow color"
             value={look.shadowColor}
-            onChange={(shadowColor) => updateLook({ shadowColor }, 'look-duotone-shadow-color')}
-            onEnd={endHistoryGroup}
+            onInput={(shadowColor) => updateLook({ shadowColor }, 'look-duotone-shadow-color')}
+            onCommit={(shadowColor) => {
+              updateLook({ shadowColor }, 'look-duotone-shadow-color');
+              endHistoryGroup();
+            }}
           />
           <ColorLookControl
             id="editor-look-highlight-color"
             label="Highlight color"
             value={look.highlightColor}
-            onChange={(highlightColor) => updateLook({ highlightColor }, 'look-duotone-highlight-color')}
-            onEnd={endHistoryGroup}
+            onInput={(highlightColor) => updateLook({ highlightColor }, 'look-duotone-highlight-color')}
+            onCommit={(highlightColor) => {
+              updateLook({ highlightColor }, 'look-duotone-highlight-color');
+              endHistoryGroup();
+            }}
           />
           {numericControl('balance', 'Balance', 'balance', look.balance, lookControlBounds.balance)}
         </>;
@@ -277,8 +307,11 @@ export const LooksInspector = ({
             id="editor-look-foreground-color"
             label="Foreground color"
             value={look.foregroundColor}
-            onChange={(foregroundColor) => updateLook({ foregroundColor }, 'look-graphic-halftone-foreground-color')}
-            onEnd={endHistoryGroup}
+            onInput={(foregroundColor) => updateLook({ foregroundColor }, 'look-graphic-halftone-foreground-color')}
+            onCommit={(foregroundColor) => {
+              updateLook({ foregroundColor }, 'look-graphic-halftone-foreground-color');
+              endHistoryGroup();
+            }}
           />
           <fieldset>
             <legend className="mb-2 text-xs font-medium text-neutral-300">Background</legend>
@@ -304,8 +337,11 @@ export const LooksInspector = ({
             id="editor-look-background-color"
             label="Background color"
             value={look.backgroundColor}
-            onChange={(backgroundColor) => updateLook({ backgroundColor }, 'look-graphic-halftone-background-color')}
-            onEnd={endHistoryGroup}
+            onInput={(backgroundColor) => updateLook({ backgroundColor }, 'look-graphic-halftone-background-color')}
+            onCommit={(backgroundColor) => {
+              updateLook({ backgroundColor }, 'look-graphic-halftone-background-color');
+              endHistoryGroup();
+            }}
           />
         </>;
       case 'vintage-ink':

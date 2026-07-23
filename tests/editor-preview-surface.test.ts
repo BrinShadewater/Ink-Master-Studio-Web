@@ -14,6 +14,7 @@ import {
   resolveBoundedPixelSize,
   selectPreviewOutcomeFrame,
 } from '../components/editor/VariationPreviewCanvas';
+import * as previewSurface from '../components/editor/VariationPreviewCanvas';
 
 const image = (id: string) => ({ id } as unknown as CanvasImageSource);
 
@@ -275,4 +276,87 @@ test('preview outcome selection ignores stale work and preserves the last ready 
     readyFrame: ready,
     failure: 'Look preview failed.',
   });
+});
+
+test('preview failure authority clears for normal work and survives only a same-key Retry', () => {
+  type FailureAuthority = { renderKey: string; message: string } | null;
+  type FailureEvent =
+    | { type: 'clear' }
+    | { type: 'start'; renderKey: string; retry: boolean }
+    | { type: 'outcome'; expectedRenderKey: string; outcome: LookRenderOutcome };
+  const reduceFailure = (previewSurface as unknown as {
+    reducePreviewFailureAuthority?: (
+      current: FailureAuthority,
+      event: FailureEvent,
+    ) => FailureAuthority;
+  }).reducePreviewFailureAuthority;
+  assert.equal(typeof reduceFailure, 'function');
+  if (!reduceFailure) return;
+
+  const failedA: LookRenderOutcome = {
+    status: 'failed',
+    renderKey: 'variation-preview:key-a',
+    message: 'Look preview failed.',
+  };
+  const failedB: LookRenderOutcome = {
+    status: 'failed',
+    renderKey: 'variation-preview:key-b',
+    message: 'Look preview failed.',
+  };
+  let authority = reduceFailure(null, {
+    type: 'outcome',
+    expectedRenderKey: 'variation-preview:key-a',
+    outcome: failedA,
+  });
+  assert.deepEqual(authority, {
+    renderKey: 'variation-preview:key-a',
+    message: 'Look preview failed.',
+  });
+
+  const retainedForRetry = reduceFailure(authority, {
+    type: 'start',
+    renderKey: 'variation-preview:key-a',
+    retry: true,
+  });
+  assert.strictEqual(retainedForRetry, authority);
+  authority = reduceFailure(retainedForRetry, {
+    type: 'start',
+    renderKey: 'variation-preview:key-a',
+    retry: false,
+  });
+  assert.equal(authority, null);
+
+  authority = reduceFailure({
+    renderKey: 'variation-preview:key-a',
+    message: 'Look preview failed.',
+  }, {
+    type: 'start',
+    renderKey: 'variation-preview:key-b',
+    retry: false,
+  });
+  assert.equal(authority, null);
+  authority = reduceFailure(authority, {
+    type: 'outcome',
+    expectedRenderKey: 'variation-preview:key-b',
+    outcome: failedA,
+  });
+  assert.equal(authority, null);
+  authority = reduceFailure(authority, {
+    type: 'outcome',
+    expectedRenderKey: 'variation-preview:key-b',
+    outcome: { status: 'stale', renderKey: 'variation-preview:key-a' },
+  });
+  assert.equal(authority, null);
+  assert.deepEqual(reduceFailure(authority, {
+    type: 'outcome',
+    expectedRenderKey: 'variation-preview:key-b',
+    outcome: failedB,
+  }), {
+    renderKey: 'variation-preview:key-b',
+    message: 'Look preview failed.',
+  });
+  assert.equal(reduceFailure({
+    renderKey: 'variation-preview:key-b',
+    message: 'Look preview failed.',
+  }, { type: 'clear' }), null);
 });

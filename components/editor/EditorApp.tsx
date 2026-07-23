@@ -101,8 +101,15 @@ export const EditorApp = () => {
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
+    const disposeOnPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) coordinator.dispose();
+    };
+    window.addEventListener('pagehide', disposeOnPageHide);
     setLookCoordinator(coordinator);
-    return () => coordinator.dispose();
+    return () => {
+      window.removeEventListener('pagehide', disposeOnPageHide);
+      coordinator.dispose();
+    };
   }, []);
 
   useEffect(() => {

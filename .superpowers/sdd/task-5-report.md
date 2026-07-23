@@ -95,3 +95,96 @@ Browser network inspection also observed `GET /editor/lookWorker.ts?worker_file&
 - No known functional blocker remains.
 - Live browser verification covered Chromium desktop and mobile viewports; cross-browser behavior is covered by the shared DOM/canvas implementation and automated tests but was not manually exercised in Firefox or Safari.
 - Existing logo preload warnings remain unchanged and are outside Task 5 scope.
+
+## Fix Review
+
+Date: 2026-07-22
+Status: All three Important review findings fixed; implementation remains pending reviewer approval.
+
+### Findings Resolved
+
+1. **VariationPreview failure authority:** failures now carry their owning render key. Unavailable composition, Original/surface clear, normal render start, and unmount publish `null` immediately. Only a Retry for the same key retains the visible error. Ready outcomes clear it, current failures replace it, and stale or mismatched outcomes cannot restore it.
+2. **Native color history boundaries:** native color controls now separate live `input` updates from the native `change` commit. The commit dispatches the complete final recipe before `end-history-group`; pointer and key ordering can no longer close the group ahead of the picker change. Blur remains a final-value fallback, and existing Look-switch/unmount cleanup still closes an open group. Two picker commits undo independently.
+3. **Behavioral lifecycle coverage:** the self-comparing seed assertion was removed. Focused Chromium tests now inspect the recipe sent to the seeded thumbnail and main worker, control selected worker outcomes, delay image composition, verify pending-frame and failure authority behavior, exercise real controls and undo, unmount a pending thumbnail surface, count worker creation/termination across navigation, and drag the real processed canvas. The Worker and image wrappers exist only in `page.addInitScript`; no production test global or authority bypass was added.
+
+### RED Evidence
+
+Command:
+
+```text
+npx playwright test tests/e2e/canvas-editor.spec.ts --grep "@task5-review"
+```
+
+Initial result: 5 tests, 2 passed and 3 failed, exit 1.
+
+- Color history: after two commits, the first Undo returned `#111827` instead of `#223344`, proving both commits had coalesced.
+- Failure authority: `Look preview failed.` remained visible after a different held render key started.
+- Navigation cleanup: the Worker wrapper reported 1 active worker instead of 0 after navigation.
+
+Command:
+
+```text
+npx tsx --test tests/editor-preview-surface.test.ts
+```
+
+Initial authority result: 7 tests, 6 passed and 1 failed, exit 1, because `reducePreviewFailureAuthority` was absent.
+
+### GREEN Evidence
+
+```text
+npx tsx --test tests/editor-preview-surface.test.ts tests/editor-compositor.test.ts tests/editor-shell.test.ts tests/editor-history.test.ts
+```
+
+Result: 74 passed, 0 failed, exit 0.
+
+```text
+npx playwright test tests/e2e/canvas-editor.spec.ts --grep "@task5-review"
+```
+
+Result: 5 passed, 0 failed, exit 0. The five focused cases cover seeded apply identity, complete control/history behavior, failure authority and Retry, surface/worker cleanup, and processed-Look canvas dragging.
+
+```text
+npm run typecheck
+npm run build
+git diff --check
+```
+
+Result: all passed with exit 0. No broad test or verification command was run.
+
+The Vite 8.0.16 production build transformed 1,808 modules and emitted:
+
+```text
+dist/assets/lookWorker-DsS6eTHn.js  13.68 kB
+```
+
+### Parameter Contract Audit
+
+- Audited all 25 Parameter Contracts rows against `lookControlBounds`, `createDefaultLook`, and rendered controls.
+- All 20 numeric parameters use the documented minimum, maximum, integer step, and default.
+- Duotone shadow/highlight and Halftone foreground/background colors use the four documented six-digit defaults.
+- Halftone defaults to transparent background while preserving the documented `#f5f5f3` solid color.
+- Seeded recipes retain unsigned seeds; the browser test proves the complete mount-stable candidate recipe and seed shown by the thumbnail are the exact recipe persisted and rendered after its click.
+
+### Fix Review Changed Files
+
+- `components/editor/EditorApp.tsx`
+- `components/editor/LooksInspector.tsx`
+- `components/editor/VariationPreviewCanvas.tsx`
+- `tests/e2e/canvas-editor.spec.ts`
+- `tests/editor-preview-surface.test.ts`
+- `tests/editor-shell.test.ts`
+- `.superpowers/sdd/task-5-report.md`
+
+### Fix Review Self-Review
+
+- Verified callback authority is derived from render-key state rather than message timing, and each clear path is synchronous with coordinator authority release.
+- Verified Retry leaves the persisted recipe unchanged and only preserves an error for its current key.
+- Verified color commits dispatch before history closure and separate across native picker commits, Look switches, and inspector unmounts.
+- Verified the browser harness proxies the native module worker and filters controlled outcomes by Look and bounded dimensions; production worker protocol and authority checks are unchanged.
+- Verified non-persisted page navigation disposes the coordinator and worker. A persisted back-forward-cache page intentionally remains live and is not disposed by `pagehide`.
+- Verified no phase-one IDs/selectors, source URL ownership, canvas hit testing, Compare scope, or unrelated files changed.
+
+### Fix Review Concerns
+
+- No known functional blocker remains.
+- The focused browser regressions run in Chromium, matching the repository Playwright project. Native color event behavior was not manually exercised in Firefox or Safari; the implementation uses standard `input`, `change`, `blur`, and `pagehide` events.

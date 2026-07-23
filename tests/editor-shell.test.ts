@@ -384,6 +384,38 @@ test('Look controls expose stable numeric bounds for every documented recipe par
     textureScale: { min: 1, max: 12, step: 1 },
     edgeBreakup: { min: 0, max: 100, step: 1 },
   });
+  assert.deepEqual(LOOK_IDS.map((lookId) => createDefaultLook(lookId, 77)), [
+    { id: 'original', strength: 100 },
+    { id: 'clean-photo', strength: 100, contrast: 10, saturation: 8, clarity: 8 },
+    { id: 'high-contrast', strength: 100, contrast: 55, blackPoint: 12, saturation: 5 },
+    { id: 'monochrome', strength: 100, contrast: 20, brightness: 0 },
+    {
+      id: 'duotone',
+      strength: 100,
+      shadowColor: '#111827',
+      highlightColor: '#f59e0b',
+      balance: 0,
+    },
+    { id: 'posterized', strength: 100, levels: 4, contrast: 20 },
+    {
+      id: 'graphic-halftone',
+      strength: 100,
+      cellSize: 10,
+      angle: 45,
+      foregroundColor: '#111111',
+      background: 'transparent',
+      backgroundColor: '#f5f5f3',
+    },
+    { id: 'vintage-ink', strength: 100, warmth: 45, fade: 25, grain: 20, seed: 77 },
+    {
+      id: 'distressed-print',
+      strength: 100,
+      wear: 35,
+      textureScale: 5,
+      edgeBreakup: 25,
+      seed: 77,
+    },
+  ]);
 
   const expected: Record<Exclude<LookId, 'original'>, Array<[string, number, number]>> = {
     'clean-photo': [['contrast', 0, 40], ['saturation', -20, 40], ['clarity', 0, 30]],
@@ -416,13 +448,13 @@ test('Look controls expose stable numeric bounds for every documented recipe par
 
 test('Duotone and Halftone expose native swatches and Halftone background modes', () => {
   const duotone = renderLooksInspector('duotone');
-  assert.match(duotone, /id="editor-look-shadow-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
-  assert.match(duotone, /id="editor-look-highlight-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
+  assert.match(duotone, /id="editor-look-shadow-color"[^>]*type="color"[^>]*value="#111827"/);
+  assert.match(duotone, /id="editor-look-highlight-color"[^>]*type="color"[^>]*value="#f59e0b"/);
 
   const halftone = renderLooksInspector('graphic-halftone');
-  assert.match(halftone, /id="editor-look-foreground-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
-  assert.match(halftone, /id="editor-look-background-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
-  assert.match(halftone, /aria-label="Transparent background"/);
+  assert.match(halftone, /id="editor-look-foreground-color"[^>]*type="color"[^>]*value="#111111"/);
+  assert.match(halftone, /id="editor-look-background-color"[^>]*type="color"[^>]*value="#f5f5f3"/);
+  assert.match(halftone, /aria-label="Transparent background"[^>]*aria-pressed="true"/);
   assert.match(halftone, /aria-label="Solid background"/);
   assert.doesNotMatch(halftone, /aria-label="Reroll texture"/);
 });
@@ -442,7 +474,6 @@ test('candidate thumbnail recipes use one mount seed for both preview and apply'
   }
   assert.equal(candidates['vintage-ink'].seed, 101);
   assert.equal(candidates['distressed-print'].seed, 202);
-  assert.strictEqual(candidates['vintage-ink'], candidates['vintage-ink']);
 });
 
 test('preview eviction removes deleted variations and every variation from a replaced project', () => {

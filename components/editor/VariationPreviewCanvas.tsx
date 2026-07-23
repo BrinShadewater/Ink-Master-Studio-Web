@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -58,6 +59,34 @@ export interface SelectedPreviewOutcome {
   readyFrame: RgbaFrame | null;
   failure: string | null;
 }
+
+export interface PreviewFailureAuthority {
+  renderKey: string;
+  message: string;
+}
+
+export type PreviewFailureAuthorityEvent =
+  | { type: 'clear' }
+  | { type: 'start'; renderKey: string; retry: boolean }
+  | { type: 'outcome'; expectedRenderKey: string; outcome: LookRenderOutcome };
+
+export const reducePreviewFailureAuthority = (
+  current: PreviewFailureAuthority | null,
+  event: PreviewFailureAuthorityEvent,
+): PreviewFailureAuthority | null => {
+  if (event.type === 'clear') return null;
+  if (event.type === 'start') {
+    return event.retry && current?.renderKey === event.renderKey ? current : null;
+  }
+  if (event.outcome.status === 'stale' || event.outcome.renderKey !== event.expectedRenderKey) {
+    return current;
+  }
+  if (event.outcome.status === 'ready') return null;
+  return {
+    renderKey: event.outcome.renderKey,
+    message: event.outcome.message,
+  };
+};
 
 interface PreviewViewport {
   size: Size;
@@ -302,11 +331,25 @@ export const useVariationPreviewSurface = ({
   const currentRenderKeyRef = useRef<string | null>(null);
   const unprocessedFrameRef = useRef<RgbaFrame | null>(null);
   const lastReadyFrameRef = useRef<RgbaFrame | null>(null);
+  const failureAuthorityRef = useRef<PreviewFailureAuthority | null>(null);
   const failureCallbackRef = useRef(onFailureChange);
   const viewportCallbackRef = useRef(onViewportChange);
   const retryGenerationRef = useRef(retryGeneration);
   failureCallbackRef.current = onFailureChange;
   viewportCallbackRef.current = onViewportChange;
+
+  const updateFailureAuthority = useCallback((
+    event: PreviewFailureAuthorityEvent,
+    emitClear = false,
+  ) => {
+    const current = failureAuthorityRef.current;
+    const next = reducePreviewFailureAuthority(current, event);
+    failureAuthorityRef.current = next;
+    const changed = current?.renderKey !== next?.renderKey || current?.message !== next?.message;
+    if (changed || (emitClear && next === null)) {
+      failureCallbackRef.current?.(next?.message ?? null);
+    }
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -335,7 +378,13 @@ export const useVariationPreviewSurface = ({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || viewport.size.width <= 0 || viewport.size.height <= 0) return undefined;
+    if (!canvas || viewport.size.width <= 0 || viewport.size.height <= 0) {
+      currentRenderKeyRef.current = null;
+      unprocessedFrameRef.current = null;
+      coordinator.clearSurface(surfaceId);
+      updateFailureAuthority({ type: 'clear' }, true);
+      return undefined;
+    }
     compositionCanvasRef.current ??= document.createElement('canvas');
     frameCanvasRef.current ??= document.createElement('canvas');
     const composition = composeBoundedVariationFrame(compositionCanvasRef.current, {
@@ -348,7 +397,9 @@ export const useVariationPreviewSurface = ({
     });
     if (!composition) {
       currentRenderKeyRef.current = null;
+      unprocessedFrameRef.current = null;
       coordinator.clearSurface(surfaceId);
+      updateFailureAuthority({ type: 'clear' }, true);
       return undefined;
     }
 
@@ -366,11 +417,12 @@ export const useVariationPreviewSurface = ({
     if (variation.look.id === 'original') {
       coordinator.clearSurface(surfaceId);
       lastReadyFrameRef.current = frame;
-      failureCallbackRef.current?.(null);
+      updateFailureAuthority({ type: 'clear' }, true);
       paintFrame(canvas, frameCanvasRef.current, frame, background, zoom);
       return undefined;
     }
 
+    updateFailureAuthority({ type: 'start', renderKey, retry: false }, true);
     let active = true;
     void coordinator.render({
       surfaceId,
@@ -387,7 +439,7 @@ export const useVariationPreviewSurface = ({
       );
       if (!selected) return;
       lastReadyFrameRef.current = selected.readyFrame;
-      failureCallbackRef.current?.(selected.failure);
+      updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
         paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
       }
@@ -404,6 +456,7 @@ export const useVariationPreviewSurface = ({
     variation,
     viewport,
     zoom,
+    updateFailureAuthority,
   ]);
 
   useEffect(() => {
@@ -413,6 +466,7 @@ export const useVariationPreviewSurface = ({
     const unprocessedFrame = unprocessedFrameRef.current;
     if (!renderKey || !unprocessedFrame || variation.look.id === 'original') return undefined;
 
+    updateFailureAuthority({ type: 'start', renderKey, retry: true });
     let active = true;
     void coordinator.retry(surfaceId).then((outcome) => {
       if (
@@ -428,15 +482,29 @@ export const useVariationPreviewSurface = ({
       );
       if (!selected) return;
       lastReadyFrameRef.current = selected.readyFrame;
-      failureCallbackRef.current?.(selected.failure);
+      updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
         paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
       }
     });
     return () => { active = false; };
-  }, [background, canvasRef, coordinator, retryGeneration, surfaceId, variation.look.id, zoom]);
+  }, [
+    background,
+    canvasRef,
+    coordinator,
+    retryGeneration,
+    surfaceId,
+    updateFailureAuthority,
+    variation.look.id,
+    zoom,
+  ]);
 
-  useEffect(() => () => coordinator.clearSurface(surfaceId), [coordinator, surfaceId]);
+  useEffect(() => () => {
+    currentRenderKeyRef.current = null;
+    unprocessedFrameRef.current = null;
+    coordinator.clearSurface(surfaceId);
+    updateFailureAuthority({ type: 'clear' }, true);
+  }, [coordinator, surfaceId, updateFailureAuthority]);
 
   return viewport;
 };
