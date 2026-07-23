@@ -144,6 +144,7 @@ export interface ImagePrepFingerprintSource {
   crop: { x: number; y: number; width: number; height: number };
   adjustments: { brightness: number; contrast: number; saturation: number };
   backgroundRemoval: BackgroundRemovalSettings;
+  correctionDigest?: string;
 }
 
 const hashString = (value: string) => {
@@ -171,4 +172,7 @@ export const createImagePrepFingerprint = (
     saturation: source.adjustments.saturation,
   },
   backgroundRemoval: serializeBackgroundRemovalInput(source.backgroundRemoval),
+  correctionDigest: source.correctionDigest ??
+    source.backgroundRemoval.correctionAssetId ??
+    '',
 }))}`;
