@@ -753,12 +753,16 @@ const renameActiveVariation = async (page: Page, name: string) => {
   await expect(input).toHaveValue(name);
 };
 
-const selectVariationAndReadCanvas = async (page: Page, name: string) => {
+const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPng?: string) => {
   const canvas = page.getByLabel('Design canvas');
   const previousPng = await readCanvasPixels(canvas);
   await page.getByLabel('Variation', { exact: true }).selectOption({ label: name });
   await expect(page.getByLabel('Variation name')).toHaveValue(name);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(previousPng);
+  if (expectedPng) {
+    await expect.poll(() => readCanvasPixels(canvas)).toBe(expectedPng);
+  } else {
+    await expect.poll(() => readCanvasPixels(canvas)).not.toBe(previousPng);
+  }
   await expectCanvasPainted(canvas);
   return readCanvasPixels(canvas);
 };
@@ -2117,9 +2121,21 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
   await expect.poll(() => readCanvasPixels(canvas)).toBe(desktopPngs['Distressed Press']);
 
-  expect(await selectVariationAndReadCanvas(page, 'Duotone Poster')).toBe(desktopPngs['Duotone Poster']);
-  expect(await selectVariationAndReadCanvas(page, 'Halftone Screen')).toBe(desktopPngs['Halftone Screen']);
-  expect(await selectVariationAndReadCanvas(page, 'Distressed Press')).toBe(desktopPngs['Distressed Press']);
+  expect(await selectVariationAndReadCanvas(
+    page,
+    'Duotone Poster',
+    desktopPngs['Duotone Poster'],
+  )).toBe(desktopPngs['Duotone Poster']);
+  expect(await selectVariationAndReadCanvas(
+    page,
+    'Halftone Screen',
+    desktopPngs['Halftone Screen'],
+  )).toBe(desktopPngs['Halftone Screen']);
+  expect(await selectVariationAndReadCanvas(
+    page,
+    'Distressed Press',
+    desktopPngs['Distressed Press'],
+  )).toBe(desktopPngs['Distressed Press']);
 
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   const recipeBeforeReroll = (await readPersistedPhase2BProject(page, projectName))?.variations
