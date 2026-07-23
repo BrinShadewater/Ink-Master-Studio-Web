@@ -33,6 +33,8 @@ import {
   type ImageLayer,
   type TextLayer,
 } from '../../editor/model';
+import { getTShirtMockup } from '../../editor/productCatalog';
+import { findTShirtProduct } from '../../editor/productModel';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { CompareBoard } from './CompareBoard';
@@ -45,6 +47,8 @@ import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
 import { useBackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
 import { useTraceWorkflow } from './useTraceWorkflow';
 import { ExportMenu } from './ExportMenu';
+import { ProductCanvas } from './ProductCanvas';
+import { useProductMockup } from './useProductMockup';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -122,6 +126,8 @@ export const EditorApp = () => {
   const [backgroundBrushSize, setBackgroundBrushSize] = useState(32);
   const [lookError, setLookError] = useState<string | null>(null);
   const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
+  const [productArtworkError, setProductArtworkError] = useState<string | null>(null);
+  const [productArtworkRetryGeneration, setProductArtworkRetryGeneration] = useState(0);
   const [compareOpen, setCompareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [compareVariationIds, setCompareVariationIds] = useState<string[]>([]);
@@ -151,6 +157,13 @@ export const EditorApp = () => {
   );
   const projectVariationIds = project?.variations.map(({ id }) => id) ?? [];
   const projectVariationIdKey = projectVariationIds.join('\u0000');
+  const product = project && variation
+    ? findTShirtProduct(project.productVariants, variation.id)
+    : null;
+  const requestedProductMockup = product
+    ? getTShirtMockup(product.mockupSlug)
+    : null;
+  const productMockup = useProductMockup(requestedProductMockup);
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
@@ -302,6 +315,17 @@ export const EditorApp = () => {
   }, [tool]);
 
   useEffect(() => {
+    if (tool !== 'product') return;
+    setCompareOpen(false);
+    setLayersOpen(false);
+    setBackgroundBrushMode('idle');
+  }, [tool]);
+
+  useEffect(() => {
+    setProductArtworkError(null);
+  }, [project?.id, variation?.id]);
+
+  useEffect(() => {
     if (!layersOpen) return undefined;
     const desktopQuery = window.matchMedia('(min-width: 768px)');
     const closeAtDesktopBreakpoint = () => {
@@ -381,7 +405,14 @@ export const EditorApp = () => {
         <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
-          onToolChange={setTool}
+          hasProject={Boolean(project)}
+          onToolChange={(nextTool) => {
+            if (nextTool === 'product') {
+              setLayersOpen(false);
+              setCompareOpen(false);
+            }
+            setTool(nextTool);
+          }}
           onOpenLayers={openLayers}
           layersButtonRef={layersButtonRef}
           variationCount={projectVariationIds.length}
@@ -411,36 +442,62 @@ export const EditorApp = () => {
         ) : (
           <>
             <div
-              className={`relative order-1 min-h-0 overflow-hidden md:order-none ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
-              onDragEnter={(event) => {
-                event.preventDefault();
-                setDropActive(true);
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDragLeave={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
-              }}
-              onDrop={importDroppedFile}
+              className={`relative order-1 min-h-0 overflow-hidden md:order-none ${
+                tool !== 'product' && dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''
+              }`}
+              {...(tool === 'product' ? {} : {
+                onDragEnter: (event: DragEvent<HTMLDivElement>) => {
+                  event.preventDefault();
+                  setDropActive(true);
+                },
+                onDragOver: (event: DragEvent<HTMLDivElement>) => event.preventDefault(),
+                onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+                },
+                onDrop: importDroppedFile,
+              })}
             >
-              <EditorCanvas
-                variation={variation}
-                assetsById={workspace.assetsById}
-                imagesById={imagesById}
-                coordinator={lookCoordinator}
-                lookRetryGeneration={lookRetryGeneration}
-                onLookFailureChange={setLookError}
-                tool={tool}
-                onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
-                onTransformChange={(layerId, transform, historyGroup) => {
-                  workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
-                }}
-                onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
-                backgroundMode={backgroundBrushMode}
-                backgroundBrushSize={backgroundBrushSize}
-                onPickBackground={backgroundRemoval.pickColor}
-                onCommitBackgroundStroke={backgroundRemoval.commitStroke}
-                onBackgroundModeChange={setBackgroundBrushMode}
-              />
+              {tool === 'product' && project && variation && product ? (
+                <ProductCanvas
+                  projectId={project.id}
+                  variation={variation}
+                  product={product}
+                  displayedMockup={productMockup.displayedMockup}
+                  mockupStatus={productMockup.status}
+                  mockupError={productMockup.error}
+                  assetsById={workspace.assetsById}
+                  imagesById={imagesById}
+                  coordinator={lookCoordinator}
+                  artworkRetryGeneration={productArtworkRetryGeneration}
+                  onArtworkFailureChange={setProductArtworkError}
+                  onPlacementChange={(placement, historyGroup) => {
+                    workspace.dispatch({ type: 'set-product-placement', placement, historyGroup });
+                  }}
+                  onPlacementEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+                  onRetry={productMockup.retry}
+                  onReturnToDesign={() => setTool('select')}
+                />
+              ) : (
+                <EditorCanvas
+                  variation={variation}
+                  assetsById={workspace.assetsById}
+                  imagesById={imagesById}
+                  coordinator={lookCoordinator}
+                  lookRetryGeneration={lookRetryGeneration}
+                  onLookFailureChange={setLookError}
+                  tool={tool}
+                  onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
+                  onTransformChange={(layerId, transform, historyGroup) => {
+                    workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
+                  }}
+                  onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+                  backgroundMode={backgroundBrushMode}
+                  backgroundBrushSize={backgroundBrushSize}
+                  onPickBackground={backgroundRemoval.pickColor}
+                  onCommitBackgroundStroke={backgroundRemoval.commitStroke}
+                  onBackgroundModeChange={setBackgroundBrushMode}
+                />
+              )}
               {!project ? (
                 <button
                   type="button"
@@ -452,19 +509,25 @@ export const EditorApp = () => {
                 </button>
               ) : null}
             </div>
-            <div className="order-2 h-60 min-h-0 md:order-none md:grid md:h-auto md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]">
-              <LayerPanel
-                className="hidden border-b border-neutral-800 md:flex md:border-l"
-                panelRef={desktopLayersPanelRef}
-                focusable
-                variation={variation}
-                onAddImage={() => layerFileInputRef.current?.click()}
-                onAddText={() => {
-                  addTextLayerFromPanel(workspace.dispatch, closeLayers);
-                }}
-                onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
-                dispatch={workspace.dispatch}
-              />
+            <div className={`order-2 h-60 min-h-0 md:order-none md:h-auto ${
+              tool === 'product'
+                ? ''
+                : 'md:grid md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]'
+            }`}>
+              {tool !== 'product' ? (
+                <LayerPanel
+                  className="hidden border-b border-neutral-800 md:flex md:border-l"
+                  panelRef={desktopLayersPanelRef}
+                  focusable
+                  variation={variation}
+                  onAddImage={() => layerFileInputRef.current?.click()}
+                  onAddText={() => {
+                    addTextLayerFromPanel(workspace.dispatch, closeLayers);
+                  }}
+                  onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
+                  dispatch={workspace.dispatch}
+                />
+              ) : null}
               <EditorInspector
                 project={project}
                 variation={variation}
@@ -482,6 +545,15 @@ export const EditorApp = () => {
                 onBackgroundBrushSizeChange={setBackgroundBrushSize}
                 onBackgroundDone={() => setBackgroundBrushMode('idle')}
                 traceWorkflow={traceWorkflow}
+                product={product}
+                productMockupStatus={productMockup.status}
+                productMockupError={productMockup.error}
+                productArtworkError={productArtworkError}
+                onRetryProduct={() => {
+                  productMockup.retry();
+                  setProductArtworkRetryGeneration((current) => current + 1);
+                }}
+                onReturnToDesign={() => setTool('select')}
                 dispatch={workspace.dispatch}
               />
             </div>

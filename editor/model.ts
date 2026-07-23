@@ -29,7 +29,14 @@ export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
 export const EDITOR_PROJECT_SCHEMA_VERSION = 5 as const;
 
-export type EditorTool = 'select' | 'crop' | 'adjust' | 'looks' | 'remove-background' | 'trace';
+export type EditorTool =
+  | 'select'
+  | 'crop'
+  | 'adjust'
+  | 'looks'
+  | 'remove-background'
+  | 'trace'
+  | 'product';
 
 export interface LayerTransform {
   x: number;

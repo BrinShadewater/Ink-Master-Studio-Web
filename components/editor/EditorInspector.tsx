@@ -10,6 +10,8 @@ import type {
   EditorTool,
   ImageLayer,
 } from '../../editor/model';
+import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
+import type { TShirtProductVariant } from '../../editor/productModel';
 import { LooksInspector } from './LooksInspector';
 import {
   BackgroundRemovalInspector,
@@ -24,6 +26,7 @@ import {
   RangeControl,
   TransformControls,
 } from './TransformControls';
+import { ProductInspector } from './ProductInspector';
 
 export { controlBounds } from './TransformControls';
 
@@ -74,6 +77,12 @@ export interface EditorInspectorProps {
   onBackgroundBrushSizeChange?: (size: number) => void;
   onBackgroundDone?: () => void;
   traceWorkflow?: TraceWorkflow | null;
+  product?: TShirtProductVariant | null;
+  productMockupStatus?: ProductMockupLoadStatus;
+  productMockupError?: string | null;
+  productArtworkError?: string | null;
+  onRetryProduct?: () => void;
+  onReturnToDesign?: () => void;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -84,6 +93,7 @@ const sectionTitle: Record<EditorTool, string> = {
   looks: 'Looks',
   'remove-background': 'Remove background',
   trace: 'Trace',
+  product: 'Product',
 };
 
 const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -195,8 +205,30 @@ export const EditorInspector = ({
   onBackgroundBrushSizeChange = () => undefined,
   onBackgroundDone = () => undefined,
   traceWorkflow = null,
+  product = null,
+  productMockupStatus = 'idle',
+  productMockupError = null,
+  productArtworkError = null,
+  onRetryProduct = () => undefined,
+  onReturnToDesign = () => undefined,
   dispatch,
 }: EditorInspectorProps) => {
+  if (tool === 'product' && product) {
+    return (
+      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+        <ProductInspector
+          product={product}
+          mockupStatus={productMockupStatus}
+          mockupError={productMockupError}
+          artworkError={productArtworkError}
+          dispatch={dispatch}
+          onRetry={onRetryProduct}
+          onReturnToDesign={onReturnToDesign}
+        />
+      </aside>
+    );
+  }
+
   if (project && variation && tool === 'looks') {
     return (
       <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">

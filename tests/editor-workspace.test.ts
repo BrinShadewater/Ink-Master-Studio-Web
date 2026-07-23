@@ -250,6 +250,48 @@ test('a successful project open returns true only after activating the requested
   assert.deepEqual(errors, []);
 });
 
+test('product color and placement survive save and reopen without changing source bytes', async () => {
+  const fixture = createOpenFixture(`project_product_roundtrip_${crypto.randomUUID()}`);
+  const sourceBefore = new Uint8Array(await fixture.asset.blob.arrayBuffer());
+  let history = createEditorHistory(fixture.project);
+  history = reduceEditorHistory(history, {
+    type: 'set-product-mockup',
+    mockupSlug: 'heather',
+  });
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { x: 0.31, y: 0.64, scale: 0.88, rotation: 15 },
+  });
+
+  await saveEditorAsset(fixture.asset);
+  await saveEditorProject(history.present);
+  const authority = new WorkspaceOperationAuthority();
+  let reopened: EditorProject | null = null;
+  let reopenedAsset: EditorProject extends never ? never : typeof fixture.asset | null = null;
+  const opened = await openEditorProjectIfCurrent(
+    authority,
+    authority.begin(),
+    fixture.project.id,
+    {
+      getProject: getEditorProject,
+      getAssetsForProject: getEditorAssetsForProject,
+      activate: (project, assetsById) => {
+        reopened = project;
+        reopenedAsset = assetsById[fixture.asset.id] ?? null;
+      },
+      reportError: (message) => { throw new Error(message); },
+    },
+  );
+
+  assert.equal(opened, true);
+  assert.deepEqual(reopened?.productVariants[0], history.present.productVariants[0]);
+  assert.deepEqual(
+    new Uint8Array(await reopenedAsset!.blob.arrayBuffer()),
+    sourceBefore,
+  );
+  await deleteEditorProject(fixture.project.id);
+});
+
 test('a failed project open returns false and reports the current error', async () => {
   const authority = new WorkspaceOperationAuthority();
   const errors: string[] = [];

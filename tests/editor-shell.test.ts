@@ -13,6 +13,11 @@ import {
   type EditorTopBarProps,
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
+import {
+  ProductInspector,
+  createCenterProductPlacementCommand,
+  createResetProductPlacementCommand,
+} from '../components/editor/ProductInspector';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
 import { TraceInspector } from '../components/editor/TraceInspector';
 import {
@@ -63,6 +68,11 @@ import {
 import { createDefaultTraceSettings } from '../editor/traceModel';
 import { LOOK_IDS, createDefaultLook, type LookId } from '../editor/lookModel';
 import type { LookRenderCoordinator } from '../editor/lookRenderCoordinator';
+import { TSHIRT_MOCKUPS } from '../editor/productCatalog';
+import {
+  DEFAULT_PRODUCT_PLACEMENT,
+  findTShirtProduct,
+} from '../editor/productModel';
 import {
   createEditorHistory,
   getSelectedImageLayer,
@@ -279,6 +289,98 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
   assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
   assert.match(looksButton, /class="[^"]*h-10 w-10/);
+});
+
+test('toolbar exposes Product only for an open project and constrains conflicting modes', () => {
+  const productMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'product',
+    layerType: 'image',
+    hasProject: true,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+    variationCount: 2,
+  }));
+
+  assert.match(productMarkup, /aria-label="Product"[^>]*aria-pressed="true"/);
+  assert.match(productMarkup, /aria-label="Product"[\s\S]*?lucide-shirt/);
+  assert.match(productMarkup, /Product mode/);
+  assert.match(productMarkup, /aria-label="Select"[^>]*(?!disabled)/);
+  for (const label of ['Crop', 'Adjust', 'Remove background', 'Trace', 'Looks', 'Compare', 'Layers']) {
+    assert.match(productMarkup, new RegExp(`aria-label="${label}"[^>]*disabled=""`));
+  }
+
+  const emptyMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    hasProject: false,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  assert.match(emptyMarkup, /aria-label="Product"[^>]*disabled=""/);
+});
+
+test('product inspector exposes the complete shirt catalog and bounded placement controls', () => {
+  const source = createEditorAsset('project-product-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Product inspector', source);
+  const product = findTShirtProduct(project.productVariants, project.activeVariationId);
+  const markup = renderToStaticMarkup(createElement(ProductInspector, {
+    product,
+    mockupStatus: 'ready',
+    mockupError: null,
+    artworkError: null,
+    dispatch: () => undefined,
+    onRetry: () => undefined,
+    onReturnToDesign: () => undefined,
+  }));
+
+  assert.match(markup, /<h2[^>]*>Product<\/h2>/);
+  assert.match(markup, />Black<\/span>/);
+  assert.equal(markup.match(/data-product-swatch="true"/g)?.length, 11);
+  for (const mockup of TSHIRT_MOCKUPS) {
+    assert.match(markup, new RegExp(`aria-label="${mockup.name}"[^>]*title="${mockup.name}"`));
+  }
+  assert.match(markup, /aria-label="Black"[^>]*aria-pressed="true"/);
+  assert.match(markup, /id="product-position-x"[^>]*min="0"[^>]*max="100"/);
+  assert.match(markup, /id="product-position-y"[^>]*min="0"[^>]*max="100"/);
+  assert.match(markup, /id="product-scale"[^>]*min="10"[^>]*max="150"/);
+  assert.match(markup, /id="product-rotation"[^>]*min="-180"[^>]*max="180"/);
+  assert.match(markup, />Center<\/button>/);
+  assert.match(markup, />Reset<\/button>/);
+
+  assert.deepEqual(createCenterProductPlacementCommand(product), {
+    type: 'set-product-placement',
+    placement: { ...product.placement, x: 0.5, y: 0.5 },
+    historyGroup: 'product-center',
+  });
+  assert.deepEqual(createResetProductPlacementCommand(), {
+    type: 'set-product-placement',
+    placement: DEFAULT_PRODUCT_PLACEMENT,
+    historyGroup: 'product-reset',
+  });
+});
+
+test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {
+  const source = createEditorAsset('project-product-failure', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Product failure', source);
+  const product = findTShirtProduct(project.productVariants, project.activeVariationId);
+  const markup = renderToStaticMarkup(createElement(ProductInspector, {
+    product,
+    mockupStatus: 'failed',
+    mockupError: 'Heather shirt preview is unavailable.',
+    artworkError: 'Artwork preview failed.',
+    dispatch: () => undefined,
+    onRetry: () => undefined,
+    onReturnToDesign: () => undefined,
+  }));
+
+  assert.match(markup, /Heather shirt preview is unavailable/);
+  assert.match(markup, /Artwork preview failed/);
+  assert.match(markup, />Retry<\/button>/);
+  assert.match(markup, />Return to design<\/button>/);
+  assert.match(markup, /id="product-scale"/);
 });
 
 test('toolbar exposes Remove background only for a selected image layer', () => {

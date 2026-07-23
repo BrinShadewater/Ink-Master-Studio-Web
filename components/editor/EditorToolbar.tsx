@@ -5,6 +5,7 @@ import {
   MousePointer2,
   Palette,
   ScanLine,
+  Shirt,
   SlidersHorizontal,
   WandSparkles,
   type LucideIcon,
@@ -15,6 +16,7 @@ import type { DesignLayer, EditorTool } from '../../editor/model';
 export interface EditorToolbarProps {
   tool: EditorTool;
   layerType?: DesignLayer['type'] | null;
+  hasProject?: boolean;
   onToolChange: (tool: EditorTool) => void;
   onOpenLayers: () => void;
   layersButtonRef?: Ref<HTMLButtonElement>;
@@ -32,6 +34,7 @@ const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
   { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
   { id: 'trace', label: 'Trace', icon: ScanLine },
   { id: 'looks', label: 'Looks', icon: Palette },
+  { id: 'product', label: 'Product', icon: Shirt },
 ];
 
 const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -39,6 +42,7 @@ const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center transition f
 export const EditorToolbar = ({
   tool,
   layerType = null,
+  hasProject = false,
   onToolChange,
   onOpenLayers,
   layersButtonRef,
@@ -67,14 +71,33 @@ export const EditorToolbar = ({
         Editing tools are unavailable while Compare is open.
       </p>
     ) : null}
+    {tool === 'product' ? (
+      <p id="editor-product-mode-disabled-reason" className="sr-only">
+        This command is unavailable in Product mode.
+      </p>
+    ) : null}
+    {!hasProject ? (
+      <p id="editor-product-disabled-reason" className="sr-only">
+        Product is available after importing artwork.
+      </p>
+    ) : null}
     {tools.map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
+      const productConflict = tool === 'product' &&
+        id !== 'select' &&
+        id !== 'product';
+      const productUnavailable = id === 'product' && !hasProject;
       const imageToolDisabled = layerType !== 'image' &&
         (id === 'crop' || id === 'adjust' || id === 'remove-background');
       const traceToolDisabled = id === 'trace' && layerType !== 'image' && layerType !== 'trace';
-      const disabled = compareOpen || imageToolDisabled || traceToolDisabled;
+      const disabled = compareOpen || productConflict || productUnavailable ||
+        imageToolDisabled || traceToolDisabled;
       const disabledReason = compareOpen
         ? 'editor-compare-disabled-reason'
+        : productConflict
+          ? 'editor-product-mode-disabled-reason'
+          : productUnavailable
+            ? 'editor-product-disabled-reason'
         : imageToolDisabled
           ? 'editor-image-tools-disabled-reason'
           : traceToolDisabled ? 'editor-trace-disabled-reason' : undefined;
@@ -89,6 +112,10 @@ export const EditorToolbar = ({
           aria-describedby={disabledReason}
           title={compareOpen
             ? `${label} is unavailable while Compare is open`
+            : productConflict
+              ? `${label} is unavailable in Product mode`
+              : productUnavailable
+                ? 'Product is available after importing artwork'
             : imageToolDisabled
               ? `${label} is available only for image layers`
               : traceToolDisabled ? 'Trace is available only for image and trace layers' : label}
@@ -106,7 +133,8 @@ export const EditorToolbar = ({
       aria-label="Compare"
       aria-pressed={compareOpen}
       title={variationCount < 2 ? 'Compare requires at least two variations' : compareOpen ? 'Close Compare' : 'Compare'}
-      disabled={variationCount < 2}
+      aria-describedby={tool === 'product' ? 'editor-product-mode-disabled-reason' : undefined}
+      disabled={variationCount < 2 || tool === 'product'}
       onClick={onToggleCompare}
     >
       <Columns2 aria-hidden="true" size={19} strokeWidth={1.8} />
@@ -116,9 +144,11 @@ export const EditorToolbar = ({
       type="button"
       className={`${toolButtonClass} text-neutral-400 hover:bg-neutral-800 hover:text-white md:hidden`}
       aria-label="Layers"
-      aria-describedby={compareOpen ? 'editor-compare-disabled-reason' : undefined}
+      aria-describedby={compareOpen
+        ? 'editor-compare-disabled-reason'
+        : tool === 'product' ? 'editor-product-mode-disabled-reason' : undefined}
       title="Layers"
-      disabled={compareOpen}
+      disabled={compareOpen || tool === 'product'}
       onClick={onOpenLayers}
     >
       <Layers aria-hidden="true" size={19} strokeWidth={1.8} />

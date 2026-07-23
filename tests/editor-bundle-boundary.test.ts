@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
-test('production editor entry and workers preserve Phase 2C scope boundaries', () => {
+test('production editor entry and workers preserve Phase 3A owner-editor scope boundaries', () => {
   const assetsDirectory = path.join(process.cwd(), 'dist', 'assets');
   const entryDirectory = path.join(assetsDirectory, 'js');
   const entryFiles = readdirSync(entryDirectory).filter((file) => /^index-.*\.js$/.test(file));
@@ -29,11 +29,17 @@ test('production editor entry and workers preserve Phase 2C scope boundaries', (
       /geminiService|@google\/genai|services\/imageProcessing|workers\/imageProcessing/,
       `${file} imported a retired image-processing boundary.`,
     );
-    assert.doesNotMatch(
-      source,
-      /ProductionPackage|Print Lens|mockup|Printify Product/i,
-      `${file} crossed the approved owner-editor scope.`,
-    );
+    for (const forbidden of [
+      /ProductionPackage|production job|customer proof/i,
+      /profile revision|handoff|batch order/i,
+      /Print Lens|Printify Product/i,
+    ]) {
+      assert.doesNotMatch(
+        source,
+        forbidden,
+        `${file} crossed the approved owner-editor scope.`,
+      );
+    }
   }
 
   assert.doesNotMatch(entrySource, /imagetracer/i);
@@ -41,4 +47,25 @@ test('production editor entry and workers preserve Phase 2C scope boundaries', (
   const backgroundSource = readFileSync(path.join(assetsDirectory, backgroundWorkers[0]), 'utf8');
   assert.match(traceSource, /imagetracer/i);
   assert.doesNotMatch(backgroundSource, /imagetracer/i);
+});
+
+test('Phase 3A product modules do not import legacy production, mockup, or AI services', () => {
+  const productComponentsDirectory = path.join(process.cwd(), 'components', 'editor');
+  const sourceFiles = [
+    path.join(process.cwd(), 'editor', 'productCatalog.ts'),
+    path.join(process.cwd(), 'editor', 'productModel.ts'),
+    path.join(process.cwd(), 'editor', 'productGeometry.ts'),
+    ...readdirSync(productComponentsDirectory)
+      .filter((file) => /^Product.*\.tsx$/.test(file))
+      .map((file) => path.join(productComponentsDirectory, file)),
+  ];
+  const forbiddenImport = /from\s+['"][^'"]*(?:services\/mockups|production|jobs|proofs|packages|batches|geminiService|@google\/genai)[^'"]*['"]/i;
+
+  for (const file of sourceFiles) {
+    assert.doesNotMatch(
+      readFileSync(file, 'utf8'),
+      forbiddenImport,
+      `${path.relative(process.cwd(), file)} imported an out-of-scope service.`,
+    );
+  }
 });
