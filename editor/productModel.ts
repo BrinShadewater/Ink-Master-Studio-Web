@@ -59,6 +59,11 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 
 const mockupSlugs = new Set<string>(TSHIRT_MOCKUP_SLUGS);
 
+export const normalizeTShirtMockupSlug = (value: unknown): TShirtMockupSlug =>
+  typeof value === 'string' && mockupSlugs.has(value)
+    ? value as TShirtMockupSlug
+    : 'black';
+
 export const normalizeProductPlacement = (value: unknown): ProductPlacement => {
   const source = isRecord(value) ? value : {};
   return {
@@ -86,6 +91,17 @@ export const createDefaultTShirtProduct = (
   type: 'tshirt',
   mockupSlug: 'black',
   placement: { ...DEFAULT_PRODUCT_PLACEMENT },
+});
+
+export const duplicateTShirtProduct = (
+  source: TShirtProductVariant,
+  variationId: string,
+  id: string,
+): TShirtProductVariant => ({
+  ...structuredClone(source),
+  id,
+  variationId,
+  placement: normalizeProductPlacement(source.placement),
 });
 
 const claimProductId = (
@@ -121,14 +137,11 @@ export const normalizeTShirtProductVariants = (
     ) {
       continue;
     }
-    const mockupSlug = typeof candidate.mockupSlug === 'string' && mockupSlugs.has(candidate.mockupSlug)
-      ? candidate.mockupSlug as TShirtMockupSlug
-      : 'black';
     products.push({
       id: claimProductId(candidate.id, usedIds, createId),
       variationId: candidate.variationId,
       type: 'tshirt',
-      mockupSlug,
+      mockupSlug: normalizeTShirtMockupSlug(candidate.mockupSlug),
       placement: normalizeProductPlacement(candidate.placement),
     });
     linkedVariationIds.add(candidate.variationId);

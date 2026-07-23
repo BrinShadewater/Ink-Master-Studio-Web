@@ -37,6 +37,15 @@ import {
   serializeTraceInput,
   type TraceSettings,
 } from './traceModel';
+import {
+  duplicateTShirtProduct,
+  findTShirtProduct,
+  normalizeProductPlacement,
+  normalizeTShirtMockupSlug,
+  type ProductPlacement,
+  type TShirtMockupSlug,
+  type TShirtProductVariant,
+} from './productModel';
 
 export type EditorCommand =
   | { type: 'rename-project'; name: string }
@@ -74,6 +83,8 @@ export type EditorCommand =
   | { type: 'set-look'; look: VariationLook; historyGroup?: string }
   | { type: 'reroll-look-seed'; seed: number }
   | { type: 'reset-look' }
+  | { type: 'set-product-placement'; placement: ProductPlacement; historyGroup?: string }
+  | { type: 'set-product-mockup'; mockupSlug: TShirtMockupSlug }
   | { type: 'end-history-group' }
   | { type: 'undo' }
   | { type: 'redo' };
@@ -81,6 +92,7 @@ export type EditorCommand =
 export interface VariationEditState {
   layers: DesignLayer[];
   look: VariationLook;
+  product: TShirtProductVariant;
 }
 
 export interface VariationHistory {
@@ -102,10 +114,18 @@ const cloneEditState = (state: VariationEditState): VariationEditState => struct
 
 const cloneEditStates = (states: VariationEditState[]) => states.map(cloneEditState);
 
-const getEditState = (variation: DesignVariation): VariationEditState => ({
-  layers: structuredClone(variation.layers),
-  look: structuredClone(variation.look),
-});
+const getEditState = (
+  project: EditorProject,
+  variationId: string,
+): VariationEditState => {
+  const variation = project.variations.find(({ id }) => id === variationId);
+  if (!variation) throw new Error('Active editor variation not found.');
+  return {
+    layers: structuredClone(variation.layers),
+    look: structuredClone(variation.look),
+    product: structuredClone(findTShirtProduct(project.productVariants, variationId)),
+  };
+};
 
 const createVariationHistory = (): VariationHistory => ({
   past: [],
@@ -229,6 +249,9 @@ const replaceVariationEditState = (
   variation.look = structuredClone(state.look);
   variation.selectedLayerId = variation.layers.some(({ id }) => id === variation.selectedLayerId)
     ? variation.selectedLayerId : variation.layers[variation.layers.length - 1].id;
+  const productIndex = next.productVariants.findIndex((product) =>
+    product.variationId === variationId);
+  if (productIndex >= 0) next.productVariants[productIndex] = structuredClone(state.product);
   return next;
 };
 
@@ -238,12 +261,12 @@ const recordVariationEdit = (
   historyGroup?: string,
 ): EditorHistory => {
   const variationId = history.present.activeVariationId;
-  const currentVariation = getActiveVariation(history.present);
   const currentHistory = history.variationHistory[variationId] ?? createVariationHistory();
   const group = normalizeHistoryGroup(historyGroup);
   const past = currentHistory.activeHistoryGroup === group && group !== null
     ? cloneEditStates(currentHistory.past)
-    : [...cloneEditStates(currentHistory.past), getEditState(currentVariation)].slice(-MAX_PAST_STATES);
+    : [...cloneEditStates(currentHistory.past), getEditState(history.present, variationId)]
+      .slice(-MAX_PAST_STATES);
   return {
     present: cloneProject(project),
     variationHistory: {
@@ -297,7 +320,6 @@ export const canRedoActiveVariation = (history: EditorHistory | null): boolean =
 
 const undo = (history: EditorHistory): EditorHistory => {
   const variationId = history.present.activeVariationId;
-  const variation = getActiveVariation(history.present);
   const currentHistory = history.variationHistory[variationId];
   if (!currentHistory?.past.length) return history;
   const previous = currentHistory.past[currentHistory.past.length - 1];
@@ -311,7 +333,7 @@ const undo = (history: EditorHistory): EditorHistory => {
       ...history.variationHistory,
       [variationId]: {
         past: cloneEditStates(currentHistory.past.slice(0, -1)),
-        future: [getEditState(variation), ...cloneEditStates(currentHistory.future)],
+        future: [getEditState(history.present, variationId), ...cloneEditStates(currentHistory.future)],
         activeHistoryGroup: null,
       },
     },
@@ -320,7 +342,6 @@ const undo = (history: EditorHistory): EditorHistory => {
 
 const redo = (history: EditorHistory): EditorHistory => {
   const variationId = history.present.activeVariationId;
-  const variation = getActiveVariation(history.present);
   const currentHistory = history.variationHistory[variationId];
   if (!currentHistory?.future.length) return history;
   const next = currentHistory.future[0];
@@ -333,7 +354,10 @@ const redo = (history: EditorHistory): EditorHistory => {
     variationHistory: {
       ...history.variationHistory,
       [variationId]: {
-        past: [...cloneEditStates(currentHistory.past), getEditState(variation)].slice(-MAX_PAST_STATES),
+        past: [
+          ...cloneEditStates(currentHistory.past),
+          getEditState(history.present, variationId),
+        ].slice(-MAX_PAST_STATES),
         future: cloneEditStates(currentHistory.future.slice(1)),
         activeHistoryGroup: null,
       },
@@ -381,7 +405,12 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       const outgoingVariationId = history.present.activeVariationId;
       const next = cloneProject(history.present);
       const duplicate = duplicateVariation(getActiveVariation(history.present), command.name);
+      const sourceProduct = findTShirtProduct(history.present.productVariants, outgoingVariationId);
       next.variations = [...next.variations, duplicate];
+      next.productVariants = [
+        ...next.productVariants,
+        duplicateTShirtProduct(sourceProduct, duplicate.id, createEditorId('product')),
+      ];
       next.activeVariationId = duplicate.id;
       return {
         present: withUpdatedAt(next, history.present),
@@ -408,6 +437,8 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       if (deletedIndex < 0) return history;
       const next = cloneProject(history.present);
       next.variations = next.variations.filter(({ id }) => id !== command.variationId);
+      next.productVariants = next.productVariants.filter(({ variationId }) =>
+        variationId !== command.variationId);
       if (next.activeVariationId === command.variationId) {
         next.activeVariationId = next.variations[Math.min(deletedIndex, next.variations.length - 1)].id;
       }
@@ -669,6 +700,35 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       if (sameLook(current.look, look)) return history;
       const next = cloneProject(history.present);
       getActiveVariation(next).look = look;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'set-product-placement': {
+      const variationId = history.present.activeVariationId;
+      const product = findTShirtProduct(history.present.productVariants, variationId);
+      const placement = normalizeProductPlacement(command.placement);
+      if (
+        product.placement.x === placement.x &&
+        product.placement.y === placement.y &&
+        product.placement.scale === placement.scale &&
+        product.placement.rotation === placement.rotation
+      ) {
+        return history;
+      }
+      const next = cloneProject(history.present);
+      findTShirtProduct(next.productVariants, variationId).placement = placement;
+      return recordVariationEdit(
+        history,
+        withUpdatedAt(next, history.present),
+        command.historyGroup,
+      );
+    }
+    case 'set-product-mockup': {
+      const variationId = history.present.activeVariationId;
+      const product = findTShirtProduct(history.present.productVariants, variationId);
+      const mockupSlug = normalizeTShirtMockupSlug(command.mockupSlug);
+      if (product.mockupSlug === mockupSlug) return history;
+      const next = cloneProject(history.present);
+      findTShirtProduct(next.productVariants, variationId).mockupSlug = mockupSlug;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
   }

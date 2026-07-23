@@ -28,6 +28,10 @@ import {
 } from '../editor/history';
 import { createDefaultLook } from '../editor/lookModel';
 import {
+  DEFAULT_PRODUCT_PLACEMENT,
+  findTShirtProduct,
+} from '../editor/productModel';
+import {
   createDefaultTraceSettings,
   createTraceFingerprint,
 } from '../editor/traceModel';
@@ -727,6 +731,109 @@ test('deletes variations immutably with adjacent fallback and history cleanup', 
   assert.equal(history.present.activeVariationId, variationA);
   const finalHistory = reduceEditorHistory(history, { type: 'delete-variation', variationId: variationA });
   assert.equal(finalHistory, history);
+});
+
+test('groups product placement and preserves later project metadata through undo', () => {
+  let history = makeHistory();
+  const variationId = history.present.activeVariationId;
+
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { x: 0.4, y: 0.5, scale: 0.72, rotation: 0 },
+    historyGroup: 'product-drag',
+  });
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { x: 0.3, y: 0.6, scale: 0.72, rotation: 0 },
+    historyGroup: 'product-drag',
+  });
+  history = reduceEditorHistory(history, { type: 'end-history-group' });
+  history = reduceEditorHistory(history, { type: 'rename-project', name: 'Renamed products' });
+
+  assert.equal(history.variationHistory[variationId].past.length, 1);
+  assert.deepEqual(findTShirtProduct(history.present.productVariants, variationId).placement, {
+    x: 0.3, y: 0.6, scale: 0.72, rotation: 0,
+  });
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(history.present.name, 'Renamed products');
+  assert.deepEqual(
+    findTShirtProduct(history.present.productVariants, variationId).placement,
+    DEFAULT_PRODUCT_PLACEMENT,
+  );
+
+  history = reduceEditorHistory(history, { type: 'redo' });
+  assert.deepEqual(findTShirtProduct(history.present.productVariants, variationId).placement, {
+    x: 0.3, y: 0.6, scale: 0.72, rotation: 0,
+  });
+});
+
+test('records shirt color as one discrete no-op-aware product edit', () => {
+  let history = makeHistory();
+  const variationId = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-product-mockup', mockupSlug: 'navy' });
+  const changed = history;
+  history = reduceEditorHistory(history, { type: 'set-product-mockup', mockupSlug: 'navy' });
+
+  assert.equal(history, changed);
+  assert.equal(history.variationHistory[variationId].past.length, 1);
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).mockupSlug, 'navy');
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).mockupSlug, 'black');
+});
+
+test('duplicates and deletes independent linked products with their variations', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-product-mockup', mockupSlug: 'heather' });
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { x: 0.4, y: 0.7, scale: 1.1, rotation: 12 },
+  });
+  const sourceProduct = findTShirtProduct(history.present.productVariants, variationA);
+
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'Alternate' });
+  const variationB = history.present.activeVariationId;
+  const duplicateProduct = findTShirtProduct(history.present.productVariants, variationB);
+  assert.notEqual(duplicateProduct.id, sourceProduct.id);
+  assert.notEqual(duplicateProduct.placement, sourceProduct.placement);
+  assert.equal(duplicateProduct.mockupSlug, 'heather');
+  assert.deepEqual(duplicateProduct.placement, sourceProduct.placement);
+
+  history = reduceEditorHistory(history, { type: 'set-product-mockup', mockupSlug: 'red' });
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { ...duplicateProduct.placement, x: 0.8 },
+  });
+  assert.equal(findTShirtProduct(history.present.productVariants, variationB).mockupSlug, 'red');
+  assert.equal(findTShirtProduct(history.present.productVariants, variationA).mockupSlug, 'heather');
+  assert.equal(findTShirtProduct(history.present.productVariants, variationA).placement.x, 0.4);
+
+  history = reduceEditorHistory(history, { type: 'delete-variation', variationId: variationB });
+  assert.deepEqual(history.present.productVariants.map(({ variationId }) => variationId), [variationA]);
+});
+
+test('switching variations closes an outgoing product history group', () => {
+  let history = makeHistory();
+  const variationA = history.present.activeVariationId;
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { ...DEFAULT_PRODUCT_PLACEMENT, x: 0.4 },
+    historyGroup: 'product-drag',
+  });
+  history = reduceEditorHistory(history, { type: 'duplicate-variation', name: 'B' });
+  const variationB = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'select-variation', variationId: variationA });
+  history = reduceEditorHistory(history, {
+    type: 'set-product-placement',
+    placement: { ...DEFAULT_PRODUCT_PLACEMENT, x: 0.3 },
+    historyGroup: 'product-drag',
+  });
+  history = reduceEditorHistory(history, { type: 'undo' });
+
+  assert.equal(findTShirtProduct(history.present.productVariants, variationA).placement.x, 0.4);
+  assert.equal(findTShirtProduct(history.present.productVariants, variationB).placement.x, 0.4);
 });
 
 test('applies normalized Look recipes as discrete edits and ignores stable no-op recipes', () => {

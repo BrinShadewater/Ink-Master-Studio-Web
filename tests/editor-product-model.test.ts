@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   DEFAULT_PRODUCT_PLACEMENT,
+  duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
   normalizeTShirtProductVariants,
@@ -96,4 +97,19 @@ test('throws when a normalized variation has no linked product', () => {
     () => findTShirtProduct([], 'variation-missing'),
     /T-shirt product not found for variation/,
   );
+});
+
+test('duplicates a product under fresh identities without sharing placement', () => {
+  const source = normalizeTShirtProductVariants([], ['variation-a'], () => 'product-a')[0];
+  source.mockupSlug = 'navy';
+  source.placement.x = 0.25;
+
+  const duplicate = duplicateTShirtProduct(source, 'variation-b', 'product-b');
+  duplicate.placement.x = 0.75;
+
+  assert.equal(duplicate.id, 'product-b');
+  assert.equal(duplicate.variationId, 'variation-b');
+  assert.equal(duplicate.mockupSlug, 'navy');
+  assert.equal(source.placement.x, 0.25);
+  assert.notEqual(duplicate.placement, source.placement);
 });
