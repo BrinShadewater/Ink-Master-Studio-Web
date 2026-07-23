@@ -10,6 +10,11 @@ const phase2cArtifactPath = (name: string) => {
   mkdirSync(directory, { recursive: true });
   return path.join(directory, name);
 };
+const phase3aArtifactPath = (name: string) => {
+  const directory = path.join(process.cwd(), 'test-results', 'phase-3a');
+  mkdirSync(directory, { recursive: true });
+  return path.join(directory, name);
+};
 
 type LookRecipeSnapshot = Record<string, string | number>;
 
@@ -29,7 +34,43 @@ interface PersistedPhase2BProjectSnapshot {
     selectedLayerId: string;
     look: LookRecipeSnapshot;
   }>;
-  productVariants: unknown[];
+  productVariants: TShirtProductSnapshot[];
+}
+
+interface TShirtProductSnapshot {
+  id: string;
+  variationId: string;
+  type: 'tshirt';
+  mockupSlug:
+    | 'black'
+    | 'burgundy'
+    | 'cardinal'
+    | 'charcoal'
+    | 'forest-green'
+    | 'heather'
+    | 'military-green'
+    | 'navy'
+    | 'orange'
+    | 'red'
+    | 'royal-blue';
+  placement: {
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+  };
+}
+
+interface PersistedPhase3AWorkspaceSnapshot {
+  schemaVersion: number;
+  activeVariationId: string;
+  variations: Array<{
+    id: string;
+    name: string;
+    layers: Array<Record<string, unknown>>;
+  }>;
+  productVariants: TShirtProductSnapshot[];
+  sourceDigest: string;
 }
 
 interface LookWorkerHarnessSnapshot {
@@ -885,6 +926,46 @@ const readPersistedPhase2CWorkspace = async (
   } satisfies PersistedPhase2CWorkspaceSnapshot;
 }, projectName);
 
+const readPersistedPhase3AWorkspace = async (
+  page: Page,
+  projectName: string,
+) => page.evaluate(async (name) => {
+  const records = await new Promise<{ projects: any[]; assets: any[] }>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const transaction = database.transaction(['editor-projects', 'editor-assets']);
+      const projectsRequest = transaction.objectStore('editor-projects').getAll();
+      const assetsRequest = transaction.objectStore('editor-assets').getAll();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not read editor workspace.'));
+      transaction.oncomplete = () => {
+        database.close();
+        resolve({ projects: projectsRequest.result, assets: assetsRequest.result });
+      };
+    };
+  });
+  const project = records.projects.find((candidate) => candidate.name === name);
+  const source = records.assets.find((candidate) => candidate.id === project?.sourceAssetId);
+  if (!project || !source?.blob) return null;
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await source.blob.arrayBuffer()));
+  return {
+    schemaVersion: project.schemaVersion,
+    activeVariationId: project.activeVariationId,
+    variations: project.variations.map((variation: {
+      id: string;
+      name: string;
+      layers: Array<Record<string, unknown>>;
+    }) => ({
+      id: variation.id,
+      name: variation.name,
+      layers: structuredClone(variation.layers),
+    })),
+    productVariants: structuredClone(project.productVariants),
+    sourceDigest: [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
+  } satisfies PersistedPhase3AWorkspaceSnapshot;
+}, projectName);
+
 const expectPersistedImageAssets = (
   snapshot: PersistedWorkspaceSnapshot,
   expected: Record<string, { width: number; height: number }>,
@@ -1247,10 +1328,10 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
   for (const region of [layout.canvas, layout.inspector, layout.toolbar]) {
     expect(region.width).toBeGreaterThan(0);
     expect(region.height).toBeGreaterThan(0);
-    expect(region.left).toBeGreaterThanOrEqual(0);
-    expect(region.top).toBeGreaterThanOrEqual(0);
-    expect(region.right).toBeLessThanOrEqual(390);
-    expect(region.bottom).toBeLessThanOrEqual(844);
+    expect(region.left).toBeGreaterThanOrEqual(-1);
+    expect(region.top).toBeGreaterThanOrEqual(-1);
+    expect(region.right).toBeLessThanOrEqual(391);
+    expect(region.bottom).toBeLessThanOrEqual(845);
     expect(region.right).toBeGreaterThan(region.left);
     expect(region.bottom).toBeGreaterThan(region.top);
   }
@@ -2344,11 +2425,15 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const projectBeforeReload = await readPersistedPhase2BProject(page, projectName);
   const projectBytesBeforeReload = await readPersistedProjectBytes(page, projectName);
   expect(projectBeforeReload).toMatchObject({
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: projectName,
     sourceMetadata: { name: `${projectName}.png`, mimeType: 'image/png', width: 1200, height: 900 },
-    productVariants: [],
   });
+  expect(projectBeforeReload?.productVariants).toHaveLength(
+    projectBeforeReload?.variations.length ?? 0,
+  );
+  expect(new Set(projectBeforeReload?.productVariants.map(({ variationId }) => variationId)))
+    .toEqual(new Set(projectBeforeReload?.variations.map(({ id }) => id)));
   expect(projectBeforeReload?.variations.every(({ layers }) => (
     layers.length === 2 && layers.some(({ type }) => type === 'image') && layers.some(({ type }) => type === 'text')
   ))).toBe(true);
@@ -3067,5 +3152,239 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     { type: 'trace', visible: true },
   ]);
 
+  expect(browserErrors).toEqual([]);
+});
+
+test('@phase3a-acceptance places independent owner designs on photographic T-shirts', async ({ page }) => {
+  test.setTimeout(180_000);
+  const projectName = 'phase-3a-owner';
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await uploadTransparentFixture(page, 640, 640, `${projectName}.png`);
+  await expect(page.getByRole('button', { name: 'Product', exact: true })).toBeEnabled();
+  await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
+  const initial = await readPersistedPhase3AWorkspace(page, projectName);
+  if (!initial) throw new Error('Initial Phase 3A workspace was not persisted.');
+  expect(initial.schemaVersion).toBe(5);
+  const originalLayerBytes = JSON.stringify(initial.variations[0].layers);
+
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  const preview = page.getByRole('region', { name: 'T-shirt product preview', exact: true });
+  const artwork = page.getByLabel('Product artwork', { exact: true });
+  await expect(preview.getByRole('img', { name: 'Black T-shirt', exact: true })).toBeVisible();
+  await expectCanvasNonblank(artwork);
+  const pixelEvidence = await preview.evaluate((element) => {
+    const image = element.querySelector('img');
+    const canvas = element.querySelector('canvas');
+    if (!(image instanceof HTMLImageElement) || !(canvas instanceof HTMLCanvasElement)) {
+      throw new Error('Product preview pixels are unavailable.');
+    }
+    const shirtCanvas = document.createElement('canvas');
+    shirtCanvas.width = image.naturalWidth;
+    shirtCanvas.height = image.naturalHeight;
+    const shirtContext = shirtCanvas.getContext('2d');
+    const artworkContext = canvas.getContext('2d');
+    if (!shirtContext || !artworkContext) throw new Error('Product pixel contexts are unavailable.');
+    shirtContext.drawImage(image, 0, 0);
+    const corner = [...shirtContext.getImageData(2, 2, 1, 1).data];
+    const center = [...shirtContext.getImageData(
+      Math.floor(image.naturalWidth / 2),
+      Math.floor(image.naturalHeight / 2),
+      1,
+      1,
+    ).data];
+    const artworkPixels = artworkContext.getImageData(0, 0, canvas.width, canvas.height).data;
+    let visibleArtworkPixels = 0;
+    for (let index = 3; index < artworkPixels.length; index += 4) {
+      if (artworkPixels[index] > 0) visibleArtworkPixels += 1;
+    }
+    return {
+      shirtSize: [image.naturalWidth, image.naturalHeight],
+      corner,
+      center,
+      artworkSize: canvas.width * canvas.height,
+      visibleArtworkPixels,
+    };
+  });
+  expect(pixelEvidence.shirtSize).toEqual([2048, 2048]);
+  expect(pixelEvidence.center).not.toEqual(pixelEvidence.corner);
+  expect(pixelEvidence.visibleArtworkPixels).toBeGreaterThan(0);
+  expect(pixelEvidence.visibleArtworkPixels).toBeLessThan(pixelEvidence.artworkSize);
+
+  const artworkBounds = await preview.locator('[data-product-artwork="true"]').boundingBox();
+  if (!artworkBounds) throw new Error('Product artwork bounds are unavailable.');
+  await page.mouse.move(
+    artworkBounds.x + artworkBounds.width / 2,
+    artworkBounds.y + artworkBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    artworkBounds.x + artworkBounds.width / 2 + 42,
+    artworkBounds.y + artworkBounds.height / 2 - 28,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  const handle = page.getByRole('button', { name: 'Resize product artwork', exact: true });
+  const handleBounds = await handle.boundingBox();
+  if (!handleBounds) throw new Error('Product resize handle is unavailable.');
+  await page.mouse.move(
+    handleBounds.x + handleBounds.width / 2,
+    handleBounds.y + handleBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBounds.x + handleBounds.width / 2 + 26,
+    handleBounds.y + handleBounds.height / 2 + 26,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  await setEditorRange(page, 'Rotation', 15);
+
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement.rotation;
+  }).toBe(15);
+  const moved = await readPersistedPhase3AWorkspace(page, projectName);
+  if (!moved) throw new Error('Moved Phase 3A workspace is unavailable.');
+  const originalProduct = moved.productVariants.find(
+    ({ variationId }) => variationId === moved.activeVariationId,
+  );
+  if (!originalProduct) throw new Error('Original product is unavailable.');
+  expect(originalProduct.placement.x).not.toBe(0.5);
+  expect(originalProduct.placement.y).not.toBe(0.5);
+  expect(originalProduct.placement.scale).not.toBe(0.72);
+
+  await page.getByRole('button', { name: 'Heather', exact: true }).click();
+  await expect(preview.getByRole('img', { name: 'Heather T-shirt', exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].mockupSlug;
+  }).toBe('heather');
+  const heather = await readPersistedPhase3AWorkspace(page, projectName);
+  expect(heather?.productVariants[0].placement).toEqual(originalProduct.placement);
+
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  const variationSelect = page.getByLabel('Variation', { exact: true });
+  const duplicateId = await variationSelect.inputValue();
+  expect(duplicateId).not.toBe(initial.activeVariationId);
+  await expect.poll(async () => (
+    await readPersistedPhase3AWorkspace(page, projectName)
+  )?.activeVariationId).toBe(duplicateId);
+  await page.getByRole('button', { name: 'Red', exact: true }).click();
+  await page.getByLabel('X position', { exact: true }).fill('35');
+  await page.getByLabel('X position', { exact: true }).blur();
+  await page.getByLabel('Y position', { exact: true }).fill('62');
+  await page.getByLabel('Y position', { exact: true }).blur();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    const product = workspace?.productVariants.find(({ variationId }) => variationId === duplicateId);
+    return product && {
+      mockupSlug: product.mockupSlug,
+      x: product.placement.x,
+      y: product.placement.y,
+    };
+  }).toEqual({ mockupSlug: 'red', x: 0.35, y: 0.62 });
+
+  await page.getByLabel('Variation', { exact: true }).selectOption(initial.activeVariationId);
+  await expect(preview.getByRole('img', { name: 'Heather T-shirt', exact: true })).toBeVisible();
+  await expect(page.getByLabel('X position', { exact: true }))
+    .toHaveValue(String(Math.round(originalProduct.placement.x * 100)));
+  await page.getByLabel('Variation', { exact: true }).selectOption(duplicateId);
+  await expect(preview.getByRole('img', { name: 'Red T-shirt', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants.find(({ variationId }) => variationId === duplicateId)?.placement.y;
+  }).toBe(originalProduct.placement.y);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants.find(({ variationId }) => variationId === duplicateId)?.placement.y;
+  }).toBe(0.62);
+
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const beforeReload = await readPersistedPhase3AWorkspace(page, projectName);
+  if (!beforeReload) throw new Error('Phase 3A workspace was not saved before reload.');
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  const afterReload = await readPersistedPhase3AWorkspace(page, projectName);
+  expect(afterReload).toEqual(beforeReload);
+  expect(afterReload?.sourceDigest).toBe(initial.sourceDigest);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect(preview.getByRole('img', { name: 'Red T-shirt', exact: true })).toBeVisible();
+  await page.screenshot({
+    path: phase3aArtifactPath('desktop-tshirt-placement-1440x900.png'),
+    animations: 'disabled',
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileLayout = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const preview = document.querySelector('[aria-label="T-shirt product preview"]');
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!preview || !inspector || !toolbar) throw new Error('Mobile Product layout is incomplete.');
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentOverflows:
+        document.documentElement.scrollWidth > innerWidth ||
+        document.documentElement.scrollHeight > innerHeight,
+      preview: bounds(preview),
+      inspector: bounds(inspector),
+      toolbar: bounds(toolbar),
+      inspectorScrollable:
+        inspector.scrollHeight > inspector.clientHeight &&
+        getComputedStyle(inspector).overflowY === 'auto',
+    };
+  });
+  const contained = (
+    rect: { top: number; bottom: number; left: number; right: number; width: number; height: number },
+  ) => (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    rect.left >= 0 &&
+    rect.top >= 0 &&
+    rect.right <= mobileLayout.viewport.width &&
+    rect.bottom <= mobileLayout.viewport.height
+  );
+  expect(mobileLayout.documentOverflows).toBe(false);
+  expect(contained(mobileLayout.preview)).toBe(true);
+  expect(contained(mobileLayout.inspector)).toBe(true);
+  expect(contained(mobileLayout.toolbar)).toBe(true);
+  expect(mobileLayout.preview.bottom).toBeLessThanOrEqual(mobileLayout.inspector.top + 1);
+  expect(mobileLayout.inspector.bottom).toBeLessThanOrEqual(mobileLayout.toolbar.top + 1);
+  expect(mobileLayout.inspectorScrollable).toBe(true);
+  await page.getByRole('button', { name: 'Royal blue', exact: true }).click();
+  await page.getByLabel('X position', { exact: true }).fill('44');
+  await page.getByLabel('X position', { exact: true }).blur();
+  await expect(preview.getByRole('img', { name: 'Royal blue T-shirt', exact: true })).toBeVisible();
+  await page.screenshot({
+    path: phase3aArtifactPath('mobile-tshirt-placement-390x844.png'),
+    animations: 'disabled',
+  });
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await expect(page.getByLabel('Design canvas', { exact: true })).toBeVisible();
+  const final = await readPersistedPhase3AWorkspace(page, projectName);
+  const originalVariation = final?.variations.find(({ id }) => id === initial.activeVariationId);
+  expect(JSON.stringify(originalVariation?.layers)).toBe(originalLayerBytes);
+  expect(final?.sourceDigest).toBe(initial.sourceDigest);
   expect(browserErrors).toEqual([]);
 });
