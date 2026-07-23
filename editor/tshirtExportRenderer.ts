@@ -2,7 +2,6 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import createPica from 'pica';
 import {
   renderDesignLayers,
-  type CompositorAssets,
   type DesignCanvasContext,
 } from './compositor';
 import {
@@ -10,6 +9,7 @@ import {
   getCroppedSourceRect,
   getLayerDrawRect,
   getTraceLayerDrawRect,
+  type Rect,
   type Size,
 } from './geometry';
 import {
@@ -32,8 +32,6 @@ import {
   type TraceXmlPlatform,
 } from './traceSanitizer';
 
-const FULL_CROP = { x: 0, y: 0, width: 1, height: 1 } as const;
-const ZERO_ADJUSTMENTS = { brightness: 0, contrast: 0, saturation: 0 } as const;
 const RENDER_ERROR = 'Could not render T-shirt artwork.';
 
 export interface TShirtExportRendererDependencies {
@@ -117,12 +115,6 @@ const positiveCanvasEdge = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) throw new Error(RENDER_ERROR);
   return Math.max(1, Math.ceil(value));
 };
-
-const boundedBackingScale = (
-  width: number,
-  height: number,
-  viewport: Size,
-) => Math.min(1, viewport.width / width, viewport.height / height);
 
 const bytesToText = (bytes: ArrayBuffer) =>
   new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -224,6 +216,181 @@ interface RasterScaleRecord {
   layerName: string;
 }
 
+interface LocalPoint {
+  x: number;
+  y: number;
+}
+
+const clipPolygon = (
+  points: LocalPoint[],
+  inside: (point: LocalPoint) => boolean,
+  intersection: (start: LocalPoint, end: LocalPoint) => LocalPoint,
+) => {
+  if (points.length === 0) return points;
+  const output: LocalPoint[] = [];
+  let start = points[points.length - 1];
+  let startInside = inside(start);
+  for (const end of points) {
+    const endInside = inside(end);
+    if (endInside !== startInside) output.push(intersection(start, end));
+    if (endInside) output.push(end);
+    start = end;
+    startInside = endInside;
+  }
+  return output;
+};
+
+const clipPolygonToRect = (
+  points: LocalPoint[],
+  bounds: Rect,
+): LocalPoint[] => {
+  const left = bounds.x;
+  const right = bounds.x + bounds.width;
+  const top = bounds.y;
+  const bottom = bounds.y + bounds.height;
+  let clipped = clipPolygon(
+    points,
+    ({ x }) => x >= left,
+    (start, end) => {
+      const amount = (left - start.x) / (end.x - start.x);
+      return { x: left, y: start.y + (end.y - start.y) * amount };
+    },
+  );
+  clipped = clipPolygon(
+    clipped,
+    ({ x }) => x <= right,
+    (start, end) => {
+      const amount = (right - start.x) / (end.x - start.x);
+      return { x: right, y: start.y + (end.y - start.y) * amount };
+    },
+  );
+  clipped = clipPolygon(
+    clipped,
+    ({ y }) => y >= top,
+    (start, end) => {
+      const amount = (top - start.y) / (end.y - start.y);
+      return { x: start.x + (end.x - start.x) * amount, y: top };
+    },
+  );
+  return clipPolygon(
+    clipped,
+    ({ y }) => y <= bottom,
+    (start, end) => {
+      const amount = (bottom - start.y) / (end.y - start.y);
+      return { x: start.x + (end.x - start.x) * amount, y: bottom };
+    },
+  );
+};
+
+const getVisibleLocalRect = (
+  drawRect: Rect,
+  viewport: Size,
+  rotation: number,
+  flipX: boolean,
+  flipY: boolean,
+): Rect | null => {
+  const centerX = drawRect.x + drawRect.width / 2;
+  const centerY = drawRect.y + drawRect.height / 2;
+  const radians = rotation * Math.PI / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const viewportInLayerSpace = [
+    { x: 0, y: 0 },
+    { x: viewport.width, y: 0 },
+    { x: viewport.width, y: viewport.height },
+    { x: 0, y: viewport.height },
+  ].map((point) => {
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    const unrotatedX = dx * cosine + dy * sine;
+    const unrotatedY = -dx * sine + dy * cosine;
+    return {
+      x: flipX ? -unrotatedX : unrotatedX,
+      y: flipY ? -unrotatedY : unrotatedY,
+    };
+  });
+  const layerBounds = {
+    x: -drawRect.width / 2,
+    y: -drawRect.height / 2,
+    width: drawRect.width,
+    height: drawRect.height,
+  };
+  const visiblePolygon = clipPolygonToRect(viewportInLayerSpace, layerBounds);
+  if (visiblePolygon.length < 3) return null;
+  const minimumX = Math.min(...visiblePolygon.map(({ x }) => x));
+  const maximumX = Math.max(...visiblePolygon.map(({ x }) => x));
+  const minimumY = Math.min(...visiblePolygon.map(({ y }) => y));
+  const maximumY = Math.max(...visiblePolygon.map(({ y }) => y));
+  const width = maximumX - minimumX;
+  const height = maximumY - minimumY;
+  if (width <= 0 || height <= 0) return null;
+  return { x: minimumX, y: minimumY, width, height };
+};
+
+const getPreparationSize = (visible: Rect, viewport: Size) => {
+  const width = positiveCanvasEdge(visible.width);
+  const height = positiveCanvasEdge(visible.height);
+  const maximumEdge = Math.ceil(Math.hypot(viewport.width, viewport.height));
+  const maximumPixels = Math.ceil(
+    viewport.width * viewport.width + viewport.height * viewport.height,
+  );
+  if (
+    width > maximumEdge ||
+    height > maximumEdge ||
+    width * height > maximumPixels + maximumEdge * 2
+  ) {
+    throw new Error(RENDER_ERROR);
+  }
+  return { width, height };
+};
+
+const mapLocalRectToSource = (
+  local: Rect,
+  drawRect: Rect,
+  source: Rect,
+): Rect => {
+  const horizontalScale = source.width / drawRect.width;
+  const verticalScale = source.height / drawRect.height;
+  return {
+    x: source.x + (local.x + drawRect.width / 2) * horizontalScale,
+    y: source.y + (local.y + drawRect.height / 2) * verticalScale,
+    width: local.width * horizontalScale,
+    height: local.height * verticalScale,
+  };
+};
+
+const drawPreparedLocalRegion = (
+  context: DesignCanvasContext,
+  image: CanvasImageSource,
+  imageSize: Size,
+  drawRect: Rect,
+  visible: Rect,
+  transform: ImageLayer['transform'] | TraceLayer['transform'],
+  opacity: number,
+) => {
+  context.save();
+  context.translate(
+    drawRect.x + drawRect.width / 2,
+    drawRect.y + drawRect.height / 2,
+  );
+  context.rotate(transform.rotation * Math.PI / 180);
+  context.scale(transform.flipX ? -1 : 1, transform.flipY ? -1 : 1);
+  context.globalAlpha = opacity;
+  context.filter = 'none';
+  context.drawImage(
+    image,
+    0,
+    0,
+    imageSize.width,
+    imageSize.height,
+    visible.x,
+    visible.y,
+    visible.width,
+    visible.height,
+  );
+  context.restore();
+};
+
 const renderRasterLayer = async (
   masterContext: DesignCanvasContext,
   viewport: Size,
@@ -242,63 +409,58 @@ const renderRasterLayer = async (
     : undefined;
   const authoritativeAsset = preparedAsset ?? sourceAsset;
   const usesPreparedAsset = Boolean(preparedAsset);
+  const sourceSize = {
+    width: sourceAsset.width,
+    height: sourceAsset.height,
+  };
+  const cropRect = usesPreparedAsset
+    ? {
+        x: 0,
+        y: 0,
+        width: authoritativeAsset.width,
+        height: authoritativeAsset.height,
+      }
+    : getCroppedSourceRect(sourceSize, layer.crop);
+  const drawRect = getLayerDrawRect(
+    sourceSize,
+    viewport,
+    layer.transform,
+    layer.crop,
+  );
+  if (
+    cropRect.width <= 0 ||
+    cropRect.height <= 0 ||
+    drawRect.width <= 0 ||
+    drawRect.height <= 0
+  ) {
+    return null;
+  }
+  const visible = getVisibleLocalRect(
+    drawRect,
+    viewport,
+    layer.transform.rotation,
+    layer.transform.flipX,
+    layer.transform.flipY,
+  );
+  if (!visible) return null;
+  const visibleSource = mapLocalRectToSource(visible, drawRect, cropRect);
+  const preparationSize = getPreparationSize(visible, viewport);
 
   let bitmap: ImageBitmap | null = null;
   let cropCanvas: OffscreenCanvas | null = null;
   let resizeCanvas: OffscreenCanvas | null = null;
   let resizedCanvas: OffscreenCanvas | null = null;
-  let layerCanvas: OffscreenCanvas | null = null;
   try {
     bitmap = await decodeOwnedBitmap(
       dependencies,
       ownership,
       authoritativeAsset,
     );
-    const sourceSize = {
-      width: sourceAsset.width,
-      height: sourceAsset.height,
-    };
-    const cropRect = usesPreparedAsset
-      ? {
-          x: 0,
-          y: 0,
-          width: authoritativeAsset.width,
-          height: authoritativeAsset.height,
-        }
-      : getCroppedSourceRect(sourceSize, layer.crop);
-    const drawRect = getLayerDrawRect(
-      sourceSize,
-      viewport,
-      layer.transform,
-      layer.crop,
-    );
-    const fullDrawRect = getLayerDrawRect(
-      sourceSize,
-      viewport,
-      layer.transform,
-      FULL_CROP,
-    );
-    if (
-      cropRect.width <= 0 ||
-      cropRect.height <= 0 ||
-      drawRect.width <= 0 ||
-      drawRect.height <= 0 ||
-      fullDrawRect.width <= 0 ||
-      fullDrawRect.height <= 0
-    ) {
-      return null;
-    }
-    const backingScale = boundedBackingScale(
-      fullDrawRect.width,
-      fullDrawRect.height,
-      viewport,
-    );
-
     cropCanvas = ownCanvas(
       dependencies,
       ownership,
-      cropRect.width,
-      cropRect.height,
+      visibleSource.width,
+      visibleSource.height,
     );
     const cropContext = canvasContext(cropCanvas);
     cropContext.filter = usesPreparedAsset
@@ -306,10 +468,10 @@ const renderRasterLayer = async (
       : buildCanvasFilter(layer.adjustments);
     cropContext.drawImage(
       bitmap,
-      cropRect.x,
-      cropRect.y,
-      cropRect.width,
-      cropRect.height,
+      visibleSource.x,
+      visibleSource.y,
+      visibleSource.width,
+      visibleSource.height,
       0,
       0,
       cropCanvas.width,
@@ -319,8 +481,8 @@ const renderRasterLayer = async (
     resizeCanvas = ownCanvas(
       dependencies,
       ownership,
-      drawRect.width * backingScale,
-      drawRect.height * backingScale,
+      preparationSize.width,
+      preparationSize.height,
     );
     resizedCanvas = await dependencies.resize(
       cropCanvas,
@@ -335,46 +497,15 @@ const renderRasterLayer = async (
       throw new Error(RENDER_ERROR);
     }
 
-    layerCanvas = ownCanvas(
-      dependencies,
-      ownership,
-      fullDrawRect.width * backingScale,
-      fullDrawRect.height * backingScale,
-    );
-    const layerContext = canvasContext(layerCanvas);
-    layerContext.filter = 'none';
-    layerContext.drawImage(
+    drawPreparedLocalRegion(
+      masterContext,
       resizedCanvas,
-      (layerCanvas.width - resizedCanvas.width) / 2,
-      (layerCanvas.height - resizedCanvas.height) / 2,
-      resizedCanvas.width,
-      resizedCanvas.height,
+      { width: resizedCanvas.width, height: resizedCanvas.height },
+      drawRect,
+      visible,
+      layer.transform,
+      layer.opacity,
     );
-
-    const renderAssetId = `tshirt-export-raster:${layer.id}`;
-    const renderLayer: ImageLayer = {
-      ...layer,
-      assetId: renderAssetId,
-      crop: { ...FULL_CROP },
-      adjustments: { ...ZERO_ADJUSTMENTS },
-      backgroundRemoval: {
-        ...layer.backgroundRemoval,
-        enabled: false,
-        preparedAssetId: null,
-      },
-    };
-    const renderAssets: CompositorAssets = {
-      metadataById: {
-        [renderAssetId]: {
-          width: layerCanvas.width,
-          height: layerCanvas.height,
-        },
-      },
-      imagesById: {
-        [renderAssetId]: layerCanvas,
-      },
-    };
-    renderDesignLayers(masterContext, viewport, [renderLayer], renderAssets);
 
     return {
       scale: Math.max(
@@ -390,8 +521,29 @@ const renderRasterLayer = async (
     if (resizedCanvas !== resizeCanvas) {
       releaseCanvas(ownership, resizedCanvas);
     }
-    releaseCanvas(ownership, layerCanvas);
   }
+};
+
+const serializeTraceRegion = (
+  safeMarkup: string,
+  source: Rect,
+  output: Size,
+  platform: TraceXmlPlatform,
+) => {
+  const parsed = new platform.DOMParser().parseFromString(
+    safeMarkup,
+    'image/svg+xml',
+  );
+  const root = parsed.documentElement;
+  root.setAttribute(
+    'viewBox',
+    [source.x, source.y, source.width, source.height]
+      .map((value) => String(Number(value.toFixed(6))))
+      .join(' '),
+  );
+  root.setAttribute('width', String(output.width));
+  root.setAttribute('height', String(output.height));
+  return new platform.XMLSerializer().serializeToString(parsed);
 };
 
 const renderTraceLayer = async (
@@ -411,24 +563,41 @@ const renderTraceLayer = async (
     layer.transform,
   );
   if (drawRect.width <= 0 || drawRect.height <= 0) return;
+  const visible = getVisibleLocalRect(
+    drawRect,
+    viewport,
+    layer.transform.rotation,
+    layer.transform.flipX,
+    layer.transform.flipY,
+  );
+  if (!visible) return;
+  const preparationSize = getPreparationSize(visible, viewport);
+  const platform = dependencies.traceXmlPlatform ?? workerXmlPlatform;
   const safe = sanitizeTraceSvg(
     bytesToText(asset.bytes),
-    dependencies.traceXmlPlatform ?? workerXmlPlatform,
+    platform,
   );
-  const serialized = serializeSafeTraceDocument(
+  const safeMarkup = serializeSafeTraceDocument(
     safe,
-    dependencies.traceXmlPlatform ?? workerXmlPlatform,
+    platform,
   );
-  const backingScale = boundedBackingScale(
-    drawRect.width,
-    drawRect.height,
-    viewport,
+  const sourceRegion = mapLocalRectToSource(visible, drawRect, {
+    x: 0,
+    y: 0,
+    width: safe.width,
+    height: safe.height,
+  });
+  const serialized = serializeTraceRegion(
+    safeMarkup,
+    sourceRegion,
+    preparationSize,
+    platform,
   );
   const finalAsset: TShirtExportAssetSnapshot = {
     ...asset,
     mimeType: 'image/svg+xml',
-    width: positiveCanvasEdge(drawRect.width * backingScale),
-    height: positiveCanvasEdge(drawRect.height * backingScale),
+    width: preparationSize.width,
+    height: preparationSize.height,
     bytes: textToArrayBuffer(serialized),
   };
 
@@ -439,17 +608,15 @@ const renderTraceLayer = async (
       ownership,
       finalAsset,
     );
-    renderDesignLayers(masterContext, viewport, [layer], {
-      metadataById: {
-        [layer.svgAssetId]: {
-          width: finalAsset.width,
-          height: finalAsset.height,
-        },
-      },
-      imagesById: {
-        [layer.svgAssetId]: bitmap,
-      },
-    });
+    drawPreparedLocalRegion(
+      masterContext,
+      bitmap,
+      { width: finalAsset.width, height: finalAsset.height },
+      drawRect,
+      visible,
+      layer.transform,
+      layer.opacity,
+    );
   } finally {
     releaseBitmap(ownership, bitmap);
   }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import createPica from 'pica';
 import { getTraceLayerDrawRect } from '../editor/geometry';
 import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
 import { createDefaultLook } from '../editor/lookModel';
@@ -540,6 +541,38 @@ test('preserves transparent red RGB through enlargement and repeats seeded pixel
   assert.equal(first.metadata.pixelDigest, second.metadata.pixelDigest);
 });
 
+test('pica 10.0.2 Lanczos3 preserves colored RGB across a transparent edge', async () => {
+  const resizer = createPica({
+    tile: 1024,
+    concurrency: 1,
+    features: ['js', 'wasm'],
+  });
+  const source = new Uint8Array([
+    255, 0, 0, 255,
+    255, 0, 0, 128,
+    255, 0, 0, 0,
+  ]);
+
+  const output = await resizer.resizeBuffer({
+    src: source,
+    width: 3,
+    height: 1,
+    toWidth: 24,
+    toHeight: 8,
+    filter: 'lanczos3',
+  });
+
+  let covered = 0;
+  for (let index = 0; index < output.length; index += 4) {
+    if (output[index + 3] === 0) continue;
+    covered += 1;
+    assert.ok(output[index] >= 240, `red channel at ${index / 4}`);
+    assert.equal(output[index + 1], 0, `green fringe at ${index / 4}`);
+    assert.equal(output[index + 2], 0, `blue fringe at ${index / 4}`);
+  }
+  assert.ok(covered > 0);
+});
+
 test('falls back to original raster authority when a requested prepared asset is absent', async () => {
   const fixture = snapshot(
     [
@@ -565,7 +598,7 @@ test('falls back to original raster authority when a requested prepared asset is
   );
 });
 
-test('bounds transformed raster and trace backing dimensions to the canonical square', async () => {
+test('prepares only rotated visible raster and trace regions at canonical pixel density', async () => {
   const oversizedTrace = traceLayer({
     transform: transform({ scale: 20, rotation: 45 }),
   });
@@ -582,13 +615,64 @@ test('bounds transformed raster and trace backing dimensions to the canonical sq
 
   const rendered = await renderTShirtExport(fixture, dependencies);
 
-  const rasterBackingCanvases = records.canvases.slice(1, -1);
-  assert.ok(rasterBackingCanvases.every(({ initialWidth, initialHeight }) =>
-    initialWidth <= edge && initialHeight <= edge));
+  const rasterResize = records.resizeCalls[0];
+  const rasterVisibleSpan = edge * (
+    Math.abs(Math.cos(Math.PI / 6)) + Math.abs(Math.sin(Math.PI / 6))
+  );
+  assert.equal(rasterResize.destinationWidth, Math.ceil(rasterVisibleSpan));
+  assert.equal(rasterResize.destinationHeight, Math.ceil(rasterVisibleSpan));
+  const rasterCropDraw = records.draws.find(({ canvas }) =>
+    canvas === rasterResize.source);
+  assert.ok(rasterCropDraw);
+  assert.ok(rasterCropDraw.args[2] < 10, 'only visible source width is cropped');
+  assert.ok(rasterCropDraw.args[3] < 20, 'only visible source height is cropped');
+
+  const master = records.canvases.find(({ initialWidth, initialHeight }) =>
+    initialWidth === edge && initialHeight === edge);
+  assert.ok(master);
+  const rasterComposite = records.draws.find(({ canvas, image }) =>
+    canvas === master &&
+    image === rasterResize.destination as unknown as CanvasImageSource);
+  assert.ok(rasterComposite, 'resized visible raster is composed directly');
+  assert.equal(rasterComposite.args[6], rasterVisibleSpan);
+  assert.equal(rasterComposite.args[7], rasterVisibleSpan);
+  assert.deepEqual(rasterComposite.operations.slice(-3), [
+    ['translate', edge / 2, edge / 2],
+    ['rotate', -Math.PI / 6],
+    ['scale', 1, 1],
+  ]);
+
   const decodedTrace = records.decoded.find(({ id }) => id === 'trace');
   assert.ok(decodedTrace);
-  assert.ok(decodedTrace.width <= edge);
-  assert.ok(decodedTrace.height <= edge);
+  const traceVisibleSpan = Math.SQRT2 * edge;
+  assert.equal(decodedTrace.width, Math.ceil(traceVisibleSpan));
+  assert.equal(decodedTrace.height, Math.ceil(traceVisibleSpan));
+  const traceDocument = new DOMParser().parseFromString(
+    new TextDecoder().decode(decodedTrace.bytes),
+    'image/svg+xml',
+  );
+  const viewBox = traceDocument.documentElement.getAttribute('viewBox')
+    ?.split(/\s+/).map(Number);
+  assert.ok(viewBox);
+  assert.ok(viewBox[2] < 100, 'trace viewBox contains only visible source width');
+  assert.ok(viewBox[3] < 100, 'trace viewBox contains only visible source height');
+  const traceBitmap = records.bitmaps.find(({ width, height }) =>
+    width === decodedTrace.width && height === decodedTrace.height);
+  assert.ok(traceBitmap);
+  const traceComposite = records.draws.find(({ canvas, image }) =>
+    canvas === master && image === traceBitmap as unknown as CanvasImageSource);
+  assert.ok(traceComposite, 'decoded visible trace is composed directly');
+  assert.ok(Math.abs(traceComposite.args[6] - traceVisibleSpan) < 1e-9);
+  assert.ok(Math.abs(traceComposite.args[7] - traceVisibleSpan) < 1e-9);
+  assert.deepEqual(traceComposite.operations.slice(-3), [
+    ['translate', edge / 2, edge / 2],
+    ['rotate', Math.PI / 4],
+    ['scale', 1, 1],
+  ]);
+
+  const maximumVisibleEdge = Math.ceil(Math.SQRT2 * edge);
+  assert.ok(records.canvases.slice(1, -1).every(({ initialWidth, initialHeight }) =>
+    initialWidth <= maximumVisibleEdge && initialHeight <= maximumVisibleEdge));
   assert.ok(rendered.metadata.largestRasterScale > 100);
 });
 
