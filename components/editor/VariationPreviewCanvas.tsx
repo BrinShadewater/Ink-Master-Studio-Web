@@ -170,6 +170,7 @@ const canonicalLayer = (layer: DesignLayer) => layer.type === 'image' ? {
     contrast: layer.adjustments.contrast,
     saturation: layer.adjustments.saturation,
   },
+  backgroundRemoval: layer.backgroundRemoval,
 } : layer.type === 'text' ? {
   id: layer.id,
   type: layer.type,
@@ -220,7 +221,12 @@ const createVariationRenderKey = (
   const assetIds = [...new Set(
     variation.layers
       .filter((layer): layer is Extract<DesignLayer, { type: 'image' }> => layer.type === 'image')
-      .map((layer) => layer.assetId),
+      .flatMap((layer) => [
+        layer.assetId,
+        ...(layer.backgroundRemoval.preparedAssetId
+          ? [layer.backgroundRemoval.preparedAssetId]
+          : []),
+      ]),
   )].sort();
   const canonical = JSON.stringify({
     dimensions: [dimensions.width, dimensions.height],
@@ -239,7 +245,17 @@ const hasEveryVisibleImage = (
   assetsById: Record<string, EditorAsset>,
   imagesById: Record<string, DecodedImageEntry>,
 ) => variation.layers.every((layer) => (
-  layer.type !== 'image' || !layer.visible || Boolean(assetsById[layer.assetId] && imagesById[layer.assetId])
+  layer.type !== 'image' ||
+  !layer.visible ||
+  Boolean(
+    (assetsById[layer.assetId] && imagesById[layer.assetId]) ||
+    (
+      layer.backgroundRemoval.enabled &&
+      layer.backgroundRemoval.preparedAssetId &&
+      assetsById[layer.backgroundRemoval.preparedAssetId] &&
+      imagesById[layer.backgroundRemoval.preparedAssetId]
+    ),
+  )
 ));
 
 export const composeBoundedVariationFrame = (

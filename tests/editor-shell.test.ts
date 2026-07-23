@@ -13,6 +13,7 @@ import {
   type EditorTopBarProps,
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
+import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
 import { CompareBoard, type CompareBoardProps } from '../components/editor/CompareBoard';
 import {
   LooksInspector,
@@ -46,6 +47,7 @@ import {
   openProjectFromDrawer,
   selectLayerFromPanel,
 } from '../components/editor/EditorApp';
+import { canvasPointToCropPoint } from '../components/editor/EditorCanvas';
 import {
   createEditorAsset,
   createEditorProject,
@@ -220,6 +222,98 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
   assert.match(looksButton, /class="[^"]*h-10 w-10/);
 });
 
+test('toolbar exposes Remove background only for a selected image layer', () => {
+  const imageMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'remove-background',
+    layerType: 'image',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  assert.match(imageMarkup, /aria-label="Remove background"[^>]*aria-pressed="true"/);
+  assert.match(imageMarkup, /aria-label="Remove background"[\s\S]*?lucide-wand-sparkles/);
+  assert.doesNotMatch(imageMarkup, /aria-label="Remove background"[^>]*disabled=""/);
+
+  const textMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    layerType: 'text',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  assert.match(textMarkup, /aria-label="Remove background"[^>]*disabled=""/);
+});
+
+test('background removal inspector exposes the bounded focused workflow', () => {
+  const source = createEditorAsset('project-background-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const layer = createEditorProject('Background inspector', source).variations[0].layers[0];
+  assert.equal(layer.type, 'image');
+  if (layer.type !== 'image') throw new Error('Expected image layer.');
+  const markup = renderToStaticMarkup(createElement(BackgroundRemovalInspector, {
+    layer,
+    status: 'failed',
+    error: 'Background removal failed.',
+    brushMode: 'erase',
+    brushSize: 32,
+    dispatch: () => undefined,
+    onRetry: () => undefined,
+    onBrushModeChange: () => undefined,
+    onBrushSizeChange: () => undefined,
+    onClearCorrections: async () => undefined,
+    onDone: () => undefined,
+  }));
+
+  assert.match(markup, /id="editor-background-tolerance"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
+  assert.match(markup, /id="editor-background-feather"[^>]*min="0"[^>]*max="8"[^>]*step="1"/);
+  assert.match(markup, /id="editor-background-brush-size"[^>]*min="8"[^>]*max="128"[^>]*step="1"/);
+  assert.match(markup, /aria-label="Erase background"[^>]*aria-pressed="true"/);
+  assert.match(markup, /aria-label="Restore background"/);
+  assert.match(markup, /Background removal failed\./);
+  assert.match(markup, />Retry</);
+  assert.match(markup, />Clear corrections</);
+  assert.match(markup, />Reset background</);
+  assert.match(markup, />Done</);
+});
+
+test('background brush points reverse layer rotation and flips into crop-local coordinates', () => {
+  const source = createEditorAsset('project-background-points', new Blob(['source']), {
+    name: 'source.png', width: 400, height: 200,
+  });
+  const layer = createEditorProject('Background points', source).variations[0].layers[0];
+  assert.equal(layer.type, 'image');
+  if (layer.type !== 'image') throw new Error('Expected image layer.');
+  layer.crop = { x: 0.1, y: 0.2, width: 0.5, height: 0.5 };
+  layer.transform.rotation = 90;
+
+  const rightEdge = canvasPointToCropPoint(
+    { x: 500, y: 630 },
+    { width: 1000, height: 800 },
+    source,
+    layer,
+  );
+  assert.deepEqual(rightEdge, { x: 1, y: 0.5 });
+
+  layer.transform.flipX = true;
+  assert.deepEqual(
+    canvasPointToCropPoint(
+      { x: 500, y: 630 },
+      { width: 1000, height: 800 },
+      source,
+      layer,
+    ),
+    { x: 0, y: 0.5 },
+  );
+  assert.equal(
+    canvasPointToCropPoint(
+      { x: 0, y: 0 },
+      { width: 1000, height: 800 },
+      source,
+      layer,
+    ),
+    null,
+  );
+});
+
 const createCompareVariations = (count: number): DesignVariation[] => {
   const source = createEditorAsset('project-compare-shell', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -327,7 +421,7 @@ test('toolbar disables editing commands while Compare is active and disables Com
   }));
   assert.match(active, /id="editor-compare-disabled-reason"/);
   assert.match(active, /aria-label="Compare"[^>]*aria-pressed="true"/);
-  for (const label of ['Select', 'Crop', 'Adjust', 'Looks', 'Layers']) {
+  for (const label of ['Select', 'Crop', 'Adjust', 'Remove background', 'Looks', 'Layers']) {
     assert.match(
       active,
       new RegExp(`aria-label="${label}"[^>]*aria-describedby="editor-compare-disabled-reason"[^>]*disabled=""`),
@@ -344,7 +438,7 @@ test('toolbar disables image-only tools with an accessible explanation for text 
   }));
 
   assert.match(markup, /id="editor-image-tools-disabled-reason"/);
-  assert.match(markup, /Crop and Adjust are available only for image layers\./);
+  assert.match(markup, /Crop, Adjust, and Remove background are available only for image layers\./);
   assert.match(markup, /aria-label="Crop"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
   assert.match(markup, /aria-label="Adjust"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /aria-label="Select"[^>]*disabled=""/);

@@ -11,6 +11,11 @@ import type {
   ImageLayer,
 } from '../../editor/model';
 import { LooksInspector } from './LooksInspector';
+import {
+  BackgroundRemovalInspector,
+  type BackgroundBrushMode,
+} from './BackgroundRemovalInspector';
+import type { BackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
 import { TextInspector } from './TextInspector';
 import {
   controlBounds,
@@ -60,6 +65,12 @@ export interface EditorInspectorProps {
   coordinator: LookRenderCoordinator;
   lookError: string | null;
   onRetryLook: () => void;
+  backgroundRemoval?: BackgroundRemovalWorkflow | null;
+  backgroundBrushMode?: BackgroundBrushMode;
+  backgroundBrushSize?: number;
+  onBackgroundBrushModeChange?: (mode: BackgroundBrushMode) => void;
+  onBackgroundBrushSizeChange?: (size: number) => void;
+  onBackgroundDone?: () => void;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -174,6 +185,12 @@ export const EditorInspector = ({
   coordinator,
   lookError,
   onRetryLook,
+  backgroundRemoval = null,
+  backgroundBrushMode = 'idle',
+  backgroundBrushSize = 32,
+  onBackgroundBrushModeChange = () => undefined,
+  onBackgroundBrushSizeChange = () => undefined,
+  onBackgroundDone = () => undefined,
   dispatch,
 }: EditorInspectorProps) => {
   if (project && variation && tool === 'looks') {
@@ -212,7 +229,23 @@ export const EditorInspector = ({
           <TextInspector layer={layer} dispatch={dispatch} />
         </>
       ) : layer.type === 'image' ? (
-        <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />
+        tool === 'remove-background' && backgroundRemoval ? (
+          <BackgroundRemovalInspector
+            layer={layer}
+            status={backgroundRemoval.status}
+            error={backgroundRemoval.error}
+            brushMode={backgroundBrushMode}
+            brushSize={backgroundBrushSize}
+            dispatch={dispatch}
+            onRetry={backgroundRemoval.retry}
+            onBrushModeChange={onBackgroundBrushModeChange}
+            onBrushSizeChange={onBackgroundBrushSizeChange}
+            onClearCorrections={backgroundRemoval.clearCorrections}
+            onDone={onBackgroundDone}
+          />
+        ) : (
+          <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />
+        )
       ) : (
         <div className="p-4">
           <h2 className="text-sm font-semibold text-neutral-100">Trace</h2>

@@ -210,6 +210,21 @@ test('waits for every visible image and ignores hidden missing images', () => {
   assert.equal(composed.context.clearCount, 1);
   assert.equal(composed.context.fillCount, 0);
   assert.deepEqual(composed.context.operations.slice(0, 2), ['reset-transform', 'clear']);
+
+  const prepared = imageLayer('prepared', 'asset-visible', {
+    backgroundRemoval: {
+      ...createDefaultBackgroundRemoval(),
+      enabled: true,
+      preparedAssetId: 'asset-prepared',
+      inputFingerprint: 'prepared-input',
+    },
+  });
+  assert.ok(compose(variation([prepared]), {
+    'asset-visible': asset('asset-visible'),
+    'asset-prepared': asset('asset-prepared'),
+  }, {
+    'asset-prepared': { url: 'blob:prepared', image: image('prepared') },
+  }).result);
 });
 
 test('render keys use stable design identity and exclude replacement object URLs', () => {
@@ -243,10 +258,32 @@ test('render keys use stable design identity and exclude replacement object URLs
   }), assetsById, {
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;
+  const preparedLayer = imageLayer('layer-a', 'asset-a', {
+    backgroundRemoval: {
+      ...createDefaultBackgroundRemoval(),
+      enabled: true,
+      preparedAssetId: 'asset-prepared',
+      inputFingerprint: 'prepared-input',
+    },
+  });
+  const changedPrepared = compose(variation([preparedLayer]), {
+    ...assetsById,
+    'asset-prepared': asset('asset-prepared'),
+  }, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+    'asset-prepared': { url: 'blob:prepared', image: image('prepared') },
+  }).result!;
 
   assert.match(first.renderKey, /^variation-preview:/);
   assert.equal(replacementUrl.renderKey, first.renderKey);
-  for (const changed of [changedLayer, changedAsset, changedDimensions, changedSourceDimensions, changedLook]) {
+  for (const changed of [
+    changedLayer,
+    changedAsset,
+    changedDimensions,
+    changedSourceDimensions,
+    changedLook,
+    changedPrepared,
+  ]) {
     assert.notEqual(changed.renderKey, first.renderKey);
   }
   assert.doesNotMatch(first.renderKey, /blob:/);

@@ -222,6 +222,56 @@ test('renders image layers bottom-to-top with independent crop, transform, opaci
   assert.equal(context.draws[1].filter, 'brightness(95%) contrast(115%) saturate(80%)');
 });
 
+test('renders a valid prepared image with original crop geometry and falls back when it is missing', () => {
+  const preparedContext = new RecordingContext();
+  const sourceImage = image('source');
+  const preparedImage = image('prepared');
+  const layer = imageLayer('prepared-layer', 'source', {
+    crop: { x: 0.1, y: 0.2, width: 0.5, height: 0.5 },
+    adjustments: { brightness: 20, contrast: 10, saturation: -15 },
+    backgroundRemoval: {
+      ...createDefaultBackgroundRemoval(),
+      enabled: true,
+      preparedAssetId: 'prepared',
+      inputFingerprint: 'current',
+    },
+  });
+  const assets: CompositorAssets = {
+    metadataById: {
+      source: { width: 400, height: 200 },
+      prepared: { width: 800, height: 400 },
+    },
+    imagesById: { source: sourceImage, prepared: preparedImage },
+  };
+
+  renderDesignLayers(
+    asContext(preparedContext),
+    { width: 1000, height: 800 },
+    [layer],
+    assets,
+  );
+  assert.equal(preparedContext.draws[0].image, preparedImage);
+  assert.deepEqual(preparedContext.draws[0].args, [0, 0, 800, 400, -230, -115, 460, 230]);
+  assert.equal(preparedContext.draws[0].filter, 'none');
+
+  const fallbackContext = new RecordingContext();
+  renderDesignLayers(
+    asContext(fallbackContext),
+    { width: 1000, height: 800 },
+    [layer],
+    {
+      metadataById: { source: { width: 400, height: 200 } },
+      imagesById: { source: sourceImage },
+    },
+  );
+  assert.equal(fallbackContext.draws[0].image, sourceImage);
+  assert.deepEqual(fallbackContext.draws[0].args.slice(0, 4), [40, 40, 200, 100]);
+  assert.equal(
+    fallbackContext.draws[0].filter,
+    'brightness(120%) contrast(110%) saturate(85%)',
+  );
+});
+
 test('measures and renders multiline text with reference scaling, outline, alignment, and explicit spacing', () => {
   const context = new RecordingContext();
   const layer = textLayer('text', {

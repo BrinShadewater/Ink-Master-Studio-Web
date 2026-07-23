@@ -21,6 +21,7 @@ export interface RangeControlProps {
   value: number;
   suffix?: string;
   bounds: { min: number; max: number; step: number };
+  disabled?: boolean;
   onChange: (value: number) => void;
   onEnd: () => void;
 }
@@ -31,6 +32,7 @@ export const RangeControl = ({
   value,
   suffix = '',
   bounds,
+  disabled = false,
   onChange,
   onEnd,
 }: RangeControlProps) => {
@@ -51,6 +53,7 @@ export const RangeControl = ({
         max={bounds.max}
         step={bounds.step}
         value={clamp(value, bounds.min, bounds.max)}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
         onPointerUp={finishPointer}
         onKeyUp={finishKey}

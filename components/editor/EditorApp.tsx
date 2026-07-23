@@ -19,6 +19,10 @@ import {
   createBrowserLookWorker,
 } from '../../editor/lookRenderCoordinator';
 import {
+  BackgroundRemovalCoordinator,
+  createBrowserBackgroundRemovalWorker,
+} from '../../editor/backgroundRemovalCoordinator';
+import {
   createTextLayer,
   type DesignLayer,
   type EditorTool,
@@ -32,6 +36,8 @@ import { LayerDrawer, LayerPanel } from './LayerPanel';
 import { EditorToolbar } from './EditorToolbar';
 import { EditorTopBar } from './EditorTopBar';
 import { ProjectDrawer } from './ProjectDrawer';
+import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
+import { useBackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -67,7 +73,10 @@ export const addTextLayerFromPanel = (
 export const normalizeToolForSelectedLayer = (
   tool: EditorTool,
   layer: Pick<DesignLayer, 'type'> | null,
-): EditorTool => layer?.type === 'text' && (tool === 'crop' || tool === 'adjust') ? 'select' : tool;
+): EditorTool => layer?.type !== 'image' &&
+  (tool === 'crop' || tool === 'adjust' || tool === 'remove-background')
+  ? 'select'
+  : tool;
 
 export interface VariationPreviewScope {
   projectId: string;
@@ -92,6 +101,11 @@ export const EditorApp = () => {
   const [layersOpen, setLayersOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [lookCoordinator, setLookCoordinator] = useState<LookRenderCoordinator | null>(null);
+  const [backgroundCoordinator, setBackgroundCoordinator] =
+    useState<BackgroundRemovalCoordinator | null>(null);
+  const [backgroundBrushMode, setBackgroundBrushMode] =
+    useState<BackgroundBrushMode>('idle');
+  const [backgroundBrushSize, setBackgroundBrushSize] = useState(32);
   const [lookError, setLookError] = useState<string | null>(null);
   const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -112,21 +126,43 @@ export const EditorApp = () => {
   const selectedLayer = project ? getSelectedLayer(project) : null;
   const selectedLayerId = selectedLayer?.id ?? null;
   const selectedLayerType = selectedLayer?.type ?? null;
+  const selectedImageLayer = selectedLayer?.type === 'image' ? selectedLayer : null;
   const projectVariationIds = project?.variations.map(({ id }) => id) ?? [];
   const projectVariationIdKey = projectVariationIds.join('\u0000');
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
+    const nextBackgroundCoordinator = new BackgroundRemovalCoordinator(
+      createBrowserBackgroundRemovalWorker,
+    );
     const disposeOnPageHide = (event: PageTransitionEvent) => {
-      if (!event.persisted) coordinator.dispose();
+      if (!event.persisted) {
+        coordinator.dispose();
+        nextBackgroundCoordinator.dispose();
+      }
     };
     window.addEventListener('pagehide', disposeOnPageHide);
     setLookCoordinator(coordinator);
+    setBackgroundCoordinator(nextBackgroundCoordinator);
     return () => {
       window.removeEventListener('pagehide', disposeOnPageHide);
       coordinator.dispose();
+      nextBackgroundCoordinator.dispose();
     };
   }, []);
+
+  const backgroundRemoval = useBackgroundRemovalWorkflow({
+    project,
+    variationId: variation?.id ?? null,
+    layer: selectedImageLayer,
+    assetsById: workspace.assetsById,
+    sourceImage: selectedImageLayer
+      ? imagesById[selectedImageLayer.assetId] ?? null
+      : null,
+    coordinator: backgroundCoordinator,
+    dispatch: workspace.dispatch,
+    commitGeneratedAsset: workspace.commitGeneratedAsset,
+  });
 
   useEffect(() => {
     if (!lookCoordinator) return;
@@ -222,6 +258,10 @@ export const EditorApp = () => {
       selectedLayerType ? { type: selectedLayerType } : null,
     ));
   }, [selectedLayerId, selectedLayerType]);
+
+  useEffect(() => {
+    if (tool !== 'remove-background') setBackgroundBrushMode('idle');
+  }, [tool]);
 
   useEffect(() => {
     if (!layersOpen) return undefined;
@@ -356,6 +396,11 @@ export const EditorApp = () => {
                   workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
                 }}
                 onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+                backgroundMode={backgroundBrushMode}
+                backgroundBrushSize={backgroundBrushSize}
+                onPickBackground={backgroundRemoval.pickColor}
+                onCommitBackgroundStroke={backgroundRemoval.commitStroke}
+                onBackgroundModeChange={setBackgroundBrushMode}
               />
               {!project ? (
                 <button
@@ -391,6 +436,12 @@ export const EditorApp = () => {
                 coordinator={lookCoordinator}
                 lookError={lookError}
                 onRetryLook={() => setLookRetryGeneration((current) => current + 1)}
+                backgroundRemoval={backgroundRemoval}
+                backgroundBrushMode={backgroundBrushMode}
+                backgroundBrushSize={backgroundBrushSize}
+                onBackgroundBrushModeChange={setBackgroundBrushMode}
+                onBackgroundBrushSizeChange={setBackgroundBrushSize}
+                onBackgroundDone={() => setBackgroundBrushMode('idle')}
                 dispatch={workspace.dispatch}
               />
             </div>

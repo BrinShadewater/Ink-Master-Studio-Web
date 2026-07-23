@@ -1,4 +1,4 @@
-import { Columns2, Crop, Layers, MousePointer2, Palette, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+import { Columns2, Crop, Layers, MousePointer2, Palette, SlidersHorizontal, WandSparkles, type LucideIcon } from 'lucide-react';
 import type { Ref } from 'react';
 import type { DesignLayer, EditorTool } from '../../editor/model';
 
@@ -19,6 +19,7 @@ const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
   { id: 'select', label: 'Select', icon: MousePointer2 },
   { id: 'crop', label: 'Crop', icon: Crop },
   { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+  { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
   { id: 'looks', label: 'Looks', icon: Palette },
 ];
 
@@ -40,9 +41,9 @@ export const EditorToolbar = ({
     className="order-3 flex h-16 min-w-0 items-center justify-center gap-4 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
-    {layerType === 'text' ? (
+    {layerType !== 'image' ? (
       <p id="editor-image-tools-disabled-reason" className="sr-only">
-        Crop and Adjust are available only for image layers.
+        Crop, Adjust, and Remove background are available only for image layers.
       </p>
     ) : null}
     {compareOpen ? (
@@ -52,7 +53,8 @@ export const EditorToolbar = ({
     ) : null}
     {tools.map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
-      const imageToolDisabled = layerType === 'text' && (id === 'crop' || id === 'adjust');
+      const imageToolDisabled = layerType !== 'image' &&
+        (id === 'crop' || id === 'adjust' || id === 'remove-background');
       const disabled = compareOpen || imageToolDisabled;
       const disabledReason = compareOpen
         ? 'editor-compare-disabled-reason'

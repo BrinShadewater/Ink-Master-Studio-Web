@@ -125,11 +125,24 @@ const renderImageLayer = (
   assets: CompositorAssets,
 ) => {
   const source = assets.metadataById[layer.assetId];
-  const image = assets.imagesById[layer.assetId];
+  const preparedAssetId = layer.backgroundRemoval.enabled
+    ? layer.backgroundRemoval.preparedAssetId
+    : null;
+  const prepared = preparedAssetId
+    ? assets.imagesById[preparedAssetId]
+    : undefined;
+  const preparedMetadata = preparedAssetId
+    ? assets.metadataById[preparedAssetId]
+    : undefined;
+  const image = prepared && preparedMetadata
+    ? prepared
+    : assets.imagesById[layer.assetId];
   if (!source || !image) return;
 
   const drawRect = getLayerDrawRect(source, viewport, layer.transform, layer.crop);
-  const cropRect = getCroppedSourceRect(source, layer.crop);
+  const cropRect = prepared && preparedMetadata
+    ? { x: 0, y: 0, width: preparedMetadata.width, height: preparedMetadata.height }
+    : getCroppedSourceRect(source, layer.crop);
   if (drawRect.width <= 0 || drawRect.height <= 0 || cropRect.width <= 0 || cropRect.height <= 0) return;
 
   context.save();
@@ -137,7 +150,9 @@ const renderImageLayer = (
   context.rotate(toRadians(layer.transform.rotation));
   context.scale(layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1);
   context.globalAlpha = layer.opacity;
-  context.filter = buildCanvasFilter(layer.adjustments);
+  context.filter = prepared && preparedMetadata
+    ? 'none'
+    : buildCanvasFilter(layer.adjustments);
   context.drawImage(
     image,
     cropRect.x,
