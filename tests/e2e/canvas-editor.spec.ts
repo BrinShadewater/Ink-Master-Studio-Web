@@ -354,6 +354,42 @@ const readPersistedLook = async (page: Page, projectName: string) => page.evalua
   })
 ), projectName);
 
+interface PersistedProjectByteSnapshot {
+  updatedAt: number;
+  bytes: number[];
+  variations: Array<{ name: string; lookId: string }>;
+}
+
+const readPersistedProjectBytes = async (
+  page: Page,
+  projectName: string,
+) => page.evaluate((name) => (
+  new Promise<PersistedProjectByteSnapshot | null>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+      request.onerror = () => {
+        database.close();
+        reject(request.error ?? new Error('Could not read editor projects.'));
+      };
+      request.onsuccess = () => {
+        const project = request.result.find((candidate) => candidate.name === name);
+        database.close();
+        resolve(project ? {
+          updatedAt: project.updatedAt,
+          bytes: [...new TextEncoder().encode(JSON.stringify(project))],
+          variations: project.variations.map((variation: { name: string; look: { id: string } }) => ({
+            name: variation.name,
+            lookId: variation.look.id,
+          })),
+        } : null);
+      };
+    };
+  })
+), projectName);
+
 interface PersistedComposition {
   selectedLayerId: string;
   layers: Array<{
@@ -1570,4 +1606,178 @@ test('@task5-review preserves direct canvas drag geometry with a processed Look'
   await page.mouse.up();
   await expect(page.getByLabel('X position')).toHaveValue('0.6');
   await expect(page.getByLabel('Y position')).toHaveValue('0.4');
+});
+
+test('compares Looks across variations', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'compare-looks.png');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+
+  const variationName = page.getByLabel('Variation name');
+  await variationName.fill('Contrast');
+  await variationName.press('Enter');
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await variationName.fill('Mono');
+  await variationName.press('Enter');
+  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await variationName.fill('Duotone');
+  await variationName.press('Enter');
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+
+  await expect.poll(async () => (await readPersistedProjectBytes(page, 'compare-looks'))?.variations)
+    .toEqual([
+      { name: 'Contrast', lookId: 'high-contrast' },
+      { name: 'Mono', lookId: 'monochrome' },
+      { name: 'Duotone', lookId: 'duotone' },
+    ]);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
+  const beforeCompare = await readPersistedProjectBytes(page, 'compare-looks');
+  expect(beforeCompare).not.toBeNull();
+
+  const compareCommand = page.getByRole('button', { name: 'Compare', exact: true });
+  await expect(compareCommand).toBeEnabled();
+  await compareCommand.click();
+  const board = page.getByRole('region', { name: 'Compare Board' });
+  await expect(board).toBeVisible();
+  await board.getByText('Variations', { exact: true }).click();
+  await board.getByRole('checkbox', { name: 'Contrast', exact: true }).check();
+
+  let previews = board.locator('canvas[data-look-preview="true"]');
+  await expect(previews).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    await expectCanvasPainted(previews.nth(index));
+  }
+  const desktopSizes = await previews.evaluateAll((canvases) => canvases.map((canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    return { width: Math.round(rect.width), height: Math.round(rect.height) };
+  }));
+  expect(new Set(desktopSizes.map(({ width }) => width)).size).toBe(1);
+  expect(new Set(desktopSizes.map(({ height }) => height)).size).toBe(1);
+  expect(desktopSizes[0].width).toBeGreaterThan(0);
+  expect(desktopSizes[0].height).toBeGreaterThan(0);
+
+  await board.getByRole('button', { name: 'Dark background' }).click();
+  await expect(board.getByRole('button', { name: 'Dark background' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(previews.first()).toHaveAccessibleName(/dark background/);
+  await board.getByRole('button', { name: 'Light background' }).click();
+  await expect(board.getByRole('button', { name: 'Light background' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(previews.first()).toHaveAccessibleName(/light background/);
+  await board.getByLabel('Compare zoom').fill('130');
+  await expect(board.getByText('130%', { exact: true })).toBeVisible();
+
+  const afterViewChanges = await readPersistedProjectBytes(page, 'compare-looks');
+  expect(afterViewChanges?.updatedAt).toBe(beforeCompare?.updatedAt);
+  expect(afterViewChanges?.bytes).toEqual(beforeCompare?.bytes);
+
+  await board.getByRole('button', { name: 'Edit Mono', exact: true }).click();
+  await expect(board).toHaveCount(0);
+  await expect(page.getByLabel('Variation name')).toHaveValue('Mono');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+  await expect(compareCommand).toBeFocused();
+  await expect.poll(async () => (await readPersistedProjectBytes(page, 'compare-looks'))?.updatedAt)
+    .not.toBe(beforeCompare?.updatedAt);
+  const afterEdit = await readPersistedProjectBytes(page, 'compare-looks');
+  expect(afterEdit).not.toBeNull();
+
+  await compareCommand.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(board).toBeVisible();
+  previews = board.locator('canvas[data-look-preview="true"]');
+  await expect(previews).toHaveCount(3);
+
+  for (const label of ['Select', 'Crop', 'Adjust', 'Looks', 'Layers']) {
+    const command = page.getByRole('button', { name: label, exact: true });
+    await expect(command).toBeDisabled();
+    await expect(command).toHaveAccessibleDescription('Editing tools are unavailable while Compare is open.');
+  }
+
+  const mobileLayout = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const compareBoard = document.querySelector('[aria-label="Compare Board"]');
+    const boardHeader = compareBoard?.querySelector('header');
+    const strip = document.querySelector('[data-compare-preview-strip="true"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    const tiles = [...document.querySelectorAll('[data-compare-preview="true"]')];
+    if (!compareBoard || !boardHeader || !(strip instanceof HTMLElement) || !toolbar || tiles.length !== 3) {
+      throw new Error('Expected the complete mobile Compare layout.');
+    }
+    const headerControls = [
+      { name: 'title', element: boardHeader.children[0] },
+      { name: 'variations', element: boardHeader.querySelector('details > summary') },
+      { name: 'background', element: boardHeader.querySelector('[aria-label="Artwork background"]') },
+      {
+        name: 'zoom',
+        element: boardHeader.querySelector('input[aria-label="Compare zoom"]')?.closest('label') ?? null,
+      },
+      { name: 'close', element: boardHeader.querySelector('button[aria-label="Close Compare"]') },
+    ].filter((entry): entry is { name: string; element: Element } => Boolean(entry.element))
+      .map(({ name, element }) => ({ name, ...bounds(element) }));
+    const headerControlOverlaps: Array<[number, number]> = [];
+    for (let leftIndex = 0; leftIndex < headerControls.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < headerControls.length; rightIndex += 1) {
+        const left = headerControls[leftIndex];
+        const right = headerControls[rightIndex];
+        const overlapWidth = Math.min(left.right, right.right) - Math.max(left.left, right.left);
+        const overlapHeight = Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top);
+        if (overlapWidth > 1 && overlapHeight > 1) headerControlOverlaps.push([leftIndex, rightIndex]);
+      }
+    }
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      board: bounds(compareBoard),
+      header: bounds(boardHeader),
+      strip: bounds(strip),
+      toolbar: bounds(toolbar),
+      tileWidths: tiles.map((tile) => bounds(tile).width),
+      headerControls,
+      headerControlOverlaps,
+      stripScrollable: strip.scrollWidth > strip.clientWidth + 1,
+      inspectorCount: document.querySelectorAll('aside[aria-label="Inspector"]').length,
+      layerPanelCount: document.querySelectorAll('[aria-label="Layers panel"]').length,
+    };
+  });
+  expect(mobileLayout.documentOverflows).toBe(false);
+  expect(mobileLayout.board.left).toBeGreaterThanOrEqual(0);
+  expect(mobileLayout.board.right).toBeLessThanOrEqual(mobileLayout.viewport.width);
+  expect(mobileLayout.board.top).toBeGreaterThanOrEqual(0);
+  expect(mobileLayout.board.bottom).toBeLessThanOrEqual(mobileLayout.toolbar.top + 1);
+  expect(mobileLayout.header.bottom).toBeLessThanOrEqual(mobileLayout.strip.top + 1);
+  for (const control of mobileLayout.headerControls) {
+    expect(control.left, `${control.name} left edge`).toBeGreaterThanOrEqual(0);
+    expect(control.right, `${control.name} right edge`).toBeLessThanOrEqual(mobileLayout.viewport.width);
+    expect(control.top, `${control.name} top edge`).toBeGreaterThanOrEqual(mobileLayout.header.top);
+    expect(control.bottom, `${control.name} bottom edge`).toBeLessThanOrEqual(mobileLayout.header.bottom);
+  }
+  expect(mobileLayout.headerControlOverlaps).toEqual([]);
+  expect(mobileLayout.strip.bottom).toBeLessThanOrEqual(mobileLayout.toolbar.top + 1);
+  expect(mobileLayout.stripScrollable).toBe(true);
+  expect(mobileLayout.inspectorCount).toBe(0);
+  expect(mobileLayout.layerPanelCount).toBe(0);
+  expect(new Set(mobileLayout.tileWidths.map(Math.round)).size).toBe(1);
+  expect(Math.round(mobileLayout.tileWidths[0])).toBe(358);
+
+  const strip = board.locator('[data-compare-preview-strip="true"]');
+  await strip.evaluate((element) => element.scrollTo({ left: element.clientWidth, behavior: 'instant' }));
+  await expect.poll(() => strip.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+  const afterMobileView = await readPersistedProjectBytes(page, 'compare-looks');
+  expect(afterMobileView?.updatedAt).toBe(afterEdit?.updatedAt);
+  expect(afterMobileView?.bytes).toEqual(afterEdit?.bytes);
 });

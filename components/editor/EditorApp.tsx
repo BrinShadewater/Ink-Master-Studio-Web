@@ -2,6 +2,12 @@ import { Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useDecodedEditorImages } from '../../editor/decodedImages';
 import {
+  createCompareSelection,
+  normalizeCompareZoom,
+  reconcileCompareSelection,
+  type CompareBackground,
+} from '../../editor/compareState';
+import {
   canRedoActiveVariation,
   canUndoActiveVariation,
   getActiveVariation,
@@ -20,6 +26,7 @@ import {
 } from '../../editor/model';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
+import { CompareBoard } from './CompareBoard';
 import { EditorInspector } from './EditorInspector';
 import { LayerDrawer, LayerPanel } from './LayerPanel';
 import { EditorToolbar } from './EditorToolbar';
@@ -87,9 +94,14 @@ export const EditorApp = () => {
   const [lookCoordinator, setLookCoordinator] = useState<LookRenderCoordinator | null>(null);
   const [lookError, setLookError] = useState<string | null>(null);
   const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareVariationIds, setCompareVariationIds] = useState<string[]>([]);
+  const [compareBackground, setCompareBackground] = useState<CompareBackground>('neutral');
+  const [compareZoom, setCompareZoom] = useState(100);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const layerFileInputRef = useRef<HTMLInputElement>(null);
   const layersButtonRef = useRef<HTMLButtonElement>(null);
+  const compareButtonRef = useRef<HTMLButtonElement>(null);
   const desktopLayersPanelRef = useRef<HTMLElement>(null);
   const layerDrawerReturnFocusRef = useRef<HTMLElement>(null);
   const previousPreviewScopeRef = useRef<VariationPreviewScope | null>(null);
@@ -98,6 +110,8 @@ export const EditorApp = () => {
   const selectedLayer = project ? getSelectedLayer(project) : null;
   const selectedLayerId = selectedLayer?.id ?? null;
   const selectedLayerType = selectedLayer?.type ?? null;
+  const projectVariationIds = project?.variations.map(({ id }) => id) ?? [];
+  const projectVariationIdKey = projectVariationIds.join('\u0000');
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
@@ -136,6 +150,55 @@ export const EditorApp = () => {
     layerDrawerReturnFocusRef.current = layersButtonRef.current;
     setLayersOpen(false);
   };
+
+  const returnFocusToCompare = () => {
+    requestAnimationFrame(() => compareButtonRef.current?.focus());
+  };
+
+  const closeCompare = (returnFocus = true) => {
+    setCompareOpen(false);
+    setTool('select');
+    if (returnFocus) returnFocusToCompare();
+  };
+
+  const toggleCompare = () => {
+    if (compareOpen) {
+      closeCompare(false);
+      return;
+    }
+    if (!project || projectVariationIds.length < 2) return;
+    const selection = reconcileCompareSelection(
+      compareVariationIds,
+      projectVariationIds,
+      project.activeVariationId,
+    );
+    setCompareVariationIds(
+      selection.length >= 2
+        ? selection
+        : createCompareSelection(projectVariationIds, project.activeVariationId),
+    );
+    setLayersOpen(false);
+    setCompareOpen(true);
+  };
+
+  useEffect(() => {
+    if (!compareOpen) return;
+    const nextSelection = reconcileCompareSelection(
+      compareVariationIds,
+      projectVariationIds,
+      project?.activeVariationId ?? '',
+    );
+    if (nextSelection.length < 2) {
+      closeCompare();
+      return;
+    }
+    if (
+      nextSelection.length !== compareVariationIds.length ||
+      nextSelection.some((id, index) => id !== compareVariationIds[index])
+    ) {
+      setCompareVariationIds(nextSelection);
+    }
+  }, [compareOpen, project?.id, project?.activeVariationId, projectVariationIdKey]);
 
   useEffect(() => {
     setTool((current) => normalizeToolForSelectedLayer(
@@ -217,77 +280,105 @@ export const EditorApp = () => {
         onOpenProjects={() => setProjectsOpen(true)}
       />
 
-      <section className="grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1">
+      <section className={compareOpen
+        ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[52px_minmax(0,1fr)] md:grid-rows-1'
+        : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1'}>
         <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
           onToolChange={setTool}
           onOpenLayers={openLayers}
           layersButtonRef={layersButtonRef}
+          variationCount={projectVariationIds.length}
+          compareOpen={compareOpen}
+          onToggleCompare={toggleCompare}
+          compareButtonRef={compareButtonRef}
         />
-        <div
-          className={`relative order-1 min-h-0 overflow-hidden md:order-none ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDropActive(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
-          }}
-          onDrop={importDroppedFile}
-        >
-          <EditorCanvas
-            variation={variation}
+        {compareOpen && project ? (
+          <CompareBoard
+            variations={project.variations}
+            selectedVariationIds={compareVariationIds}
+            background={compareBackground}
+            zoom={compareZoom}
             assetsById={workspace.assetsById}
             imagesById={imagesById}
             coordinator={lookCoordinator}
-            lookRetryGeneration={lookRetryGeneration}
-            onLookFailureChange={setLookError}
-            tool={tool}
-            onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
-            onTransformChange={(layerId, transform, historyGroup) => {
-              workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
+            onSelectionChange={setCompareVariationIds}
+            onBackgroundChange={setCompareBackground}
+            onZoomChange={(value) => setCompareZoom(normalizeCompareZoom(value))}
+            onEditVariation={(variationId) => {
+              workspace.dispatch({ type: 'select-variation', variationId });
+              closeCompare();
             }}
-            onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+            onClose={() => closeCompare()}
           />
-          {!project ? (
-            <button
-              type="button"
-              className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(240px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 border border-dashed border-neutral-600 bg-neutral-900 px-5 text-sm font-medium text-neutral-200 transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-              onClick={() => fileInputRef.current?.click()}
+        ) : (
+          <>
+            <div
+              className={`relative order-1 min-h-0 overflow-hidden md:order-none ${dropActive ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setDropActive(true);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+              }}
+              onDrop={importDroppedFile}
             >
-              <Upload aria-hidden="true" size={20} />
-              Import artwork
-            </button>
-          ) : null}
-        </div>
-        <div className="order-2 h-60 min-h-0 md:order-none md:grid md:h-auto md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]">
-          <LayerPanel
-            className="hidden border-b border-neutral-800 md:flex md:border-l"
-            panelRef={desktopLayersPanelRef}
-            focusable
-            variation={variation}
-            onAddImage={() => layerFileInputRef.current?.click()}
-            onAddText={() => {
-              addTextLayerFromPanel(workspace.dispatch, closeLayers);
-            }}
-            onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
-            dispatch={workspace.dispatch}
-          />
-          <EditorInspector
-            project={project}
-            variation={variation}
-            layer={selectedLayer}
-            tool={tool}
-            assetsById={workspace.assetsById}
-            imagesById={imagesById}
-            coordinator={lookCoordinator}
-            lookError={lookError}
-            onRetryLook={() => setLookRetryGeneration((current) => current + 1)}
-            dispatch={workspace.dispatch}
-          />
-        </div>
+              <EditorCanvas
+                variation={variation}
+                assetsById={workspace.assetsById}
+                imagesById={imagesById}
+                coordinator={lookCoordinator}
+                lookRetryGeneration={lookRetryGeneration}
+                onLookFailureChange={setLookError}
+                tool={tool}
+                onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
+                onTransformChange={(layerId, transform, historyGroup) => {
+                  workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
+                }}
+                onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+              />
+              {!project ? (
+                <button
+                  type="button"
+                  className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(240px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 border border-dashed border-neutral-600 bg-neutral-900 px-5 text-sm font-medium text-neutral-200 transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload aria-hidden="true" size={20} />
+                  Import artwork
+                </button>
+              ) : null}
+            </div>
+            <div className="order-2 h-60 min-h-0 md:order-none md:grid md:h-auto md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]">
+              <LayerPanel
+                className="hidden border-b border-neutral-800 md:flex md:border-l"
+                panelRef={desktopLayersPanelRef}
+                focusable
+                variation={variation}
+                onAddImage={() => layerFileInputRef.current?.click()}
+                onAddText={() => {
+                  addTextLayerFromPanel(workspace.dispatch, closeLayers);
+                }}
+                onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
+                dispatch={workspace.dispatch}
+              />
+              <EditorInspector
+                project={project}
+                variation={variation}
+                layer={selectedLayer}
+                tool={tool}
+                assetsById={workspace.assetsById}
+                imagesById={imagesById}
+                coordinator={lookCoordinator}
+                lookError={lookError}
+                onRetryLook={() => setLookRetryGeneration((current) => current + 1)}
+                dispatch={workspace.dispatch}
+              />
+            </div>
+          </>
+        )}
       </section>
 
       <input

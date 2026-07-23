@@ -239,3 +239,70 @@ Exit code: `0`; Git emitted only the repository's LF-to-CRLF working-copy warnin
 - Browser lifecycle coverage remains Chromium-only; Firefox and WebKit were not run.
 - Native operating-system color picker UI behavior remains outside the tested surface.
 - No known functional concerns remain from the Task 6 review findings.
+
+---
+
+# Phase 2B Task 6 Implementation Report
+
+## Scope
+
+Implemented the responsive Compare Board only. Compare selection, background, zoom, and board visibility remain React session state and never enter `EditorProject` or the repository boundary. Compare previews reuse `VariationPreviewCanvas` and the existing shared `LookRenderCoordinator` with the 800-pixel tile bound.
+
+## RED Evidence
+
+- `npx tsx --test tests/editor-compare-state.test.ts`
+  - Failed with `ERR_MODULE_NOT_FOUND` for `editor/compareState`, proving the pure helper contract was absent.
+  - The first GREEN attempt exposed an overfill bug: reconciliation returned three IDs instead of the required two. The boundary was corrected before continuing.
+- `npx tsx --test tests/editor-shell.test.ts`
+  - Failed with `ERR_MODULE_NOT_FOUND` for `components/editor/CompareBoard`, proving the board shell was absent.
+- `npx playwright test tests/e2e/canvas-editor.spec.ts --project=chromium -g "compares Looks across variations"`
+  - Initially failed because Compare remained disabled after three variations were created, proving `EditorApp` was not integrated.
+  - A later mobile containment assertion failed against the free-wrapping header. The mobile header was changed to a deterministic grid and the visible-control containment gate was retained.
+
+## GREEN Evidence
+
+- `npx tsx --test tests/editor-compare-state.test.ts tests/editor-shell.test.ts tests/editor-preview-surface.test.ts`
+  - PASS: 47 tests, 0 failures.
+- `npx playwright test tests/e2e/canvas-editor.spec.ts --project=chromium -g "compares Looks across variations"`
+  - PASS: 1 test, 0 failures, 4.0 seconds test time.
+  - Proves three named variations with High Contrast, Monochrome, and Duotone; equal painted previews; Edit variation return/focus; exact IndexedDB bytes and `updatedAt` stability across Compare state; and 390x844 containment, horizontal scrolling, equal 358-pixel pages, rail removal, and control non-overlap.
+- `npm run typecheck`
+  - PASS: TypeScript emitted no errors.
+- `npm run build`
+  - PASS: 1,810 modules transformed in 2.39 seconds.
+  - Worker emission preserved: `dist/assets/lookWorker-DsS6eTHn.js` (13.68 kB).
+- In-app browser QA at 1200x844 and 390x844
+  - PASS: three equal 546x304 desktop previews; three equal 358-pixel mobile pages; scrollable strip; no inspector/layer rails; no document overflow; no console warnings or errors.
+- `git diff --check`
+  - PASS after implementation artifacts and ledger update.
+
+No broad `npm run verify` was run, as Task 6 explicitly limits verification to the focused gates.
+
+## Self-Review
+
+- Pure helpers enforce stable project order, active-plus-nearest defaults, unique valid IDs, a two-to-four selection range, deleted-ID reconciliation, and an empty exit signal below two project variations.
+- The board uses variation IDs for control state and exposes variation/background names on every preview canvas.
+- Neutral, light, and dark are display-only canvas backgrounds; zoom is normalized to 50 through 150 and shared by every tile.
+- The EditorApp alternate grid omits both desktop rails and the mobile inspector row while Compare is open.
+- Toolbar editing commands and Layers are disabled with one programmatic explanation while Compare remains the active command.
+- Close and Edit variation return focus to Compare; Edit variation selects the requested variation and restores Select.
+- Missing projects and projects reduced below two variations consume the pure exit signal and close the board.
+- Compare event handlers call only React state setters. The sole project dispatch in the board path is the intentional `select-variation` command from Edit variation.
+- The Task 5 preview-focused tests remain green, and each Compare surface keeps a variation-specific surface ID so existing authority and cleanup behavior remain intact.
+
+## Changed Files
+
+- `editor/compareState.ts`
+- `components/editor/CompareBoard.tsx`
+- `components/editor/EditorToolbar.tsx`
+- `components/editor/EditorApp.tsx`
+- `tests/editor-compare-state.test.ts`
+- `tests/editor-shell.test.ts`
+- `tests/e2e/canvas-editor.spec.ts`
+- `.superpowers/sdd/progress.md`
+- `.superpowers/sdd/task-6-report.md`
+
+## Concerns
+
+- Focused browser coverage is Chromium only, as required by Task 6. Cross-browser and broad-suite verification remain assigned to Task 7.
+- No production, schema, repository, history, or Task 5 render-coordinator changes were needed.

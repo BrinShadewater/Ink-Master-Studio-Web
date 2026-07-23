@@ -13,6 +13,7 @@ import {
   type EditorTopBarProps,
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
+import { CompareBoard, type CompareBoardProps } from '../components/editor/CompareBoard';
 import {
   LooksInspector,
   createLookCandidateRecipes,
@@ -217,6 +218,121 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
   assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
   assert.match(looksButton, /class="[^"]*h-10 w-10/);
+});
+
+const createCompareVariations = (count: number): DesignVariation[] => {
+  const source = createEditorAsset('project-compare-shell', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const base = createEditorProject('Compare shell', source).variations[0];
+  return Array.from({ length: count }, (_, index) => ({
+    ...structuredClone(base),
+    id: `variation-${index + 1}`,
+    name: `Variation ${index + 1}`,
+  }));
+};
+
+const renderCompareBoard = (
+  count: number,
+  selectedVariationIds: string[],
+  background: CompareBoardProps['background'] = 'neutral',
+) => {
+  const variations = createCompareVariations(count);
+  return renderToStaticMarkup(createElement(CompareBoard, {
+    variations,
+    selectedVariationIds,
+    background,
+    zoom: 100,
+    assetsById: {},
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    onSelectionChange: () => undefined,
+    onBackgroundChange: () => undefined,
+    onZoomChange: () => undefined,
+    onEditVariation: () => undefined,
+    onClose: () => undefined,
+  }));
+};
+
+test('Compare Board exposes stable selection, background, zoom, and edit controls', () => {
+  const markup = renderCompareBoard(3, ['variation-1', 'variation-2'], 'dark');
+
+  assert.match(markup, /aria-label="Compare variations"/);
+  for (let index = 1; index <= 3; index += 1) {
+    assert.match(markup, new RegExp(`type="checkbox"[^>]*value="variation-${index}"`));
+  }
+  for (const background of ['Neutral', 'Light', 'Dark']) {
+    assert.match(markup, new RegExp(`aria-label="${background} background"`));
+  }
+  assert.match(markup, /aria-label="Dark background"[^>]*aria-pressed="true"/);
+  assert.match(markup, /aria-label="Neutral background"[^>]*aria-pressed="false"/);
+  assert.match(markup, /aria-label="Compare zoom"[^>]*min="50"[^>]*max="150"[^>]*value="100"/);
+  for (let index = 1; index <= 2; index += 1) {
+    assert.match(markup, new RegExp(`aria-label="Variation ${index} preview on dark background"`));
+    assert.match(markup, new RegExp(`aria-label="Edit Variation ${index}"`));
+  }
+  assert.doesNotMatch(markup, /aria-label="Inspector"|aria-label="Layers panel"/);
+});
+
+test('Compare Board enforces two-to-four selections in rendered checkbox states', () => {
+  const two = renderCompareBoard(3, ['variation-1', 'variation-2']);
+  for (const id of ['variation-1', 'variation-2']) {
+    const checkbox = two.match(new RegExp(`<input[^>]*value="${id}"[^>]*>`))?.[0] ?? '';
+    assert.match(checkbox, /type="checkbox"/);
+    assert.match(checkbox, /disabled=""/);
+  }
+
+  const four = renderCompareBoard(
+    5,
+    ['variation-1', 'variation-2', 'variation-3', 'variation-4'],
+  );
+  const fifthCheckbox = four.match(/<input[^>]*value="variation-5"[^>]*>/)?.[0] ?? '';
+  assert.match(fifthCheckbox, /type="checkbox"/);
+  assert.match(fifthCheckbox, /disabled=""/);
+  assert.equal(four.match(/data-compare-preview="true"/g)?.length, 4);
+});
+
+test('Compare Board keeps equal desktop frames and mobile scroll-page sizing', () => {
+  for (const count of [2, 3, 4]) {
+    const ids = Array.from({ length: count }, (_, index) => `variation-${index + 1}`);
+    const markup = renderCompareBoard(count, ids);
+    assert.match(markup, /data-compare-preview-strip="true"/);
+    assert.match(markup, /md:grid-cols-2/);
+    assert.match(markup, /grid-flow-col/);
+    assert.match(markup, /auto-cols-\[calc\(100vw-32px\)\]/);
+    assert.match(markup, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+    assert.match(markup, /col-span-2/);
+    assert.equal(markup.match(/data-compare-preview="true"/g)?.length, count);
+  }
+});
+
+test('toolbar disables editing commands while Compare is active and disables Compare below two variations', () => {
+  const unavailable = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    variationCount: 1,
+    compareOpen: false,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+    onToggleCompare: () => undefined,
+  }));
+  assert.match(unavailable, /aria-label="Compare"[^>]*disabled=""/);
+
+  const active = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    variationCount: 3,
+    compareOpen: true,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+    onToggleCompare: () => undefined,
+  }));
+  assert.match(active, /id="editor-compare-disabled-reason"/);
+  assert.match(active, /aria-label="Compare"[^>]*aria-pressed="true"/);
+  for (const label of ['Select', 'Crop', 'Adjust', 'Looks', 'Layers']) {
+    assert.match(
+      active,
+      new RegExp(`aria-label="${label}"[^>]*aria-describedby="editor-compare-disabled-reason"[^>]*disabled=""`),
+    );
+  }
 });
 
 test('toolbar disables image-only tools with an accessible explanation for text selection', () => {
