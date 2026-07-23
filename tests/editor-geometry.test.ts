@@ -61,9 +61,16 @@ test('inverse-rotates points when testing rotated layer bounds', () => {
   assert.equal(isPointInRotatedRect({ x: 150, y: 100 }, bounds, 90), false);
 });
 
-test('keeps source URL lifecycle with its creator', () => {
+test('keeps source URL lifecycle in the workspace registry across shared preview surfaces', () => {
   const editorCanvasSource = readFileSync(new URL('../components/editor/EditorCanvas.tsx', import.meta.url), 'utf8');
-  assert.match(editorCanvasSource, /Borrowed source URL/);
-  assert.match(editorCanvasSource, /creator owns URL lifecycle and revocation/);
+  const previewCanvasSource = readFileSync(
+    new URL('../components/editor/VariationPreviewCanvas.tsx', import.meta.url),
+    'utf8',
+  );
+  const workspaceSource = readFileSync(new URL('../editor/useEditorWorkspace.ts', import.meta.url), 'utf8');
+
   assert.doesNotMatch(editorCanvasSource, /\bURL\.revokeObjectURL\s*\(/);
+  assert.doesNotMatch(previewCanvasSource, /\bURL\.revokeObjectURL\s*\(/);
+  assert.match(workspaceSource, /class AssetUrlRegistry/);
+  assert.match(workspaceSource, /this\.api\.revokeObjectURL\s*\(/);
 });

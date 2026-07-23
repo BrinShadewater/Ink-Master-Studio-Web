@@ -3,8 +3,28 @@ import path from 'node:path';
 
 const artifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'task-7', name);
 const phase2aArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2a', name);
+const phase2bArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2b', name);
 
 type LookRecipeSnapshot = Record<string, string | number>;
+
+interface PersistedPhase2BProjectSnapshot {
+  schemaVersion: number;
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  sourceAssetId: string;
+  sourceMetadata: { name: string; mimeType: string; width: number; height: number };
+  activeVariationId: string;
+  variations: Array<{
+    id: string;
+    name: string;
+    layers: Array<Record<string, unknown>>;
+    selectedLayerId: string;
+    look: LookRecipeSnapshot;
+  }>;
+  productVariants: unknown[];
+}
 
 interface LookWorkerHarnessSnapshot {
   created: number;
@@ -217,6 +237,24 @@ const invokeLookWorkerHarness = (
   harness[nextCommand]();
 }, command);
 
+const installDeterministicLookSeeds = async (page: Page, initialSeed: number) => {
+  await page.addInitScript(({ firstSeed }) => {
+    const nativeGetRandomValues = crypto.getRandomValues.bind(crypto);
+    let nextSeed = firstSeed >>> 0;
+    Object.defineProperty(crypto, 'getRandomValues', {
+      configurable: true,
+      value: <T extends ArrayBufferView | null>(array: T): T => {
+        if (array instanceof Uint32Array && array.length === 1) {
+          array[0] = nextSeed;
+          nextSeed = (nextSeed + 1) >>> 0;
+          return array;
+        }
+        return nativeGetRandomValues(array);
+      },
+    });
+  }, { firstSeed: initialSeed });
+};
+
 const createPngFixture = async (page: Page, width: number, height: number): Promise<Buffer> => {
   const bytes = await page.evaluate(async ({ fixtureWidth, fixtureHeight }) => {
     const canvas = document.createElement('canvas');
@@ -252,6 +290,84 @@ const createPngFixture = async (page: Page, width: number, height: number): Prom
 
 const uploadFixture = async (page: Page, width: number, height: number, name: string) => {
   const buffer = await createPngFixture(page, width, height);
+  await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer,
+  });
+};
+
+const createTransparentPngFixture = async (
+  page: Page,
+  width: number,
+  height: number,
+): Promise<Buffer> => {
+  const bytes = await page.evaluate(async ({ fixtureWidth, fixtureHeight }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = fixtureWidth;
+    canvas.height = fixtureHeight;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+
+    context.clearRect(0, 0, fixtureWidth, fixtureHeight);
+    const gradient = context.createLinearGradient(0, 0, fixtureWidth, fixtureHeight);
+    gradient.addColorStop(0, '#0891b2');
+    gradient.addColorStop(0.5, '#facc15');
+    gradient.addColorStop(1, '#e11d48');
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.roundRect(
+      fixtureWidth * 0.12,
+      fixtureHeight * 0.14,
+      fixtureWidth * 0.76,
+      fixtureHeight * 0.7,
+      Math.min(fixtureWidth, fixtureHeight) * 0.08,
+    );
+    context.fill();
+    context.globalCompositeOperation = 'destination-out';
+    context.beginPath();
+    context.arc(
+      fixtureWidth * 0.5,
+      fixtureHeight * 0.49,
+      Math.min(fixtureWidth, fixtureHeight) * 0.16,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+    context.globalCompositeOperation = 'source-over';
+    context.fillStyle = 'rgba(255,255,255,0.82)';
+    context.fillRect(
+      fixtureWidth * 0.22,
+      fixtureHeight * 0.68,
+      fixtureWidth * 0.56,
+      fixtureHeight * 0.08,
+    );
+
+    const pixels = context.getImageData(0, 0, fixtureWidth, fixtureHeight).data;
+    if (pixels[3] !== 0) throw new Error('Transparent fixture corner must remain transparent.');
+    const paintedOffset = (
+      Math.floor(fixtureHeight * 0.2) * fixtureWidth + Math.floor(fixtureWidth * 0.2)
+    ) * 4;
+    if (pixels[paintedOffset + 3] === 0) throw new Error('Transparent fixture must contain painted pixels.');
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => result ? resolve(result) : reject(new Error('Transparent PNG fixture failed.')),
+        'image/png',
+      );
+    });
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  }, { fixtureWidth: width, fixtureHeight: height });
+  return Buffer.from(bytes);
+};
+
+const uploadTransparentFixture = async (
+  page: Page,
+  width: number,
+  height: number,
+  name: string,
+) => {
+  const buffer = await createTransparentPngFixture(page, width, height);
   await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
     name,
     mimeType: 'image/png',
@@ -349,6 +465,29 @@ const readPersistedLook = async (page: Page, projectName: string) => page.evalua
         );
         database.close();
         resolve(variation?.look ? structuredClone(variation.look) as LookRecipeSnapshot : null);
+      };
+    };
+  })
+), projectName);
+
+const readPersistedPhase2BProject = async (
+  page: Page,
+  projectName: string,
+) => page.evaluate((name) => (
+  new Promise<PersistedPhase2BProjectSnapshot | null>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+      request.onerror = () => {
+        database.close();
+        reject(request.error ?? new Error('Could not read editor projects.'));
+      };
+      request.onsuccess = () => {
+        const project = request.result.find((candidate) => candidate.name === name);
+        database.close();
+        resolve(project ? structuredClone(project) as PersistedPhase2BProjectSnapshot : null);
       };
     };
   })
@@ -592,6 +731,37 @@ const readCanvasPixels = (canvas: Locator) => canvas.evaluate((element) => {
   const target = element as HTMLCanvasElement;
   return target.toDataURL('image/png');
 });
+
+const setLookRange = async (page: Page, label: string, value: number) => {
+  const range = page.getByLabel(`${label} range`, { exact: true });
+  await range.fill(String(value));
+  await range.blur();
+  await expect(range).toHaveValue(String(value));
+};
+
+const setLookColor = async (page: Page, label: string, value: string) => {
+  const input = page.getByLabel(label, { exact: true });
+  await input.fill(value);
+  await input.blur();
+  await expect(input).toHaveValue(value);
+};
+
+const renameActiveVariation = async (page: Page, name: string) => {
+  const input = page.getByLabel('Variation name');
+  await input.fill(name);
+  await input.press('Enter');
+  await expect(input).toHaveValue(name);
+};
+
+const selectVariationAndReadCanvas = async (page: Page, name: string) => {
+  const canvas = page.getByLabel('Design canvas');
+  const previousPng = await readCanvasPixels(canvas);
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: name });
+  await expect(page.getByLabel('Variation name')).toHaveValue(name);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(previousPng);
+  await expectCanvasPainted(canvas);
+  return readCanvasPixels(canvas);
+};
 
 test('composes ordered image and text layers with persistence on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1831,4 +2001,415 @@ test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
   await expect(selectCommand).toBeEnabled();
   await expect(selectCommand).toHaveAttribute('aria-pressed', 'true');
   await expect(selectCommand).toBeFocused();
+});
+
+test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo', async ({ page }) => {
+  test.setTimeout(120_000);
+  const projectName = 'phase-2b-desktop';
+  const initialSeed = 0x10203040;
+  const distressedSeed = (initialSeed + 5) >>> 0;
+  await installDeterministicLookSeeds(page, initialSeed);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+
+  const canvas = page.getByLabel('Design canvas');
+  await uploadTransparentFixture(page, 1200, 900, `${projectName}.png`);
+  await expectCanvasPainted(canvas);
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await page.getByLabel('Content', { exact: true }).fill('INK / THREE WAYS');
+  await page.getByLabel('Content', { exact: true }).blur();
+  await page.getByLabel('Font', { exact: true }).selectOption('Impact');
+  await page.getByLabel('Size', { exact: true }).fill('78');
+  await page.getByLabel('Size', { exact: true }).press('Enter');
+  await setLookColor(page, 'Fill color', '#f8fafc');
+
+  await renameActiveVariation(page, 'Duotone Poster');
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  await setLookRange(page, 'Strength', 79);
+  await page.getByText('More', { exact: true }).click();
+  await setLookColor(page, 'Shadow color', '#172554');
+  await setLookColor(page, 'Highlight color', '#fde047');
+  const duotoneBeforeBalance = await readCanvasPixels(canvas);
+  await setLookRange(page, 'Balance', -17);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(duotoneBeforeBalance);
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await renameActiveVariation(page, 'Halftone Screen');
+  await page.getByRole('button', { name: 'Graphic Halftone', exact: true }).click();
+  await setLookRange(page, 'Strength', 84);
+  await page.getByText('More', { exact: true }).click();
+  await setLookRange(page, 'Cell size', 14);
+  await setLookRange(page, 'Angle', 32);
+  await setLookColor(page, 'Foreground color', '#172554');
+  await page.getByRole('button', { name: 'Solid background', exact: true }).click();
+  const halftoneBeforeBackground = await readCanvasPixels(canvas);
+  await setLookColor(page, 'Background color', '#fef3c7');
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(halftoneBeforeBackground);
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await renameActiveVariation(page, 'Distressed Press');
+  await page.getByRole('button', { name: 'Distressed Print', exact: true }).click();
+  await setLookRange(page, 'Strength', 92);
+  await page.getByText('More', { exact: true }).click();
+  await setLookRange(page, 'Wear', 57);
+  await setLookRange(page, 'Texture scale', 8);
+  const distressedBeforeEdgeBreakup = await readCanvasPixels(canvas);
+  await setLookRange(page, 'Edge breakup', 43);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(distressedBeforeEdgeBreakup);
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  const desktopPngs: Record<string, string> = {
+    'Distressed Press': await readCanvasPixels(canvas),
+    'Duotone Poster': await selectVariationAndReadCanvas(page, 'Duotone Poster'),
+    'Halftone Screen': await selectVariationAndReadCanvas(page, 'Halftone Screen'),
+    'Distressed Press final': await selectVariationAndReadCanvas(page, 'Distressed Press'),
+  };
+  expect(desktopPngs['Distressed Press final']).toBe(desktopPngs['Distressed Press']);
+  expect(new Set([
+    desktopPngs['Duotone Poster'],
+    desktopPngs['Halftone Screen'],
+    desktopPngs['Distressed Press'],
+  ]).size).toBe(3);
+
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
+    ({ name, look }) => ({ name, look }),
+  )).toEqual([
+    {
+      name: 'Duotone Poster',
+      look: {
+        id: 'duotone', strength: 79, shadowColor: '#172554', highlightColor: '#fde047', balance: -17,
+      },
+    },
+    {
+      name: 'Halftone Screen',
+      look: {
+        id: 'graphic-halftone', strength: 84, cellSize: 14, angle: 32,
+        foregroundColor: '#172554', background: 'solid', backgroundColor: '#fef3c7',
+      },
+    },
+    {
+      name: 'Distressed Press',
+      look: {
+        id: 'distressed-print', strength: 92, wear: 57, textureScale: 8,
+        edgeBreakup: 43, seed: distressedSeed,
+      },
+    },
+  ]);
+  const projectBeforeReload = await readPersistedPhase2BProject(page, projectName);
+  const projectBytesBeforeReload = await readPersistedProjectBytes(page, projectName);
+  expect(projectBeforeReload).toMatchObject({
+    schemaVersion: 3,
+    name: projectName,
+    sourceMetadata: { name: `${projectName}.png`, mimeType: 'image/png', width: 1200, height: 900 },
+    productVariants: [],
+  });
+  expect(projectBeforeReload?.variations.every(({ layers }) => (
+    layers.length === 2 && layers.some(({ type }) => type === 'image') && layers.some(({ type }) => type === 'text')
+  ))).toBe(true);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects' }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await expect(page.getByLabel('Project name')).toHaveValue(projectName);
+  await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeReload);
+  await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(desktopPngs['Distressed Press']);
+
+  expect(await selectVariationAndReadCanvas(page, 'Duotone Poster')).toBe(desktopPngs['Duotone Poster']);
+  expect(await selectVariationAndReadCanvas(page, 'Halftone Screen')).toBe(desktopPngs['Halftone Screen']);
+  expect(await selectVariationAndReadCanvas(page, 'Distressed Press')).toBe(desktopPngs['Distressed Press']);
+
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  const recipeBeforeReroll = (await readPersistedPhase2BProject(page, projectName))?.variations
+    .find(({ name }) => name === 'Distressed Press')?.look;
+  expect(recipeBeforeReroll).toEqual({
+    id: 'distressed-print', strength: 92, wear: 57, textureScale: 8,
+    edgeBreakup: 43, seed: distressedSeed,
+  });
+  const pngBeforeReroll = await readCanvasPixels(canvas);
+  await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(pngBeforeReroll);
+  await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
+    .find(({ name }) => name === 'Distressed Press')?.look.seed).not.toBe(distressedSeed);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(pngBeforeReroll);
+  await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
+    .find(({ name }) => name === 'Distressed Press')?.look).toEqual(recipeBeforeReroll);
+
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  const board = page.getByRole('region', { name: 'Compare Board' });
+  await expect(board).toBeVisible();
+  await board.getByText('Variations', { exact: true }).click();
+  await board.getByRole('checkbox', { name: 'Duotone Poster', exact: true }).check();
+  await board.getByText('Variations', { exact: true }).click();
+  const previews = board.locator('canvas[data-look-preview="true"]');
+  await expect(previews).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) await expectCanvasPainted(previews.nth(index));
+  const previewPngs = await previews.evaluateAll((canvases) => (
+    canvases.map((preview) => (preview as HTMLCanvasElement).toDataURL('image/png'))
+  ));
+  expect(new Set(previewPngs).size).toBe(3);
+  const previewBounds = await previews.evaluateAll((canvases) => canvases.map((preview) => {
+    const bounds = preview.getBoundingClientRect();
+    return { width: Math.round(bounds.width), height: Math.round(bounds.height) };
+  }));
+  expect(new Set(previewBounds.map(({ width }) => width)).size).toBe(1);
+  expect(new Set(previewBounds.map(({ height }) => height)).size).toBe(1);
+  await page.screenshot({
+    path: phase2bArtifactPath('desktop-looks-compare-1440x900.png'),
+    animations: 'disabled',
+  });
+});
+
+test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent', async ({ page }) => {
+  test.setTimeout(120_000);
+  const projectName = 'phase-2b-mobile';
+  const initialSeed = 0x22000000;
+  const rerolledSeed = (initialSeed + 2) >>> 0;
+  await installDeterministicLookSeeds(page, initialSeed);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await uploadTransparentFixture(page, 720, 960, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  await renameActiveVariation(page, 'Vintage Study');
+
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Vintage Ink', exact: true }).click();
+  await setLookRange(page, 'Strength', 73);
+  await page.getByText('More', { exact: true }).click();
+  const beforeGrain = await readCanvasPixels(canvas);
+  await setLookRange(page, 'Grain', 61);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeGrain);
+  const beforeReroll = await readCanvasPixels(canvas);
+  await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeReroll);
+
+  const expectedVintageLook = {
+    id: 'vintage-ink', strength: 73, warmth: 45, fade: 25, grain: 61, seed: rerolledSeed,
+  };
+  await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations[0].look)
+    .toEqual(expectedVintageLook);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Vintage Ink', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('73');
+  await page.getByText('More', { exact: true }).click();
+  await expect(page.getByLabel('Grain range', { exact: true })).toHaveValue('61');
+
+  const editorLayout = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+        width: rect.width, height: rect.height,
+      };
+    };
+    const designCanvas = document.querySelector('canvas[aria-label="Design canvas"]');
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!designCanvas || !inspector || !toolbar) throw new Error('Expected the complete mobile editor layout.');
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      canvas: bounds(designCanvas),
+      inspector: bounds(inspector),
+      toolbar: bounds(toolbar),
+    };
+  });
+  const assertContained = (
+    rect: { top: number; bottom: number; left: number; right: number; width: number; height: number },
+    viewport: { width: number; height: number },
+    name: string,
+  ) => {
+    expect(rect.width, `${name} width`).toBeGreaterThan(0);
+    expect(rect.height, `${name} height`).toBeGreaterThan(0);
+    expect(rect.left, `${name} left edge`).toBeGreaterThanOrEqual(0);
+    expect(rect.top, `${name} top edge`).toBeGreaterThanOrEqual(0);
+    expect(rect.right, `${name} right edge`).toBeLessThanOrEqual(viewport.width);
+    expect(rect.bottom, `${name} bottom edge`).toBeLessThanOrEqual(viewport.height);
+  };
+  expect(editorLayout.documentOverflows).toBe(false);
+  assertContained(editorLayout.canvas, editorLayout.viewport, 'canvas');
+  assertContained(editorLayout.inspector, editorLayout.viewport, 'inspector');
+  assertContained(editorLayout.toolbar, editorLayout.viewport, 'toolbar');
+  expect(editorLayout.canvas.bottom).toBeLessThanOrEqual(editorLayout.inspector.top + 1);
+  expect(editorLayout.inspector.bottom).toBeLessThanOrEqual(editorLayout.toolbar.top + 1);
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await renameActiveVariation(page, 'Dark Alternate');
+  await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
+  await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
+    ({ name, look }) => ({ name, look }),
+  )).toEqual([
+    { name: 'Vintage Study', look: expectedVintageLook },
+    { name: 'Dark Alternate', look: { id: 'high-contrast', strength: 100, contrast: 55, blackPoint: 12, saturation: 5 } },
+  ]);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const projectBeforeCompare = await readPersistedPhase2BProject(page, projectName);
+  const projectBytesBeforeCompare = await readPersistedProjectBytes(page, projectName);
+
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  const board = page.getByRole('region', { name: 'Compare Board' });
+  await expect(board).toBeVisible();
+  await board.getByRole('button', { name: 'Dark background', exact: true }).click();
+  await board.getByLabel('Compare zoom').fill('125');
+  await expect(board.getByText('125%', { exact: true })).toBeVisible();
+  const previews = board.locator('canvas[data-look-preview="true"]');
+  await expect(previews).toHaveCount(2);
+  for (let index = 0; index < 2; index += 1) {
+    await expectCanvasPainted(previews.nth(index));
+    await expect(previews.nth(index)).toHaveAccessibleName(/dark background/);
+  }
+
+  const compareLayout = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+        width: rect.width, height: rect.height,
+      };
+    };
+    const compareBoard = document.querySelector('[aria-label="Compare Board"]');
+    const header = compareBoard?.querySelector('header');
+    const strip = document.querySelector('[data-compare-preview-strip="true"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    const tiles = [...document.querySelectorAll('[data-compare-preview="true"]')];
+    if (!compareBoard || !header || !(strip instanceof HTMLElement) || !toolbar || tiles.length !== 2) {
+      throw new Error('Expected the complete mobile Compare layout.');
+    }
+    const controls = [
+      { name: 'title', element: header.children[0] },
+      { name: 'variations', element: header.querySelector('details > summary') },
+      { name: 'background', element: header.querySelector('[aria-label="Artwork background"]') },
+      { name: 'zoom', element: header.querySelector('input[aria-label="Compare zoom"]')?.closest('label') ?? null },
+      { name: 'close', element: header.querySelector('button[aria-label="Close Compare"]') },
+    ].filter((entry): entry is { name: string; element: Element } => Boolean(entry.element))
+      .map(({ name, element }) => ({ name, ...bounds(element) }));
+    const overlaps: string[] = [];
+    for (let left = 0; left < controls.length; left += 1) {
+      for (let right = left + 1; right < controls.length; right += 1) {
+        const horizontal = Math.min(controls[left].right, controls[right].right) - Math.max(controls[left].left, controls[right].left);
+        const vertical = Math.min(controls[left].bottom, controls[right].bottom) - Math.max(controls[left].top, controls[right].top);
+        if (horizontal > 1 && vertical > 1) overlaps.push(`${controls[left].name}:${controls[right].name}`);
+      }
+    }
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      board: bounds(compareBoard),
+      header: bounds(header),
+      strip: bounds(strip),
+      toolbar: bounds(toolbar),
+      controls,
+      overlaps,
+      tileSizes: tiles.map((tile) => bounds(tile)).map(({ width, height }) => ({ width, height })),
+      stripScrollable: strip.scrollWidth > strip.clientWidth + 1,
+      inspectorCount: document.querySelectorAll('aside[aria-label="Inspector"]').length,
+      layerPanelCount: document.querySelectorAll('[aria-label="Layers panel"]').length,
+    };
+  });
+  expect(compareLayout.documentOverflows).toBe(false);
+  assertContained(compareLayout.board, compareLayout.viewport, 'Compare Board');
+  assertContained(compareLayout.header, compareLayout.viewport, 'Compare header');
+  assertContained(compareLayout.strip, compareLayout.viewport, 'preview strip');
+  assertContained(compareLayout.toolbar, compareLayout.viewport, 'Compare toolbar');
+  for (const control of compareLayout.controls) assertContained(control, compareLayout.viewport, control.name);
+  expect(compareLayout.overlaps).toEqual([]);
+  expect(compareLayout.header.bottom).toBeLessThanOrEqual(compareLayout.strip.top + 1);
+  expect(compareLayout.strip.bottom).toBeLessThanOrEqual(compareLayout.toolbar.top + 1);
+  expect(compareLayout.board.bottom).toBeLessThanOrEqual(compareLayout.toolbar.top + 1);
+  expect(compareLayout.stripScrollable).toBe(true);
+  expect(compareLayout.inspectorCount).toBe(0);
+  expect(compareLayout.layerPanelCount).toBe(0);
+  expect(new Set(compareLayout.tileSizes.map(({ width }) => Math.round(width))).size).toBe(1);
+  expect(new Set(compareLayout.tileSizes.map(({ height }) => Math.round(height))).size).toBe(1);
+  for (const size of compareLayout.tileSizes) {
+    expect(size.width).toBeGreaterThan(0);
+    expect(size.height).toBeGreaterThan(0);
+  }
+
+  const strip = board.locator('[data-compare-preview-strip="true"]');
+  const toolbarBeforeScroll = compareLayout.toolbar;
+  await strip.evaluate((element) => element.scrollTo({ left: element.scrollWidth, behavior: 'instant' }));
+  await expect.poll(() => strip.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  const afterScroll = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+        width: rect.width, height: rect.height,
+      };
+    };
+    const strip = document.querySelector('[data-compare-preview-strip="true"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    const tiles = document.querySelectorAll('[data-compare-preview="true"]');
+    if (!strip || !toolbar || tiles.length !== 2) throw new Error('Mobile Compare strip is unavailable.');
+    return { strip: bounds(strip), toolbar: bounds(toolbar), secondTile: bounds(tiles[1]) };
+  });
+  expect(afterScroll.secondTile.left).toBeGreaterThanOrEqual(afterScroll.strip.left - 1);
+  expect(afterScroll.secondTile.right).toBeLessThanOrEqual(afterScroll.strip.right + 1);
+  expect(afterScroll.toolbar).toEqual(toolbarBeforeScroll);
+  await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeCompare);
+  await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeCompare);
+
+  await page.screenshot({
+    path: phase2bArtifactPath('mobile-looks-compare-390x844.png'),
+    animations: 'disabled',
+  });
+  await board.getByRole('button', { name: 'Edit Dark Alternate', exact: true }).click();
+  await expect(board).toHaveCount(0);
+  await expect(page.getByLabel('Variation name')).toHaveValue('Dark Alternate');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+  await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeCompare);
+});
+
+test('@phase2b-acceptance rejects stale worker failure and retries the current recipe', async ({ page }) => {
+  test.setTimeout(120_000);
+  const projectName = 'phase-2b-worker-authority';
+  await installLookWorkerHarness(page);
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadTransparentFixture(page, 960, 720, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  const originalPng = await readCanvasPixels(canvas);
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalPng);
+  const firstReadyPng = await readCanvasPixels(canvas);
+
+  await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
+  await setLookRange(page, 'Strength', 82);
+  await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
+  await setLookRange(page, 'Strength', 63);
+  await expect.poll(async () => (await getLookWorkerHarness(page)).requests.some(
+    ({ look, maxDimension }) => look.id === 'monochrome' && look.strength === 63 && maxDimension > 240,
+  )).toBe(true);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(firstReadyPng);
+  const newerReadyPng = await readCanvasPixels(canvas);
+  await invokeLookWorkerHarness(page, 'failHeld');
+  await page.waitForTimeout(100);
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+
+  await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
+  await setLookRange(page, 'Strength', 47);
+  await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry Look preview', exact: true })).toBeVisible();
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+  const expectedRecipe = { id: 'monochrome', strength: 47, contrast: 20, brightness: 0 };
+  await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  const projectBeforeRetry = await readPersistedPhase2BProject(page, projectName);
+  const projectBytesBeforeRetry = await readPersistedProjectBytes(page, projectName);
+
+  await page.getByRole('button', { name: 'Retry Look preview', exact: true }).click();
+  await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(newerReadyPng);
+  await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
+  await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeRetry);
+  await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
 });
