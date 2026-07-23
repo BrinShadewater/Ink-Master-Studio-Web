@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { inflateSync } from 'node:zlib';
 import {
   createTShirtExportReceipt,
   parsePngFile,
@@ -38,22 +39,60 @@ const chunk = (type: string, data: number[] = []): number[] => {
   return [...uint32(data.length), ...payload, ...uint32(crc32(payload))];
 };
 
+const adler32 = (bytes: Uint8Array): number => {
+  let a = 1;
+  let b = 0;
+  for (const byte of bytes) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+};
+
+const zlibRgbaData = (width: number, height: number): Uint8Array => {
+  const scanlines = new Uint8Array(height * (1 + width * 4));
+  for (let row = 0; row < height; row += 1) scanlines[row * (1 + width * 4)] = 0;
+  const checksum = adler32(scanlines);
+  const length = scanlines.length;
+  return new Uint8Array([
+    0x78,
+    0x01,
+    0x01,
+    length & 0xff,
+    (length >>> 8) & 0xff,
+    (~length) & 0xff,
+    ((~length) >>> 8) & 0xff,
+    ...scanlines,
+    ...uint32(checksum),
+  ]);
+};
+
 const fixtureRgbaPng = ({
   width,
   height,
   resolutions = [],
   bitDepth = 8,
   colorType = 6,
+  compressionMethod = 0,
+  filterMethod = 0,
+  interlaceMethod = 0,
   includeIhdr = true,
   includeIend = true,
+  idatChunks,
+  resolutionUnit = 1,
 }: {
   width: number;
   height: number;
   resolutions?: number[];
   bitDepth?: number;
   colorType?: number;
+  compressionMethod?: number;
+  filterMethod?: number;
+  interlaceMethod?: number;
   includeIhdr?: boolean;
   includeIend?: boolean;
+  idatChunks?: Uint8Array[];
+  resolutionUnit?: number;
 }): Uint8Array => {
   const bytes = [...PNG_SIGNATURE];
   if (includeIhdr) {
@@ -62,15 +101,17 @@ const fixtureRgbaPng = ({
       ...uint32(height),
       bitDepth,
       colorType,
-      0,
-      0,
-      0,
+      compressionMethod,
+      filterMethod,
+      interlaceMethod,
     ]));
   }
   for (const resolution of resolutions) {
-    bytes.push(...chunk('pHYs', [...uint32(resolution), ...uint32(resolution), 1]));
+    bytes.push(...chunk('pHYs', [...uint32(resolution), ...uint32(resolution), resolutionUnit]));
   }
-  bytes.push(...chunk('IDAT', [0]));
+  for (const idat of idatChunks ?? [zlibRgbaData(width, height)]) {
+    bytes.push(...chunk('IDAT', [...idat]));
+  }
   if (includeIend) bytes.push(...chunk('IEND'));
   return new Uint8Array(bytes);
 };
@@ -127,6 +168,11 @@ test('writes one authoritative pHYs chunk and parses actual file facts', () => {
   assert.deepEqual(source, fixtureRgbaPng({ width: 2, height: 3 }));
 });
 
+test('uses valid zlib-compressed RGBA scanlines in PNG fixtures', () => {
+  const data = zlibRgbaData(2, 3);
+  assert.equal(inflateSync(data).byteLength, 3 * (1 + 2 * 4));
+});
+
 test('replaces duplicate pHYs chunks instead of retaining ambiguity', () => {
   const duplicated = fixtureRgbaPng({
     width: 2,
@@ -170,6 +216,38 @@ test('rejects unsupported PNG image formats', () => {
   assert.throws(() => parsePngFile(fixtureRgbaPng({ width: 2, height: 3, colorType: 2 })));
 });
 
+test('rejects unsupported IHDR compression, filter, and interlace methods', () => {
+  assert.throws(() => parsePngFile(fixtureRgbaPng({ width: 2, height: 3, compressionMethod: 1 })), /compression/i);
+  assert.throws(() => parsePngFile(fixtureRgbaPng({ width: 2, height: 3, filterMethod: 1 })), /filter/i);
+  assert.throws(() => parsePngFile(fixtureRgbaPng({ width: 2, height: 3, interlaceMethod: 2 })), /interlace/i);
+  assert.doesNotThrow(() => parsePngFile(fixtureRgbaPng({ width: 2, height: 3, interlaceMethod: 1 })));
+});
+
+test('requires non-empty contiguous IDAT chunks after IHDR', () => {
+  const idat = zlibRgbaData(2, 3);
+  const noIdat = fixtureRgbaPng({ width: 2, height: 3, idatChunks: [] });
+  const emptyIdat = fixtureRgbaPng({ width: 2, height: 3, idatChunks: [new Uint8Array()] });
+  const idatBeforeIhdr = new Uint8Array([
+    ...PNG_SIGNATURE,
+    ...chunk('IDAT', [...idat]),
+    ...chunk('IHDR', [...uint32(2), ...uint32(3), 8, 6, 0, 0, 0]),
+    ...chunk('IEND'),
+  ]);
+  const splitIdat = new Uint8Array([
+    ...PNG_SIGNATURE,
+    ...chunk('IHDR', [...uint32(2), ...uint32(3), 8, 6, 0, 0, 0]),
+    ...chunk('IDAT', [...idat]),
+    ...chunk('tEXt', [107, 101, 121, 0, 118, 97, 108, 117, 101]),
+    ...chunk('IDAT', [...idat]),
+    ...chunk('IEND'),
+  ]);
+
+  assert.throws(() => parsePngFile(noIdat), /IDAT/i);
+  assert.throws(() => parsePngFile(emptyIdat), /IDAT/i);
+  assert.throws(() => parsePngFile(idatBeforeIhdr), /IHDR/i);
+  assert.throws(() => parsePngFile(splitIdat), /IDAT/i);
+});
+
 test('rejects files larger than 100 MiB before parsing them', () => {
   assert.throws(() => parsePngFile(new Uint8Array(MAX_PNG_BYTES + 1)));
 });
@@ -187,6 +265,19 @@ test('returns validation blockers for file and render facts that cannot print', 
   assert.match(validation.blockers.join('\n'), /dimensions/i);
   assert.match(validation.blockers.join('\n'), /resolution/i);
   assert.match(validation.blockers.join('\n'), /transparent/i);
+});
+
+test('blocks non-meter pHYs metadata', () => {
+  const parsed = parsePngFile(fixtureRgbaPng({
+    width: 2,
+    height: 3,
+    resolutions: [11811],
+    resolutionUnit: 0,
+  }));
+  const validation = validateTShirtPng(parsed, preset, renderMetadata, 'fingerprint');
+
+  assert.equal(validation.valid, false);
+  assert.match(validation.blockers.join('\n'), /meters/i);
 });
 
 test('separates print warnings from blockers and records receipt facts', () => {
@@ -242,6 +333,17 @@ test('classifies a valid Draft Proof receipt as proof-ready even without warning
   assert.equal(validation.valid, true);
   assert.deepEqual(validation.warnings, []);
   assert.equal(receipt.readiness, 'proof-ready');
+});
+
+test('refuses to create a receipt when validation has blockers', () => {
+  const parsed = parsePngFile(writePngResolution(fixtureRgbaPng({ width: 1, height: 3 }), 11811));
+  const validation = validateTShirtPng(parsed, preset, renderMetadata, 'fingerprint');
+
+  assert.equal(validation.valid, false);
+  assert.throws(
+    () => createTShirtExportReceipt(parsed, preset, renderMetadata, 'fingerprint', validation),
+    /invalid PNG/i,
+  );
 });
 
 test('warns at 80 MiB and blocks at 100 MiB using parsed byte size', () => {

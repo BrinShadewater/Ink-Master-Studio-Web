@@ -102,6 +102,8 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
   let resolutionUnit: number | null = null;
   let resolutionChunkCount = 0;
   let hasIend = false;
+  let hasNonEmptyIdat = false;
+  let idatSequenceEnded = false;
 
   while (offset < bytes.length) {
     if (bytes.length - offset < 12) throw new Error('PNG chunk is truncated.');
@@ -127,9 +129,25 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
       height = view.getUint32(dataStart + 4, false);
       bitDepth = bytes[dataStart + 8];
       colorType = bytes[dataStart + 9];
+      const compressionMethod = bytes[dataStart + 10];
+      const filterMethod = bytes[dataStart + 11];
+      const interlaceMethod = bytes[dataStart + 12];
       if (width === 0 || height === 0) throw new Error('PNG dimensions must be positive.');
       if (bitDepth !== 8) throw new Error('PNG bit depth must be 8.');
       if (colorType !== 6) throw new Error('PNG color type must be RGBA.');
+      if (compressionMethod !== 0) throw new Error('PNG IHDR compression method is unsupported.');
+      if (filterMethod !== 0) throw new Error('PNG IHDR filter method is unsupported.');
+      if (interlaceMethod !== 0 && interlaceMethod !== 1) {
+        throw new Error('PNG IHDR interlace method is unsupported.');
+      }
+    }
+
+    if (type === 'IDAT') {
+      if (idatSequenceEnded) throw new Error('PNG IDAT chunks must be contiguous.');
+      if (length === 0) throw new Error('PNG IDAT chunks must not be empty.');
+      hasNonEmptyIdat = true;
+    } else if (hasNonEmptyIdat) {
+      idatSequenceEnded = true;
     }
 
     if (type === 'pHYs') {
@@ -154,6 +172,7 @@ const readPngStructure = (bytes: Uint8Array): ParsedPngStructure => {
 
   if (chunks.length === 0 || chunks[0].type !== 'IHDR') throw new Error('PNG is missing IHDR.');
   if (!hasIend) throw new Error('PNG is missing IEND.');
+  if (!hasNonEmptyIdat) throw new Error('PNG must contain at least one non-empty IDAT chunk.');
 
   return {
     parsed: {
@@ -267,21 +286,24 @@ export const createTShirtExportReceipt = (
   renderMetadata: TShirtExportRenderMetadata,
   fingerprint: string,
   validation = validateTShirtPng(parsed, preset, renderMetadata, fingerprint),
-): TShirtExportReceipt => ({
-  fingerprint,
-  readiness: preset.classification === 'proof' ? 'proof-ready' : 'ready-to-print',
-  presetId: preset.id,
-  width: parsed.width,
-  height: parsed.height,
-  dpiX: Math.round(parsed.pixelsPerMeterX === null ? 0 : parsed.pixelsPerMeterX / INCHES_PER_METER),
-  dpiY: Math.round(parsed.pixelsPerMeterY === null ? 0 : parsed.pixelsPerMeterY / INCHES_PER_METER),
-  physicalWidthInches: preset.physicalWidthInches,
-  physicalHeightInches: preset.physicalHeightInches,
-  bitDepth: 8,
-  colorType: 6,
-  transparencyPresent: true,
-  byteSize: parsed.byteSize,
-  largestRasterScale: renderMetadata.largestRasterScale,
-  largestRasterLayerName: renderMetadata.largestRasterLayerName,
-  warnings: [...validation.warnings],
-});
+): TShirtExportReceipt => {
+  if (!validation.valid) throw new Error('Cannot create T-shirt export receipt for invalid PNG.');
+  return {
+    fingerprint,
+    readiness: preset.classification === 'proof' ? 'proof-ready' : 'ready-to-print',
+    presetId: preset.id,
+    width: parsed.width,
+    height: parsed.height,
+    dpiX: Math.round(parsed.pixelsPerMeterX === null ? 0 : parsed.pixelsPerMeterX / INCHES_PER_METER),
+    dpiY: Math.round(parsed.pixelsPerMeterY === null ? 0 : parsed.pixelsPerMeterY / INCHES_PER_METER),
+    physicalWidthInches: preset.physicalWidthInches,
+    physicalHeightInches: preset.physicalHeightInches,
+    bitDepth: 8,
+    colorType: 6,
+    transparencyPresent: true,
+    byteSize: parsed.byteSize,
+    largestRasterScale: renderMetadata.largestRasterScale,
+    largestRasterLayerName: renderMetadata.largestRasterLayerName,
+    warnings: [...validation.warnings],
+  };
+};
