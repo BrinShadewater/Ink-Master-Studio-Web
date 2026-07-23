@@ -1640,10 +1640,27 @@ test('compares Looks across variations', async ({ page }) => {
   const beforeCompare = await readPersistedProjectBytes(page, 'compare-looks');
   expect(beforeCompare).not.toBeNull();
 
+  const looksCommand = page.getByRole('button', { name: 'Looks', exact: true });
+  const selectCommand = page.getByRole('button', { name: 'Select', exact: true });
   const compareCommand = page.getByRole('button', { name: 'Compare', exact: true });
+  const board = page.getByRole('region', { name: 'Compare Board' });
+  await expect(looksCommand).toHaveAttribute('aria-pressed', 'true');
   await expect(compareCommand).toBeEnabled();
   await compareCommand.click();
-  const board = page.getByRole('region', { name: 'Compare Board' });
+  await expect(board).toBeVisible();
+  await board.getByRole('button', { name: 'Close Compare', exact: true }).click();
+  await expect(board).toHaveCount(0);
+  await expect(looksCommand).toHaveAttribute('aria-pressed', 'true');
+  await expect(compareCommand).toBeFocused();
+
+  await compareCommand.click();
+  await expect(board).toBeVisible();
+  await compareCommand.click();
+  await expect(board).toHaveCount(0);
+  await expect(looksCommand).toHaveAttribute('aria-pressed', 'true');
+  await expect(compareCommand).toBeFocused();
+
+  await compareCommand.click();
   await expect(board).toBeVisible();
   await board.getByText('Variations', { exact: true }).click();
   await board.getByRole('checkbox', { name: 'Contrast', exact: true }).check();
@@ -1679,6 +1696,8 @@ test('compares Looks across variations', async ({ page }) => {
   await expect(board).toHaveCount(0);
   await expect(page.getByLabel('Variation name')).toHaveValue('Mono');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
+  await expect(selectCommand).toHaveAttribute('aria-pressed', 'true');
+  await expect(looksCommand).toHaveAttribute('aria-pressed', 'false');
   await expect(compareCommand).toBeFocused();
   await expect.poll(async () => (await readPersistedProjectBytes(page, 'compare-looks'))?.updatedAt)
     .not.toBe(beforeCompare?.updatedAt);
@@ -1780,4 +1799,36 @@ test('compares Looks across variations', async ({ page }) => {
   const afterMobileView = await readPersistedProjectBytes(page, 'compare-looks');
   expect(afterMobileView?.updatedAt).toBe(afterEdit?.updatedAt);
   expect(afterMobileView?.bytes).toEqual(afterEdit?.bytes);
+});
+
+test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/');
+  await uploadFixture(page, 960, 720, 'compare-auto-exit.png');
+  await expectCanvasPainted(page.getByLabel('Design canvas'));
+
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await page.getByRole('button', { name: 'Select layer compare-auto-exit.png' }).click();
+
+  const cropCommand = page.getByRole('button', { name: 'Crop', exact: true });
+  const selectCommand = page.getByRole('button', { name: 'Select', exact: true });
+  const compareCommand = page.getByRole('button', { name: 'Compare', exact: true });
+  const board = page.getByRole('region', { name: 'Compare Board' });
+  await cropCommand.click();
+  await expect(cropCommand).toHaveAttribute('aria-pressed', 'true');
+
+  await compareCommand.click();
+  await expect(board).toBeVisible();
+  await expect(selectCommand).toBeDisabled();
+  await expect(cropCommand).toBeDisabled();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete variation', exact: true }).click();
+
+  await expect(board).toHaveCount(0);
+  await expect(compareCommand).toBeDisabled();
+  await expect(selectCommand).toBeEnabled();
+  await expect(selectCommand).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectCommand).toBeFocused();
 });

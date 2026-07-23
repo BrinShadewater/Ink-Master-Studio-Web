@@ -12,6 +12,7 @@ export interface EditorToolbarProps {
   compareOpen?: boolean;
   onToggleCompare?: () => void;
   compareButtonRef?: Ref<HTMLButtonElement>;
+  activeToolButtonRef?: Ref<HTMLButtonElement>;
 }
 
 const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
@@ -33,6 +34,7 @@ export const EditorToolbar = ({
   compareOpen = false,
   onToggleCompare,
   compareButtonRef,
+  activeToolButtonRef,
 }: EditorToolbarProps) => (
   <nav
     className="order-3 flex h-16 min-w-0 items-center justify-center gap-4 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
@@ -58,6 +60,7 @@ export const EditorToolbar = ({
       return (
         <button
           key={id}
+          ref={selected ? activeToolButtonRef : undefined}
           type="button"
           className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
           aria-label={label}

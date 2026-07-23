@@ -102,6 +102,8 @@ export const EditorApp = () => {
   const layerFileInputRef = useRef<HTMLInputElement>(null);
   const layersButtonRef = useRef<HTMLButtonElement>(null);
   const compareButtonRef = useRef<HTMLButtonElement>(null);
+  const activeToolButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingCompareExitFocusRef = useRef<'compare' | 'tool' | null>(null);
   const desktopLayersPanelRef = useRef<HTMLElement>(null);
   const layerDrawerReturnFocusRef = useRef<HTMLElement>(null);
   const previousPreviewScopeRef = useRef<VariationPreviewScope | null>(null);
@@ -151,19 +153,21 @@ export const EditorApp = () => {
     setLayersOpen(false);
   };
 
-  const returnFocusToCompare = () => {
-    requestAnimationFrame(() => compareButtonRef.current?.focus());
-  };
-
-  const closeCompare = (returnFocus = true) => {
+  const closeCompare = ({
+    focus = 'compare',
+    selectTool = false,
+  }: {
+    focus?: 'compare' | 'tool' | null;
+    selectTool?: boolean;
+  } = {}) => {
+    pendingCompareExitFocusRef.current = focus;
     setCompareOpen(false);
-    setTool('select');
-    if (returnFocus) returnFocusToCompare();
+    if (selectTool) setTool('select');
   };
 
   const toggleCompare = () => {
     if (compareOpen) {
-      closeCompare(false);
+      closeCompare({ focus: null });
       return;
     }
     if (!project || projectVariationIds.length < 2) return;
@@ -189,7 +193,7 @@ export const EditorApp = () => {
       project?.activeVariationId ?? '',
     );
     if (nextSelection.length < 2) {
-      closeCompare();
+      closeCompare({ focus: 'tool' });
       return;
     }
     if (
@@ -199,6 +203,18 @@ export const EditorApp = () => {
       setCompareVariationIds(nextSelection);
     }
   }, [compareOpen, project?.id, project?.activeVariationId, projectVariationIdKey]);
+
+  useEffect(() => {
+    if (compareOpen) return;
+    const focusTarget = pendingCompareExitFocusRef.current;
+    if (!focusTarget) return;
+    const control = focusTarget === 'tool'
+      ? activeToolButtonRef.current
+      : compareButtonRef.current;
+    if (!control || control.disabled) return;
+    pendingCompareExitFocusRef.current = null;
+    control.focus();
+  }, [compareOpen, projectVariationIdKey, selectedLayerType, tool]);
 
   useEffect(() => {
     setTool((current) => normalizeToolForSelectedLayer(
@@ -293,6 +309,7 @@ export const EditorApp = () => {
           compareOpen={compareOpen}
           onToggleCompare={toggleCompare}
           compareButtonRef={compareButtonRef}
+          activeToolButtonRef={activeToolButtonRef}
         />
         {compareOpen && project ? (
           <CompareBoard
@@ -308,7 +325,7 @@ export const EditorApp = () => {
             onZoomChange={(value) => setCompareZoom(normalizeCompareZoom(value))}
             onEditVariation={(variationId) => {
               workspace.dispatch({ type: 'select-variation', variationId });
-              closeCompare();
+              closeCompare({ selectTool: true });
             }}
             onClose={() => closeCompare()}
           />
