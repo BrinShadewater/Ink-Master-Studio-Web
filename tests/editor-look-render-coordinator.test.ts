@@ -27,8 +27,14 @@ class FakeLookWorker implements LookWorkerLike {
     ['messageerror', new Set()],
   ]);
   terminateCount = 0;
+  nextPostError: Error | undefined;
 
   postMessage(message: LookRenderRequest, transfer: Transferable[]): void {
+    if (this.nextPostError) {
+      const error = this.nextPostError;
+      this.nextPostError = undefined;
+      throw error;
+    }
     const transferMatchesPixels = transfer.length === 1 && transfer[0] === message.pixels;
     const request = structuredClone(message, { transfer }) as LookRenderRequest;
     this.posts.push({ request, transfer: [...transfer], transferMatchesPixels });
@@ -205,6 +211,93 @@ test('worker transfer and cache ownership leave caller and cached bytes isolated
   }
 });
 
+test('a same-stack replacement makes a cache-hit outcome stale', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+
+  const seed = coordinator.render(renderInput('seed', 'variation-a:cached'));
+  worker.succeed(worker.posts[0], new Uint8ClampedArray([10, 20, 30, 255]));
+  await seed;
+
+  const cacheHit = coordinator.render(renderInput('main', 'variation-a:cached'));
+  const replacement = coordinator.render(renderInput('main', 'variation-a:replacement'));
+  assert.deepEqual(await cacheHit, { status: 'stale', renderKey: 'variation-a:cached' });
+  assert.equal(worker.posts.length, 2);
+  worker.succeed(worker.posts[1], new Uint8ClampedArray([40, 50, 60, 255]));
+  assert.equal((await replacement).status, 'ready');
+});
+
+test('clearSurface makes a same-stack cache-hit outcome stale', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+
+  const seed = coordinator.render(renderInput('seed', 'variation-a:cached'));
+  worker.succeed(worker.posts[0], new Uint8ClampedArray([10, 20, 30, 255]));
+  await seed;
+
+  const cacheHit = coordinator.render(renderInput('main', 'variation-a:cached'));
+  coordinator.clearSurface('main');
+  assert.deepEqual(await cacheHit, { status: 'stale', renderKey: 'variation-a:cached' });
+  assert.equal(worker.posts.length, 1);
+});
+
+test('dispose makes a same-stack cache-hit outcome stale', async () => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+
+  const seed = coordinator.render(renderInput('seed', 'variation-a:cached'));
+  worker.succeed(worker.posts[0], new Uint8ClampedArray([10, 20, 30, 255]));
+  await seed;
+
+  const cacheHit = coordinator.render(renderInput('main', 'variation-a:cached'));
+  coordinator.dispose();
+  assert.deepEqual(await cacheHit, { status: 'stale', renderKey: 'variation-a:cached' });
+  assert.equal(worker.terminateCount, 1);
+});
+
+test('clone failure remains staleable until its deferred authority check', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+  const uncloneableFrame = {
+    width: 1,
+    height: 1,
+    pixels: {
+      [Symbol.iterator](): Iterator<number> {
+        throw new Error('simulated frame clone failure');
+      },
+    } as unknown as Uint8ClampedArray,
+  };
+
+  const failed = coordinator.render(renderInput('main', 'variation-a:clone-failure', uncloneableFrame));
+  coordinator.clearSurface('main');
+
+  assert.deepEqual(await failed, { status: 'stale', renderKey: 'variation-a:clone-failure' });
+  assert.equal(worker.posts.length, 0);
+});
+
+test('synchronous postMessage failures remain staleable by replacement and clear', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+
+  worker.nextPostError = new Error('post failed');
+  const replaced = coordinator.render(renderInput('main', 'variation-a:post-failure'));
+  const replacement = coordinator.render(renderInput('main', 'variation-a:replacement'));
+  assert.deepEqual(await replaced, { status: 'stale', renderKey: 'variation-a:post-failure' });
+  worker.succeed(worker.posts[0], new Uint8ClampedArray([10, 20, 30, 255]));
+  assert.equal((await replacement).status, 'ready');
+
+  worker.nextPostError = new Error('post failed again');
+  const cleared = coordinator.render(renderInput('tile', 'variation-b:post-failure'));
+  coordinator.clearSurface('tile');
+  assert.deepEqual(await cleared, { status: 'stale', renderKey: 'variation-b:post-failure' });
+  assert.deepEqual(await coordinator.retry('tile'), { status: 'stale', renderKey: '' });
+  assert.equal(worker.posts.length, 1);
+});
+
 test('LRU accounting uses exact RGBA bytes and promotes entries on read', async (context) => {
   const worker = new FakeLookWorker();
   const coordinator = new LookRenderCoordinator(() => worker, { maxCacheBytes: 12 });
@@ -250,7 +343,7 @@ test('an entry larger than the cache budget bypasses caching without changing it
   assert.equal((await second).status, 'ready');
 });
 
-test('a cache promotion failure cannot corrupt byte accounting or the computed outcome', async (context) => {
+test('a cache promotion failure returns the valid clone without recomputation', async (context) => {
   const worker = new FakeLookWorker();
   const coordinator = new LookRenderCoordinator(() => worker, { maxCacheBytes: 8 });
   context.after(() => coordinator.dispose());
@@ -280,18 +373,21 @@ test('a cache promotion failure cannot corrupt byte accounting or the computed o
     return Reflect.apply(originalSet, this, [key, value]);
   } as typeof Map.prototype.set;
 
-  let recomputed: Promise<ReturnType<LookRenderCoordinator['render']> extends Promise<infer T> ? T : never>;
+  let promoted: ReturnType<LookRenderCoordinator['render']>;
   try {
-    recomputed = coordinator.render(renderInput('probe-a', 'variation-a:a'));
+    promoted = coordinator.render(renderInput('probe-a', 'variation-a:a'));
   } finally {
     Map.prototype.set = originalSet;
   }
-  assert.equal(worker.posts.length, 3, 'failed cache promotion should fall back to processing');
-  worker.succeed(worker.posts[2], new Uint8ClampedArray([30, 30, 30, 255]));
-  assert.equal((await recomputed).status, 'ready');
+  assert.equal(worker.posts.length, 2, 'a valid cache clone must not be recomputed');
+  assert.deepEqual(await promoted, {
+    status: 'ready',
+    renderKey: 'variation-a:a',
+    frame: frame(10, 10, 10, 255),
+  });
 
   const retainedPromise = coordinator.render(renderInput('probe-b', 'variation-b:b'));
-  assert.equal(worker.posts.length, 3, 'phantom cache bytes must not evict the retained entry');
+  assert.equal(worker.posts.length, 2, 'the unrelated cache entry must remain valid');
   const retained = await retainedPromise;
   assert.equal(retained.status, 'ready');
 });
@@ -412,6 +508,42 @@ test('responses require matching IDs and keys and malformed current payloads fai
   assert.deepEqual(await pending, {
     status: 'failed', renderKey: 'variation-a:valid', message: FAILURE_MESSAGE,
   });
+});
+
+test('an uncorrelated malformed message changes neither surface outcome nor retry authority', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+
+  const main = coordinator.render(renderInput('main', 'variation-a:main'));
+  const tile = coordinator.render(renderInput('tile', 'variation-b:tile'));
+  let mainSettled = false;
+  let tileSettled = false;
+  void main.then(() => { mainSettled = true; });
+  void tile.then(() => { tileSettled = true; });
+
+  worker.message({ requestId: 'invalid', renderKey: null, pixels: 'malformed' });
+  await Promise.resolve();
+  assert.equal(mainSettled, false);
+  assert.equal(tileSettled, false);
+  assert.deepEqual(await coordinator.retry('main'), {
+    status: 'stale', renderKey: 'variation-a:main',
+  });
+  assert.equal(worker.posts.length, 2);
+
+  worker.fail(worker.posts[0]);
+  worker.succeed(worker.posts[1], new Uint8ClampedArray([20, 30, 40, 255]));
+  assert.deepEqual(await main, {
+    status: 'failed', renderKey: 'variation-a:main', message: FAILURE_MESSAGE,
+  });
+  assert.deepEqual(await tile, {
+    status: 'ready', renderKey: 'variation-b:tile', frame: frame(20, 30, 40, 255),
+  });
+
+  const retry = coordinator.retry('main');
+  assert.equal(worker.posts[2].request.renderKey, 'variation-a:main');
+  worker.succeed(worker.posts[2], new Uint8ClampedArray([50, 60, 70, 255]));
+  assert.equal((await retry).status, 'ready');
 });
 
 test('dispose is idempotent, removes listeners, and makes pending and future work stale', async () => {

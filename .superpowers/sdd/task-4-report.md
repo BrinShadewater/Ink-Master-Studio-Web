@@ -161,3 +161,125 @@ does not yet retain a worker chunk in Vite output; the module-worker URL and han
 are covered directly here. No known concern remains within Task 4 scope.
 
 Commit subject: `feat: process Looks in a bounded preview worker`.
+
+## Fix Review
+
+### Findings Addressed
+
+1. Cache hits, caller-frame clone failures, and synchronous `postMessage`
+   failures now create a normal per-surface pending record before their outcome is
+   known. Their ready or failed settlement is deferred by one microtask and
+   rechecks request ID plus render key authority. A same-stack replacement,
+   `clearSurface`, or `dispose` can therefore settle the original promise stale
+   before the deferred callback runs.
+2. Cache read cloning and LRU promotion are separate operations. If the RGBA clone
+   succeeds but reinsertion fails, the coordinator drops the damaged cache entry,
+   recalculates exact bytes from surviving entries, and returns the valid clone
+   without posting another worker request.
+3. Messages without a valid request ID and render key correlation are ignored.
+   A malformed message with a current correlated ID/key still fails only that
+   request with the stable message. Only worker `error` and `messageerror` events
+   fan out failure across current pending surfaces.
+
+### Fix RED Evidence
+
+The review regressions were added before production changes and run with the
+required focused command:
+
+```text
+npx tsx --test tests/editor-look-render-coordinator.test.ts tests/editor-look-processor.test.ts
+```
+
+Result: exit 1, 32 tests, 25 passed, 7 failed, 0 cancelled, 0 skipped, and
+0 todo. The seven failures were exactly:
+
+- cache hit followed in the same stack by replacement returned ready instead of
+  stale;
+- cache hit followed by `clearSurface` returned ready instead of stale;
+- cache hit followed by `dispose` returned ready instead of stale;
+- frame clone failure followed by clear returned failed instead of stale;
+- synchronous `postMessage` failure followed by replacement returned failed
+  instead of stale;
+- failed cache promotion posted a third worker request instead of staying at two;
+- an uncorrelated malformed message settled both current surfaces instead of
+  leaving them pending.
+
+### Fix GREEN Evidence
+
+Exact final focused command:
+
+```text
+npx tsx --test tests/editor-look-render-coordinator.test.ts tests/editor-look-processor.test.ts
+```
+
+Result: exit 0, 32 passed, 0 failed, 0 cancelled, 0 skipped, and 0 todo. This is
+21 coordinator/worker tests plus all 11 existing pure-processor tests.
+
+Required typecheck:
+
+```text
+npm run typecheck
+```
+
+Result: exit 0; `tsc --noEmit` reported no diagnostics.
+
+Required production build:
+
+```text
+npm run build
+```
+
+Result: exit 0; Vite 8.0.16 transformed 1,804 modules and completed the build in
+2.34 seconds.
+
+Required whitespace check:
+
+```text
+git diff --check
+```
+
+Result: exit 0 with no whitespace errors. Git emitted only the repository's
+existing LF-to-CRLF working-copy warnings. No broad verify command was run.
+
+### Fix Files
+
+- `editor/lookRenderCoordinator.ts`: tracked deferred immediate outcomes, optional
+  retry input for clone failures, valid-clone cache fallback, and uncorrelated
+  message ignore behavior.
+- `tests/editor-look-render-coordinator.test.ts`: same-stack cache-hit authority,
+  clone/post failure ordering, no-recompute promotion failure, and independent
+  malformed-message regressions.
+- `.superpowers/sdd/task-4-report.md`: this Fix Review evidence.
+
+### Fix Self-Review
+
+- Every active render now has one entry in the request-ID pending map before cache
+  lookup, input cloning, or posting. `releaseSurface` and `dispose` can settle all
+  three immediate paths stale through the same mechanism as worker-backed work.
+- Deferred ready and failed callbacks call authority-checked handlers. Once a
+  replacement, clear, or disposal removes authority, those callbacks cannot cache,
+  install retry input, or alter the already-stale promise.
+- Synchronous transport failure retains the coordinator-owned frame only while it
+  remains current. Replacement and clear remove that retry authority before the
+  failure microtask runs.
+- A failed LRU reinsertion cannot invalidate an already-created frame clone. The
+  failed key is removed, surviving entry byte lengths are summed again, and no
+  worker recomputation occurs.
+- Invalid or missing correlation is ignored before pending lookup. Correctly
+  correlated malformed payloads still produce stable per-request failure, while
+  explicit worker faults retain their tested two-surface fan-out behavior.
+- Existing stale success/failure isolation, independent surfaces, transfer lists,
+  caller/cache cloning, exact LRU order and byte accounting, exact variation-prefix
+  eviction, retry, clear, crash, disposal, worker validation, stable errors, and
+  no-logging coverage all remain green.
+- No React, canvas, UI, object URL, persistence, or unrelated production module
+  was changed. Self-review found no remaining issue from the three findings.
+
+### Fix Concerns
+
+Task 5 owns the first production import of `createBrowserLookWorker` and will
+verify that Vite emits the actual module-worker chunk. This Task 4 build verifies
+the current application graph without adding a build-only import. No known concern
+remains within the reviewed Task 4 scope.
+
+Fix commit subject: `fix: preserve Look render request authority`.

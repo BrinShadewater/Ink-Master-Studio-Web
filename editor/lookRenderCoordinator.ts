@@ -45,7 +45,9 @@ interface PendingRender {
   requestId: number;
   surfaceId: string;
   renderKey: string;
-  input: OwnedRenderInput;
+  width: number;
+  height: number;
+  input?: OwnedRenderInput;
   resolve: (outcome: LookRenderOutcome) => void;
   settled: boolean;
 }
@@ -92,11 +94,16 @@ class FrameLruCache {
     let frame: RgbaFrame;
     try {
       frame = cloneFrame(entry.frame);
+    } catch {
+      return undefined;
+    }
+
+    try {
       this.entries.delete(renderKey);
       this.entries.set(renderKey, entry);
     } catch {
+      this.entries.delete(renderKey);
       this.recalculateBytes();
-      return undefined;
     }
     return frame;
   }
@@ -167,8 +174,8 @@ const isValidSuccess = (
   pixels: ArrayBuffer;
 } => {
   if (
-    value.width !== pending.input.frame.width ||
-    value.height !== pending.input.frame.height ||
+    value.width !== pending.width ||
+    value.height !== pending.height ||
     !(value.pixels instanceof ArrayBuffer)
   ) {
     return false;
@@ -210,23 +217,27 @@ export class LookRenderCoordinator {
     const requestId = this.nextRequestId();
     const authority: SurfaceAuthority = { requestId, renderKey: input.renderKey };
     this.surfaces.set(input.surfaceId, authority);
+    const { pending, promise } = this.createPending(
+      input.surfaceId,
+      authority,
+      input.frame.width,
+      input.frame.height,
+    );
 
     const cached = this.cache.get(input.renderKey);
     if (cached) {
-      return Promise.resolve({ status: 'ready', renderKey: input.renderKey, frame: cached });
+      queueMicrotask(() => this.ready(pending, cached, false));
+      return promise;
     }
 
-    let ownedInput: OwnedRenderInput;
     try {
-      ownedInput = cloneInput(input);
+      pending.input = cloneInput(input);
     } catch {
-      return Promise.resolve({
-        status: 'failed',
-        renderKey: input.renderKey,
-        message: FAILURE_MESSAGE,
-      });
+      queueMicrotask(() => this.fail(pending));
+      return promise;
     }
-    return this.dispatch(input.surfaceId, authority, ownedInput);
+    this.dispatch(pending);
+    return promise;
   }
 
   retry(surfaceId: string): Promise<LookRenderOutcome> {
@@ -235,12 +246,21 @@ export class LookRenderCoordinator {
       return Promise.resolve({ status: 'stale', renderKey: current?.renderKey ?? '' });
     }
 
+    const input = current.retryInput;
     const authority: SurfaceAuthority = {
       requestId: this.nextRequestId(),
       renderKey: current.renderKey,
     };
     this.surfaces.set(surfaceId, authority);
-    return this.dispatch(surfaceId, authority, current.retryInput);
+    const { pending, promise } = this.createPending(
+      surfaceId,
+      authority,
+      input.frame.width,
+      input.frame.height,
+    );
+    pending.input = input;
+    this.dispatch(pending);
+    return promise;
   }
 
   clearSurface(surfaceId: string): void {
@@ -267,45 +287,59 @@ export class LookRenderCoordinator {
     this.worker.terminate();
   }
 
-  private dispatch(
+  private createPending(
     surfaceId: string,
     authority: SurfaceAuthority,
-    input: OwnedRenderInput,
-  ): Promise<LookRenderOutcome> {
-    return new Promise((resolve) => {
-      const pending: PendingRender = {
-        requestId: authority.requestId,
-        surfaceId,
-        renderKey: input.renderKey,
-        input,
-        resolve,
-        settled: false,
-      };
-      this.pending.set(pending.requestId, pending);
-
-      try {
-        const pixels = new Uint8ClampedArray(input.frame.pixels);
-        const request: LookRenderRequest = {
-          requestId: pending.requestId,
-          renderKey: pending.renderKey,
-          width: input.frame.width,
-          height: input.frame.height,
-          pixels: pixels.buffer,
-          look: { ...input.look } as VariationLook,
-        };
-        this.worker.postMessage(request, [request.pixels]);
-      } catch {
-        this.fail(pending);
-      }
+    width: number,
+    height: number,
+  ): { pending: PendingRender; promise: Promise<LookRenderOutcome> } {
+    let resolve!: (outcome: LookRenderOutcome) => void;
+    const promise = new Promise<LookRenderOutcome>((settle) => {
+      resolve = settle;
     });
+    const pending: PendingRender = {
+      requestId: authority.requestId,
+      surfaceId,
+      renderKey: authority.renderKey,
+      width,
+      height,
+      resolve,
+      settled: false,
+    };
+    this.pending.set(pending.requestId, pending);
+    return { pending, promise };
+  }
+
+  private dispatch(pending: PendingRender): void {
+    const input = pending.input;
+    if (!input) {
+      queueMicrotask(() => this.fail(pending));
+      return;
+    }
+
+    try {
+      const pixels = new Uint8ClampedArray(input.frame.pixels);
+      const request: LookRenderRequest = {
+        requestId: pending.requestId,
+        renderKey: pending.renderKey,
+        width: input.frame.width,
+        height: input.frame.height,
+        pixels: pixels.buffer,
+        look: { ...input.look } as VariationLook,
+      };
+      this.worker.postMessage(request, [request.pixels]);
+    } catch {
+      queueMicrotask(() => this.fail(pending));
+    }
   }
 
   private handleMessage(value: unknown): void {
     if (this.disposed) return;
-    if (!isRecord(value) || !hasValidRequestId(value.requestId)) {
-      for (const pending of [...this.pending.values()]) this.fail(pending);
-      return;
-    }
+    if (
+      !isRecord(value) ||
+      !hasValidRequestId(value.requestId) ||
+      typeof value.renderKey !== 'string'
+    ) return;
 
     const pending = this.pending.get(value.requestId);
     if (!pending) return;
@@ -322,22 +356,21 @@ export class LookRenderCoordinator {
       height: value.height,
       pixels: new Uint8ClampedArray(value.pixels),
     };
-    this.pending.delete(pending.requestId);
+    this.ready(pending, renderedFrame, true);
+  }
+
+  private ready(pending: PendingRender, frame: RgbaFrame, cache: boolean): void {
+    if (!this.isCurrent(pending)) return;
     const authority = this.surfaces.get(pending.surfaceId);
     if (authority) delete authority.retryInput;
-    this.cache.set(pending.renderKey, renderedFrame);
-    this.settle(pending, {
-      status: 'ready',
-      renderKey: pending.renderKey,
-      frame: renderedFrame,
-    });
+    if (cache) this.cache.set(pending.renderKey, frame);
+    this.settle(pending, { status: 'ready', renderKey: pending.renderKey, frame });
   }
 
   private fail(pending: PendingRender): void {
     if (!this.isCurrent(pending)) return;
-    this.pending.delete(pending.requestId);
     const authority = this.surfaces.get(pending.surfaceId);
-    if (authority) authority.retryInput = pending.input;
+    if (authority && pending.input) authority.retryInput = pending.input;
     this.settle(pending, {
       status: 'failed',
       renderKey: pending.renderKey,
