@@ -1,5 +1,6 @@
 import { Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useDecodedEditorImages } from '../../editor/decodedImages';
 import {
   canRedoActiveVariation,
   canUndoActiveVariation,
@@ -7,6 +8,10 @@ import {
   getSelectedLayer,
 } from '../../editor/history';
 import type { EditorCommand } from '../../editor/history';
+import {
+  LookRenderCoordinator,
+  createBrowserLookWorker,
+} from '../../editor/lookRenderCoordinator';
 import {
   createTextLayer,
   type DesignLayer,
@@ -55,24 +60,65 @@ export const addTextLayerFromPanel = (
 export const normalizeToolForSelectedLayer = (
   tool: EditorTool,
   layer: Pick<DesignLayer, 'type'> | null,
-): EditorTool => layer?.type === 'text' ? 'select' : tool;
+): EditorTool => layer?.type === 'text' && (tool === 'crop' || tool === 'adjust') ? 'select' : tool;
+
+export interface VariationPreviewScope {
+  projectId: string;
+  variationIds: string[];
+}
+
+export const getVariationPreviewEvictions = (
+  previous: VariationPreviewScope | null,
+  current: VariationPreviewScope | null,
+): string[] => {
+  if (!previous) return [];
+  if (!current || current.projectId !== previous.projectId) return [...previous.variationIds];
+  const currentIds = new Set(current.variationIds);
+  return previous.variationIds.filter((variationId) => !currentIds.has(variationId));
+};
 
 export const EditorApp = () => {
   const workspace = useEditorWorkspace();
+  const imagesById = useDecodedEditorImages(workspace.assetUrlsById);
   const [tool, setTool] = useState<EditorTool>('select');
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
+  const [lookCoordinator, setLookCoordinator] = useState<LookRenderCoordinator | null>(null);
+  const [lookError, setLookError] = useState<string | null>(null);
+  const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const layerFileInputRef = useRef<HTMLInputElement>(null);
   const layersButtonRef = useRef<HTMLButtonElement>(null);
   const desktopLayersPanelRef = useRef<HTMLElement>(null);
   const layerDrawerReturnFocusRef = useRef<HTMLElement>(null);
+  const previousPreviewScopeRef = useRef<VariationPreviewScope | null>(null);
   const project = workspace.history?.present ?? null;
   const variation = project ? getActiveVariation(project) : null;
   const selectedLayer = project ? getSelectedLayer(project) : null;
   const selectedLayerId = selectedLayer?.id ?? null;
   const selectedLayerType = selectedLayer?.type ?? null;
+
+  useEffect(() => {
+    const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
+    setLookCoordinator(coordinator);
+    return () => coordinator.dispose();
+  }, []);
+
+  useEffect(() => {
+    if (!lookCoordinator) return;
+    const currentScope: VariationPreviewScope | null = project ? {
+      projectId: project.id,
+      variationIds: project.variations.map(({ id }) => id),
+    } : null;
+    for (const variationId of getVariationPreviewEvictions(
+      previousPreviewScopeRef.current,
+      currentScope,
+    )) {
+      lookCoordinator.evictVariation(variationId);
+    }
+    previousPreviewScopeRef.current = currentScope;
+  }, [lookCoordinator, project]);
 
   const openLayers = () => {
     layerDrawerReturnFocusRef.current = layersButtonRef.current;
@@ -130,6 +176,10 @@ export const EditorApp = () => {
     if (file) void workspace.importFile(file);
   };
 
+  if (!lookCoordinator) {
+    return <main className="h-dvh bg-neutral-950" aria-label="Loading editor" />;
+  }
+
   return (
     <main className="relative grid h-dvh min-w-0 grid-rows-[96px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100 md:grid-rows-[56px_minmax(0,1fr)]">
       <EditorTopBar
@@ -181,10 +231,12 @@ export const EditorApp = () => {
           onDrop={importDroppedFile}
         >
           <EditorCanvas
-            layers={variation?.layers ?? []}
-            selectedLayerId={variation?.selectedLayerId ?? null}
+            variation={variation}
             assetsById={workspace.assetsById}
-            assetUrlsById={workspace.assetUrlsById}
+            imagesById={imagesById}
+            coordinator={lookCoordinator}
+            lookRetryGeneration={lookRetryGeneration}
+            onLookFailureChange={setLookError}
             tool={tool}
             onSelectLayer={(layerId) => workspace.dispatch({ type: 'select-layer', layerId })}
             onTransformChange={(layerId, transform, historyGroup) => {
@@ -216,7 +268,18 @@ export const EditorApp = () => {
             onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
             dispatch={workspace.dispatch}
           />
-          <EditorInspector project={project} layer={selectedLayer} tool={tool} dispatch={workspace.dispatch} />
+          <EditorInspector
+            project={project}
+            variation={variation}
+            layer={selectedLayer}
+            tool={tool}
+            assetsById={workspace.assetsById}
+            imagesById={imagesById}
+            coordinator={lookCoordinator}
+            lookError={lookError}
+            onRetryLook={() => setLookRetryGeneration((current) => current + 1)}
+            dispatch={workspace.dispatch}
+          />
         </div>
       </section>
 

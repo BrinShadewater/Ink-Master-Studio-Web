@@ -1,11 +1,16 @@
+import type { DecodedImageEntry } from '../../editor/decodedImages';
 import type { EditorCommand } from '../../editor/history';
+import type { LookRenderCoordinator } from '../../editor/lookRenderCoordinator';
 import type {
   CropRect,
   DesignLayer,
+  DesignVariation,
+  EditorAsset,
   EditorProject,
   EditorTool,
   ImageLayer,
 } from '../../editor/model';
+import { LooksInspector } from './LooksInspector';
 import { TextInspector } from './TextInspector';
 import {
   controlBounds,
@@ -47,8 +52,14 @@ export const edgePercentagesToCrop = (edges: CropEdges): CropRect => {
 
 export interface EditorInspectorProps {
   project: EditorProject | null;
+  variation: DesignVariation | null;
   layer: DesignLayer | null;
   tool: EditorTool;
+  assetsById: Record<string, EditorAsset>;
+  imagesById: Record<string, DecodedImageEntry>;
+  coordinator: LookRenderCoordinator;
+  lookError: string | null;
+  onRetryLook: () => void;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -56,6 +67,7 @@ const sectionTitle: Record<EditorTool, string> = {
   select: 'Transform',
   crop: 'Crop',
   adjust: 'Adjustments',
+  looks: 'Looks',
 };
 
 const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -150,7 +162,35 @@ const ImageInspector = ({
   );
 };
 
-export const EditorInspector = ({ project, layer, tool, dispatch }: EditorInspectorProps) => {
+export const EditorInspector = ({
+  project,
+  variation,
+  layer,
+  tool,
+  assetsById,
+  imagesById,
+  coordinator,
+  lookError,
+  onRetryLook,
+  dispatch,
+}: EditorInspectorProps) => {
+  if (project && variation && tool === 'looks') {
+    return (
+      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+        <LooksInspector
+          key={variation.id}
+          variation={variation}
+          assetsById={assetsById}
+          imagesById={imagesById}
+          coordinator={coordinator}
+          dispatch={dispatch}
+          error={lookError}
+          onRetry={onRetryLook}
+        />
+      </aside>
+    );
+  }
+
   if (!project || !layer) {
     return (
       <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">

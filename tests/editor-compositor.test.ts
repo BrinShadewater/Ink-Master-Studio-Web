@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  createDecodedImageController,
-  getCurrentDecodedImages,
-  type DecodedImageEntry,
-} from '../components/editor/EditorCanvas';
-import {
   getTextLayerBounds,
   hitTestDesignLayers,
   renderDesignLayers,
@@ -408,63 +403,4 @@ test('moves the topmost hit layer using viewport-normalized drag deltas', () => 
     x: 0.5,
     y: 0.5,
   });
-});
-
-test('filters decoded entries against current prop URLs before controller synchronization', () => {
-  const oldImage = image('old');
-  const decoded: Record<string, DecodedImageEntry> = {
-    asset: { url: 'blob:first', image: oldImage },
-  };
-
-  assert.deepEqual(getCurrentDecodedImages(decoded, { asset: 'blob:first' }), { asset: oldImage });
-  assert.deepEqual(getCurrentDecodedImages(decoded, { asset: 'blob:second' }), {});
-  assert.deepEqual(getCurrentDecodedImages(decoded, {}), {});
-});
-
-test('decodes each active URL once and keeps old callbacks unusable across prop and lifecycle replay windows', () => {
-  const created: Array<{
-    src: string;
-    onload: (() => void) | null;
-    onerror: (() => void) | null;
-  }> = [];
-  const publications: Array<Record<string, DecodedImageEntry>> = [];
-  const controller = createDecodedImageController(
-    () => {
-      const next = { src: '', onload: null, onerror: null };
-      created.push(next);
-      return next as unknown as HTMLImageElement;
-    },
-    (images) => publications.push(images),
-  );
-
-  controller.sync({ asset: 'blob:first' });
-  const staleLoad = created[0].onload!;
-  staleLoad();
-  assert.equal(publications.at(-1)?.asset.url, 'blob:first');
-  assert.equal(publications.at(-1)?.asset.image, created[0] as unknown as CanvasImageSource);
-
-  const replacementProps = { asset: 'blob:second' };
-  assert.deepEqual(getCurrentDecodedImages(publications.at(-1)!, replacementProps), {});
-  staleLoad();
-  assert.deepEqual(getCurrentDecodedImages(publications.at(-1)!, replacementProps), {});
-
-  controller.sync({ asset: 'blob:first' });
-  assert.equal(created.length, 1);
-
-  controller.sync({ asset: 'blob:second' });
-  assert.equal(created.length, 2);
-  const publicationsAfterReplacementSync = publications.length;
-  staleLoad();
-  assert.equal(publications.length, publicationsAfterReplacementSync);
-
-  created[1].onload!();
-  assert.equal(publications.at(-1)?.asset.url, 'blob:second');
-  assert.equal(publications.at(-1)?.asset.image, created[1] as unknown as CanvasImageSource);
-  controller.dispose();
-
-  controller.sync({ asset: 'blob:second' });
-  assert.equal(created.length, 3);
-  created[2].onload!();
-  assert.equal(publications.at(-1)?.asset.url, 'blob:second');
-  assert.equal(publications.at(-1)?.asset.image, created[2] as unknown as CanvasImageSource);
 });

@@ -14,6 +14,11 @@ import {
 } from '../components/editor/EditorTopBar';
 import { EditorToolbar } from '../components/editor/EditorToolbar';
 import {
+  LooksInspector,
+  createLookCandidateRecipes,
+  lookControlBounds,
+} from '../components/editor/LooksInspector';
+import {
   EditorInspector,
   controlBounds,
   cropToEdgePercentages,
@@ -35,6 +40,7 @@ import {
 } from '../components/editor/LayerPanel';
 import {
   addTextLayerFromPanel,
+  getVariationPreviewEvictions,
   normalizeToolForSelectedLayer,
   openProjectFromDrawer,
   selectLayerFromPanel,
@@ -46,6 +52,8 @@ import {
   type DesignLayer,
   type DesignVariation,
 } from '../editor/model';
+import { LOOK_IDS, createDefaultLook, type LookId } from '../editor/lookModel';
+import type { LookRenderCoordinator } from '../editor/lookRenderCoordinator';
 import {
   createEditorHistory,
   getSelectedImageLayer,
@@ -198,6 +206,19 @@ test('mobile toolbar exposes a stable Layers command', () => {
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
 });
 
+test('toolbar exposes the Looks tool with the Palette icon and stable mobile target', () => {
+  const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'looks',
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+
+  assert.match(markup, /aria-label="Looks"[^>]*aria-pressed="true"/);
+  assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
+  const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
+  assert.match(looksButton, /class="[^"]*h-10 w-10/);
+});
+
 test('toolbar disables image-only tools with an accessible explanation for text selection', () => {
   const markup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select',
@@ -211,6 +232,7 @@ test('toolbar disables image-only tools with an accessible explanation for text 
   assert.match(markup, /aria-label="Crop"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
   assert.match(markup, /aria-label="Adjust"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /aria-label="Select"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Looks"[^>]*disabled=""/);
 });
 
 test('mobile layer drawer keeps its close control inside the panel header', () => {
@@ -292,6 +314,147 @@ test('duplicating selected text from Adjust normalizes the duplicate to Select',
   assert.equal(selectedLayer.type, 'text');
   assert.notEqual(selectedLayer.id, textLayer.id);
   assert.equal(normalizeToolForSelectedLayer('adjust', selectedLayer), 'select');
+  assert.equal(normalizeToolForSelectedLayer('looks', selectedLayer), 'looks');
+});
+
+const renderLooksInspector = (
+  lookId: LookId,
+  options: { error?: string | null; seed?: number } = {},
+) => {
+  const source = createEditorAsset('project-looks-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Looks inspector', source);
+  const variation = {
+    ...project.variations[0],
+    id: 'variation-looks-inspector',
+    look: createDefaultLook(lookId, options.seed ?? 7),
+  };
+  return renderToStaticMarkup(createElement(LooksInspector, {
+    variation,
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    dispatch: () => undefined,
+    error: options.error ?? null,
+    onRetry: () => undefined,
+  }));
+};
+
+test('Looks inspector renders nine actual selected-state previews and complete commands', () => {
+  const markup = renderLooksInspector('distressed-print', {
+    error: 'Look preview failed.',
+    seed: 19,
+  });
+
+  assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
+  assert.equal(markup.match(/<canvas[^>]*data-look-preview="true"/g)?.length, LOOK_IDS.length);
+  for (const id of LOOK_IDS) {
+    assert.match(markup, new RegExp(`data-look-id="${id}"`));
+  }
+  assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
+  assert.match(markup, />Strength</);
+  assert.match(markup, /<summary[^>]*>More<\/summary>/);
+  assert.match(markup, /aria-label="Reset Look"/);
+  assert.match(markup, /aria-label="Reroll texture"/);
+  assert.match(markup, /Look preview failed\./);
+  assert.match(markup, /aria-label="Retry Look preview"/);
+});
+
+test('Look controls expose stable numeric bounds for every documented recipe parameter', () => {
+  assert.deepEqual(lookControlBounds, {
+    strength: { min: 0, max: 100, step: 1 },
+    contrastClean: { min: 0, max: 40, step: 1 },
+    saturationClean: { min: -20, max: 40, step: 1 },
+    clarity: { min: 0, max: 30, step: 1 },
+    contrastHigh: { min: 0, max: 100, step: 1 },
+    blackPoint: { min: 0, max: 40, step: 1 },
+    saturationHigh: { min: -100, max: 50, step: 1 },
+    contrastMonochrome: { min: -50, max: 100, step: 1 },
+    brightness: { min: -50, max: 50, step: 1 },
+    balance: { min: -50, max: 50, step: 1 },
+    levels: { min: 2, max: 8, step: 1 },
+    contrastPosterized: { min: 0, max: 100, step: 1 },
+    cellSize: { min: 4, max: 32, step: 1 },
+    angle: { min: 0, max: 180, step: 1 },
+    warmth: { min: 0, max: 100, step: 1 },
+    fade: { min: 0, max: 100, step: 1 },
+    grain: { min: 0, max: 100, step: 1 },
+    wear: { min: 0, max: 100, step: 1 },
+    textureScale: { min: 1, max: 12, step: 1 },
+    edgeBreakup: { min: 0, max: 100, step: 1 },
+  });
+
+  const expected: Record<Exclude<LookId, 'original'>, Array<[string, number, number]>> = {
+    'clean-photo': [['contrast', 0, 40], ['saturation', -20, 40], ['clarity', 0, 30]],
+    'high-contrast': [['contrast', 0, 100], ['black-point', 0, 40], ['saturation', -100, 50]],
+    monochrome: [['contrast', -50, 100], ['brightness', -50, 50]],
+    duotone: [['balance', -50, 50]],
+    posterized: [['levels', 2, 8], ['contrast', 0, 100]],
+    'graphic-halftone': [['cell-size', 4, 32], ['angle', 0, 180]],
+    'vintage-ink': [['warmth', 0, 100], ['fade', 0, 100], ['grain', 0, 100]],
+    'distressed-print': [['wear', 0, 100], ['texture-scale', 1, 12], ['edge-breakup', 0, 100]],
+  };
+
+  for (const [lookId, controls] of Object.entries(expected) as Array<[
+    Exclude<LookId, 'original'>,
+    Array<[string, number, number]>,
+  ]>) {
+    const markup = renderLooksInspector(lookId);
+    assert.match(markup, /id="editor-look-strength"[^>]*type="range"[^>]*min="0"[^>]*max="100"/);
+    assert.match(markup, /id="editor-look-strength-number"[^>]*type="number"[^>]*min="0"[^>]*max="100"/);
+    for (const [parameter, minimum, maximum] of controls) {
+      assert.match(markup, new RegExp(
+        `id="editor-look-${parameter}"[^>]*type="range"[^>]*min="${minimum}"[^>]*max="${maximum}"`,
+      ));
+      assert.match(markup, new RegExp(
+        `id="editor-look-${parameter}-number"[^>]*type="number"[^>]*min="${minimum}"[^>]*max="${maximum}"`,
+      ));
+    }
+  }
+});
+
+test('Duotone and Halftone expose native swatches and Halftone background modes', () => {
+  const duotone = renderLooksInspector('duotone');
+  assert.match(duotone, /id="editor-look-shadow-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
+  assert.match(duotone, /id="editor-look-highlight-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
+
+  const halftone = renderLooksInspector('graphic-halftone');
+  assert.match(halftone, /id="editor-look-foreground-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
+  assert.match(halftone, /id="editor-look-background-color"[^>]*type="color"[^>]*value="#[0-9a-f]{6}"/);
+  assert.match(halftone, /aria-label="Transparent background"/);
+  assert.match(halftone, /aria-label="Solid background"/);
+  assert.doesNotMatch(halftone, /aria-label="Reroll texture"/);
+});
+
+test('candidate thumbnail recipes use one mount seed for both preview and apply', () => {
+  const seeds = [101, 202];
+  const candidates = createLookCandidateRecipes(
+    createDefaultLook('original'),
+    () => seeds.shift()!,
+  );
+
+  assert.equal(candidates['vintage-ink'].id, 'vintage-ink');
+  assert.equal(candidates['distressed-print'].id, 'distressed-print');
+  if (candidates['vintage-ink'].id !== 'vintage-ink' ||
+    candidates['distressed-print'].id !== 'distressed-print') {
+    throw new Error('Expected seeded candidate recipes.');
+  }
+  assert.equal(candidates['vintage-ink'].seed, 101);
+  assert.equal(candidates['distressed-print'].seed, 202);
+  assert.strictEqual(candidates['vintage-ink'], candidates['vintage-ink']);
+});
+
+test('preview eviction removes deleted variations and every variation from a replaced project', () => {
+  const projectA = { projectId: 'project-a', variationIds: ['variation-a', 'variation-b'] };
+  assert.deepEqual(getVariationPreviewEvictions(projectA, {
+    projectId: 'project-a', variationIds: ['variation-b'],
+  }), ['variation-a']);
+  assert.deepEqual(getVariationPreviewEvictions(projectA, {
+    projectId: 'project-b', variationIds: ['variation-c'],
+  }), ['variation-a', 'variation-b']);
+  assert.deepEqual(getVariationPreviewEvictions(projectA, null), ['variation-a', 'variation-b']);
+  assert.deepEqual(getVariationPreviewEvictions(null, projectA), []);
 });
 
 test('variation select is controlled by active id when names are duplicated', () => {
@@ -433,6 +596,32 @@ test('text inspector exposes complete editable text and shared transform control
   assert.match(markup, />Horizontal<\/label>/);
   assert.match(markup, />Vertical<\/label>/);
   assert.doesNotMatch(markup, /editor-crop-left|editor-brightness/);
+});
+
+test('Looks inspector replaces layer-specific content for a selected text layer', () => {
+  const source = createEditorAsset('project-text-looks', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Text Looks', source);
+  const textLayer = { ...createTextLayer('Headline'), id: 'layer-text-looks' };
+  project.variations[0].layers.push(textLayer);
+  project.variations[0].selectedLayerId = textLayer.id;
+  const markup = renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer: textLayer,
+    tool: 'looks',
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    dispatch: () => undefined,
+  }));
+
+  assert.match(markup, /<h2[^>]*>Looks<\/h2>/);
+  assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
+  assert.doesNotMatch(markup, /<h2[^>]*>Text<\/h2>/);
 });
 
 test('font-size draft preserves sequential input and normalizes commit, restore, and layer sync', () => {

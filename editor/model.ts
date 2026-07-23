@@ -14,7 +14,7 @@ export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
 export const EDITOR_PROJECT_SCHEMA_VERSION = 3 as const;
 
-export type EditorTool = 'select' | 'crop' | 'adjust';
+export type EditorTool = 'select' | 'crop' | 'adjust' | 'looks';
 
 export interface LayerTransform {
   x: number;

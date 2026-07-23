@@ -1,4 +1,4 @@
-import { Crop, Layers, MousePointer2, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+import { Crop, Layers, MousePointer2, Palette, SlidersHorizontal, type LucideIcon } from 'lucide-react';
 import type { Ref } from 'react';
 import type { DesignLayer, EditorTool } from '../../editor/model';
 
@@ -14,6 +14,7 @@ const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
   { id: 'select', label: 'Select', icon: MousePointer2 },
   { id: 'crop', label: 'Crop', icon: Crop },
   { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+  { id: 'looks', label: 'Looks', icon: Palette },
 ];
 
 const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -36,7 +37,7 @@ export const EditorToolbar = ({
     ) : null}
     {tools.map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
-      const disabled = layerType === 'text' && id !== 'select';
+      const disabled = layerType === 'text' && (id === 'crop' || id === 'adjust');
       return (
         <button
           key={id}
