@@ -19,10 +19,15 @@ import {
   type TraceSettings,
   type TraceSourceFrame,
 } from './traceModel';
+import {
+  createDefaultTShirtProduct,
+  normalizeTShirtProductVariants,
+  type TShirtProductVariant,
+} from './productModel';
 
 export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
-export const EDITOR_PROJECT_SCHEMA_VERSION = 4 as const;
+export const EDITOR_PROJECT_SCHEMA_VERSION = 5 as const;
 
 export type EditorTool = 'select' | 'crop' | 'adjust' | 'looks' | 'remove-background' | 'trace';
 
@@ -119,7 +124,7 @@ export interface EditorProject {
   sourceMetadata: SourceMetadata;
   activeVariationId: string;
   variations: DesignVariation[];
-  productVariants: [];
+  productVariants: TShirtProductVariant[];
 }
 
 export interface EditorAsset {
@@ -203,7 +208,8 @@ export const createEditorProject = (name: string, asset: EditorAsset): EditorPro
     createdAt: timestamp, updatedAt: timestamp, activeVariationId: variation.id,
     sourceAssetId: asset.id,
     sourceMetadata: { name: asset.name, mimeType: asset.mimeType, width: asset.width, height: asset.height },
-    variations: [variation], productVariants: [],
+    variations: [variation],
+    productVariants: [createDefaultTShirtProduct(variation.id, createEditorId('product'))],
   };
 };
 
@@ -414,6 +420,7 @@ const migrateProjectFields = (
   sourceMetadata: SourceMetadata,
   normalizeLayerValue: (layer: unknown) => DesignLayer | null,
   normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
+  productVariantsValue: unknown = [],
 ): EditorProject => {
   if (!nonEmptyString(value.id)) throw new Error('Project does not contain a valid id.');
   if (!Array.isArray(value.variations)) throw new Error('Project does not contain a valid variation.');
@@ -434,7 +441,11 @@ const migrateProjectFields = (
     sourceMetadata,
     activeVariationId,
     variations,
-    productVariants: [],
+    productVariants: normalizeTShirtProductVariants(
+      productVariantsValue,
+      variations.map(({ id }) => id),
+      () => createEditorId('product'),
+    ),
   };
 };
 
@@ -443,6 +454,7 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     value.schemaVersion !== 1 &&
     value.schemaVersion !== 2 &&
     value.schemaVersion !== 3 &&
+    value.schemaVersion !== 4 &&
     value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION
   )) {
     throw new Error('Unsupported editor project schema.');
@@ -473,5 +485,6 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     normalizeSourceMetadata(value.sourceMetadata, sourceAsset),
     createLayerNormalizer(availableAssetIds),
     value.schemaVersion === 2 ? normalizeLegacyLook : normalizeVariationLook,
+    value.schemaVersion === EDITOR_PROJECT_SCHEMA_VERSION ? value.productVariants : [],
   );
 };

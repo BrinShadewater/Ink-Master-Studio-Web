@@ -114,12 +114,15 @@ test('normalizes trace controls and fingerprints source plus settings', () => {
   assert.equal(serializeTraceInput(normalized), serializeTraceInput(structuredClone(normalized)));
 });
 
-test('creates a schema four project with cleanup defaults and immutable source metadata', () => {
+test('creates a schema five project with a default product and immutable source metadata', () => {
   const asset = createEditorAsset('project_a', new Blob(['pixels'], { type: 'image/png' }), {
     name: 'still.png', width: 1600, height: 900,
   });
   const project = createEditorProject('Film still', asset);
-  assert.equal(project.schemaVersion, 4);
+  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.productVariants.length, 1);
+  assert.equal(project.productVariants[0].variationId, project.variations[0].id);
+  assert.equal(project.productVariants[0].mockupSlug, 'black');
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(project.sourceAssetId, asset.id);
   assert.deepEqual(project.sourceMetadata, {
@@ -206,7 +209,7 @@ test('normalizes text layer values to the command and inspector contract', () =>
   }]);
 
   const textLayer = project.variations[0].layers[0];
-  assert.equal(project.schemaVersion, 4);
+  assert.equal(project.schemaVersion, 5);
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(textLayer.type, 'text');
   assert.equal(textLayer.name, 'Text');
@@ -250,14 +253,15 @@ test('upgrades a version one project from its matching stored asset without chan
     }],
   }, [asset]);
 
-  assert.equal(project.schemaVersion, 4);
+  assert.equal(project.schemaVersion, 5);
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(project.sourceAssetId, asset.id);
   assert.deepEqual(project.sourceMetadata, {
     name: 'source.webp', mimeType: 'image/webp', width: 1200, height: 800,
   });
   assert.equal(project.updatedAt, 100);
-  assert.deepEqual(project.productVariants, []);
+  assert.equal(project.productVariants.length, 1);
+  assert.equal(project.productVariants[0].variationId, 'variation_a');
   assert.equal(project.activeVariationId, 'variation_a');
   assert.equal(project.variations[0].selectedLayerId, 'layer_a');
   const imageLayer = project.variations[0].layers[0];
@@ -323,7 +327,7 @@ test('migrates injected schema two Looks to Original', () => {
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
 });
 
-test('normalizes saved schema three Look recipes while adding schema four cleanup state', () => {
+test('normalizes saved schema three Look recipes while adding schema five product state', () => {
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,
   });
@@ -342,13 +346,14 @@ test('normalizes saved schema three Look recipes while adding schema four cleanu
     }],
   }, [asset]);
 
-  assert.equal(project.schemaVersion, 4);
+  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.productVariants[0].variationId, 'variation_a');
   assert.deepEqual(project.variations[0].look, {
     id: 'duotone', strength: 100, shadowColor: '#aabbcc', highlightColor: '#f59e0b', balance: -50,
   });
 });
 
-test('normalizes recoverable schema four generated assets and drops invalid trace sources', () => {
+test('migrates schema four generated assets and adds a default product', () => {
   const source = createEditorAsset('project_trace', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
   });
@@ -419,7 +424,9 @@ test('normalizes recoverable schema four generated assets and drops invalid trac
     }],
   }, [source, prepared, correction, trace]);
 
-  assert.equal(project.schemaVersion, 4);
+  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.productVariants.length, 1);
+  assert.equal(project.productVariants[0].variationId, 'variation_trace');
   assert.deepEqual(project.variations[0].layers.map(({ id }) => id), ['image_source', 'trace_valid']);
   const image = project.variations[0].layers[0];
   const traced = project.variations[0].layers[1];
@@ -443,7 +450,7 @@ test('normalizes recoverable schema four generated assets and drops invalid trac
 });
 
 test('rejects unsupported schemas and records without a valid created timestamp', () => {
-  assert.throws(() => migrateEditorProject({ schemaVersion: 5 }, []), /Unsupported editor project schema/);
+  assert.throws(() => migrateEditorProject({ schemaVersion: 6 }, []), /Unsupported editor project schema/);
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,
   });
