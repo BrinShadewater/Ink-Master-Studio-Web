@@ -108,3 +108,73 @@ The parent independently inspected both generated PNGs with `view_image` at `det
 - Post-commit `git status --short`: clean.
 - Known browser scope: Chromium only; Firefox, WebKit, and physical mobile devices were not run.
 - Final review and deployment remain pending by instruction.
+
+## Final Whole-Range Review
+
+The final audit covered the functional range from `f5f448d` through the acceptance
+commit and checked migration identity, Look normalization and history, deterministic
+RGBA processing, worker/cache authority, shared preview composition, Compare
+session state, responsive focus/layout, and deferred-scope bundle boundaries.
+
+The dedicated final reviewer exhausted its subagent usage allowance before returning
+a verdict, so the same package was reviewed locally. Two Important findings were
+resolved in `ea7beaa`:
+
+1. Strength 0 now returns an isolated byte-identical copy of the composed input,
+   including hidden RGB in fully transparent pixels. Regression coverage exercises
+   every processed Look.
+2. Retained ready frames are now authoritative only for the same variation and
+   bounded dimensions. Switching variations cannot leave a failed or not-yet-decoded
+   surface showing another variation's processed frame.
+
+The exact-PNG acceptance helper was then tightened in `9624bda` to wait for the
+previously reviewed processed PNG instead of treating the current unprocessed
+fallback as completion.
+
+Focused repair verification:
+
+```text
+npx tsx --test tests/editor-look-processor.test.ts tests/editor-preview-surface.test.ts
+20 passed, 0 failed
+
+npx playwright test tests/e2e/canvas-editor.spec.ts --project=chromium --grep "@phase2b-acceptance"
+3 passed, 0 failed
+```
+
+Final complete gate on `9624bda`:
+
+```text
+npm run verify
+Typecheck passed
+Production build passed: 1,810 modules
+Compiled-style tests: 1 passed
+Unit tests: 443 passed
+Chromium E2E: 25 passed
+Total: 469 passed, 0 failed
+
+git diff --check
+Pass
+
+git status --short
+Clean
+```
+
+Final production bundles:
+
+- `dist/assets/lookWorker-VirWboy5.js` (13.73 kB)
+- `dist/assets/index-IDvSUEhh.css` (65.20 kB)
+- `dist/assets/js/index-BwjXeLVk.js` (116.43 kB)
+- `dist/assets/js/react-vendor-D8npNGTe.js` (197.97 kB)
+
+## Protected Preview
+
+- Deployment ID: `dpl_4BipgbQgtUavBC2PZQLKS5dfQeMG`
+- Preview URL: `https://inkmasterstudio-d3yrpedxr-brincode.vercel.app`
+- Inspector URL: `https://vercel.com/brincode/inkmasterstudio/4BipgbQgtUavBC2PZQLKS5dfQeMG`
+- Target: preview, never production
+- Ready state: `READY`
+- Authenticated `/`: HTTP 200
+- Authenticated `/privacy`: HTTP 200
+- Unauthenticated `/`: HTTP 302 to Vercel SSO with `Cache-Control: no-store`
+
+The protected deployment was built from the exact reviewed and fully verified head.
