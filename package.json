@@ -27,6 +27,7 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.14.0",
+    "@xmldom/xmldom": "^0.8.13",
     "autoprefixer": "^10.4.21",
     "fake-indexeddb": "6.2.5",
     "postcss": "^8.5.6",
