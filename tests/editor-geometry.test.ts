@@ -11,6 +11,12 @@ import {
   moveTransformByViewportDelta,
   viewportDeltaToNormalized,
 } from '../editor/geometry';
+import {
+  CANONICAL_DESIGN_SIZE,
+  containCanonicalSurface,
+  designPointToDisplayPoint,
+  displayPointToDesignPoint,
+} from '../editor/canonicalSurface';
 
 test('fits a landscape source into a portrait work area without cropping', () => {
   assert.deepEqual(fitSourceInViewport({ width: 1600, height: 900 }, { width: 600, height: 800 }), {
@@ -78,6 +84,34 @@ test('inverse-rotates points when testing rotated layer bounds', () => {
   const bounds = { x: 40, y: 80, width: 120, height: 40 };
   assert.equal(isPointInRotatedRect({ x: 100, y: 150 }, bounds, 90), true);
   assert.equal(isPointInRotatedRect({ x: 150, y: 100 }, bounds, 90), false);
+});
+
+test('contains the canonical square across wide, tall, square, and invalid viewports', () => {
+  assert.deepEqual(containCanonicalSurface({ width: 1440, height: 844 }), {
+    x: 298, y: 0, width: 844, height: 844, scale: 0.844,
+  });
+  assert.deepEqual(containCanonicalSurface({ width: 390, height: 844 }), {
+    x: 0, y: 227, width: 390, height: 390, scale: 0.39,
+  });
+  assert.deepEqual(containCanonicalSurface(CANONICAL_DESIGN_SIZE), {
+    x: 0, y: 0, width: 1000, height: 1000, scale: 1,
+  });
+  assert.deepEqual(containCanonicalSurface({ width: 0, height: 844 }), {
+    x: 0, y: 0, width: 0, height: 0, scale: 0,
+  });
+});
+
+test('round trips display and design points without depending on pixel density', () => {
+  const wide = containCanonicalSurface({ width: 1440, height: 844 });
+  const tall = containCanonicalSurface({ width: 390, height: 844 });
+  const center = displayPointToDesignPoint({ x: 720, y: 422 }, wide);
+  assert.deepEqual(center, { x: 500, y: 500 });
+  assert.deepEqual(designPointToDisplayPoint(center!, wide), { x: 720, y: 422 });
+  assert.deepEqual(
+    displayPointToDesignPoint(designPointToDisplayPoint(center!, tall)!, tall),
+    center,
+  );
+  assert.equal(displayPointToDesignPoint({ x: 100, y: 100 }, tall), null);
 });
 
 test('keeps source URL lifecycle in the workspace registry across shared preview surfaces', () => {

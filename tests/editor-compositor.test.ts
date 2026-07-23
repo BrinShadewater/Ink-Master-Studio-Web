@@ -316,7 +316,7 @@ test('renders and hit tests a decoded trace in layer order using source crop geo
   );
 
   assert.deepEqual(context.draws.map(({ image: drawn }) => drawn), [bottomImage, traceImage]);
-  assert.deepEqual(context.draws[1].args, [0, 0, 200, 100, -115, -57.5, 230, 115]);
+  assert.deepEqual(context.draws[1].args, [-115, -57.5, 230, 115]);
   assert.equal(context.draws[1].alpha, 0.65);
   assert.equal(context.draws[1].filter, 'none');
   assert.deepEqual(context.draws[1].operations.slice(-3), [

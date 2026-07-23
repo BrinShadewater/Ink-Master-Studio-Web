@@ -240,10 +240,6 @@ const renderTraceLayer = (
   context.filter = 'none';
   context.drawImage(
     image,
-    0,
-    0,
-    source.width,
-    source.height,
     -drawRect.width / 2,
     -drawRect.height / 2,
     drawRect.width,

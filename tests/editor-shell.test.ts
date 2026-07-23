@@ -15,6 +15,10 @@ import {
 import { EditorToolbar } from '../components/editor/EditorToolbar';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
 import { TraceInspector } from '../components/editor/TraceInspector';
+import {
+  ExportMenu,
+  createSvgMasterFilename,
+} from '../components/editor/ExportMenu';
 import { CompareBoard, type CompareBoardProps } from '../components/editor/CompareBoard';
 import {
   LooksInspector,
@@ -88,6 +92,7 @@ const topBarProps: EditorTopBarProps = {
   onRetrySave: () => undefined,
   onImport: () => undefined,
   onOpenProjects: () => undefined,
+  onExport: () => undefined,
 };
 
 const createLayerPanelVariation = (): DesignVariation => {
@@ -210,6 +215,57 @@ test('mobile toolbar exposes a stable Layers command', () => {
 
   assert.match(markup, /aria-label="Layers"/);
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
+});
+
+test('top bar exposes SVG export as a project command', () => {
+  const enabled = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
+  assert.doesNotMatch(enabled, /aria-label="Export"[^>]*disabled=""/);
+  assert.match(enabled, /aria-label="Export"[\s\S]*?lucide-download/);
+  const disabled = renderToStaticMarkup(createElement(EditorTopBar, {
+    ...topBarProps,
+    projectId: null,
+  }));
+  assert.match(disabled, /aria-label="Export"[^>]*disabled=""/);
+});
+
+test('export menu presents blockers or enables a vector-only SVG download', () => {
+  const source = createEditorAsset('project-export-menu', new Blob(['source']), {
+    name: 'Image A', width: 100, height: 80,
+  });
+  const rasterProject = createEditorProject('Export menu', source);
+  const rasterMarkup = renderToStaticMarkup(createElement(ExportMenu, {
+    open: true,
+    projectName: rasterProject.name,
+    variation: rasterProject.variations[0],
+    assetsById: { [source.id]: source },
+    onClose: () => undefined,
+  }));
+  assert.match(rasterMarkup, /Hide or trace Image A before exporting SVG\./);
+  assert.match(rasterMarkup, /Download SVG<\/button>/);
+  assert.match(rasterMarkup, /disabled=""/);
+
+  const text = createTextLayer('Vector text');
+  const vectorMarkup = renderToStaticMarkup(createElement(ExportMenu, {
+    open: true,
+    projectName: 'Summer / Drop',
+    variation: {
+      ...rasterProject.variations[0],
+      name: 'Front #1',
+      layers: [text],
+      selectedLayerId: text.id,
+    },
+    assetsById: {},
+    onClose: () => undefined,
+  }));
+  assert.doesNotMatch(vectorMarkup, /SVG needs attention/);
+  assert.doesNotMatch(
+    vectorMarkup.match(/<button[^>]*>[\s\S]*?Download SVG<\/button>/)?.[0] ?? '',
+    /disabled=""/,
+  );
+  assert.equal(
+    createSvgMasterFilename('Summer / Drop', 'Front #1'),
+    'Summer-Drop-Front-1.svg',
+  );
 });
 
 test('toolbar exposes the Looks tool with the Palette icon and stable mobile target', () => {

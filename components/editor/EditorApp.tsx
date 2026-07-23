@@ -44,6 +44,7 @@ import { ProjectDrawer } from './ProjectDrawer';
 import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
 import { useBackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
 import { useTraceWorkflow } from './useTraceWorkflow';
+import { ExportMenu } from './ExportMenu';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -122,6 +123,7 @@ export const EditorApp = () => {
   const [lookError, setLookError] = useState<string | null>(null);
   const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [compareVariationIds, setCompareVariationIds] = useState<string[]>([]);
   const [compareBackground, setCompareBackground] = useState<CompareBackground>('neutral');
   const [compareZoom, setCompareZoom] = useState(100);
@@ -370,6 +372,7 @@ export const EditorApp = () => {
         onRetrySave={() => { void workspace.retrySave(); }}
         onImport={() => fileInputRef.current?.click()}
         onOpenProjects={() => setProjectsOpen(true)}
+        onExport={() => setExportOpen(true)}
       />
 
       <section className={compareOpen
@@ -543,6 +546,14 @@ export const EditorApp = () => {
         }}
         onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
         dispatch={workspace.dispatch}
+      />
+
+      <ExportMenu
+        open={exportOpen}
+        projectName={project?.name ?? 'Untitled design'}
+        variation={variation}
+        assetsById={workspace.assetsById}
+        onClose={() => setExportOpen(false)}
       />
     </main>
   );

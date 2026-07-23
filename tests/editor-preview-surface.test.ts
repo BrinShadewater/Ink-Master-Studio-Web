@@ -14,6 +14,7 @@ import { createDefaultTraceSettings } from '../editor/traceModel';
 import {
   canRetainReadyPreviewFrame,
   composeBoundedVariationFrame,
+  resolveCanonicalPixelSize,
   resolveBoundedPixelSize,
   selectPreviewOutcomeFrame,
 } from '../components/editor/VariationPreviewCanvas';
@@ -191,6 +192,14 @@ test('bounds composed pixel dimensions without changing aspect ratio', () => {
     resolveBoundedPixelSize({ width: 390, height: 500 }, 2, 1600),
     { width: 780, height: 1000 },
   );
+  assert.deepEqual(
+    resolveCanonicalPixelSize({ width: 1400, height: 900 }, 2, 1600),
+    { width: 1600, height: 1600 },
+  );
+  assert.deepEqual(
+    resolveCanonicalPixelSize({ width: 390, height: 500 }, 2, 1600),
+    { width: 780, height: 780 },
+  );
 });
 
 test('waits for every visible image and ignores hidden missing images', () => {
@@ -287,6 +296,9 @@ test('render keys use stable design identity and exclude replacement object URLs
   const changedDimensions = compose(baseVariation, assetsById, {
     'asset-a': { url: 'blob:first', image: image('first') },
   }, { width: 600, height: 400 }).result!;
+  const changedOrientation = compose(baseVariation, assetsById, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+  }, { width: 400, height: 600 }).result!;
   const changedSourceDimensions = compose(baseVariation, {
     'asset-a': asset('asset-a', 801, 600),
   }, {
@@ -315,10 +327,12 @@ test('render keys use stable design identity and exclude replacement object URLs
 
   assert.match(first.renderKey, /^variation-preview:/);
   assert.equal(replacementUrl.renderKey, first.renderKey);
+  assert.equal(changedDimensions.renderKey, first.renderKey);
+  assert.equal(changedOrientation.renderKey, first.renderKey);
+  assert.equal(first.frame.width, first.frame.height);
   for (const changed of [
     changedLayer,
     changedAsset,
-    changedDimensions,
     changedSourceDimensions,
     changedLook,
     changedPrepared,

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { hitTestDesignLayers } from '../../editor/compositor';
 import {
+  CANONICAL_DESIGN_SIZE,
+  displayPointToDesignPoint,
+} from '../../editor/canonicalSurface';
+import {
   getDecodedImageSources,
   type DecodedImageEntry,
 } from '../../editor/decodedImages';
@@ -55,7 +59,7 @@ interface DragState {
   layerId: string;
   startPoint: { x: number; y: number };
   transform: LayerTransform;
-  viewportSize: Size;
+  designScale: number;
 }
 
 interface StrokeState {
@@ -141,7 +145,14 @@ export const EditorCanvas = ({
     if (!selectedImage) return null;
     const source = assetsById[selectedImage.assetId];
     if (!source) return null;
-    return canvasPointToCropPoint(point, viewport.size, source, selectedImage);
+    const designPoint = displayPointToDesignPoint(point, viewport.designRect);
+    if (!designPoint) return null;
+    return canvasPointToCropPoint(
+      designPoint,
+      CANONICAL_DESIGN_SIZE,
+      source,
+      selectedImage,
+    );
   };
 
   const appendStrokePoint = (stroke: StrokeState, point: NormalizedPoint) => {
@@ -185,10 +196,12 @@ export const EditorCanvas = ({
     const context = event.currentTarget.getContext('2d');
     if (!context) return;
     const point = getCanvasPoint(event);
+    const designPoint = displayPointToDesignPoint(point, viewport.designRect);
+    if (!designPoint) return;
     const hitLayer = hitTestDesignLayers(
       context,
-      point,
-      viewport.size,
+      designPoint,
+      CANONICAL_DESIGN_SIZE,
       activeVariation.layers,
       { metadataById: assetsById, imagesById: imageSourcesById },
     );
@@ -201,7 +214,7 @@ export const EditorCanvas = ({
       layerId: hitLayer.id,
       startPoint: point,
       transform: { ...hitLayer.transform },
-      viewportSize: { ...viewport.size },
+      designScale: viewport.designRect.scale,
     };
   };
 
@@ -226,13 +239,14 @@ export const EditorCanvas = ({
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const point = getCanvasPoint(event);
+    if (drag.designScale <= 0) return;
     onTransformChange(
       drag.layerId,
       moveTransformByViewportDelta(
         drag.transform,
-        point.x - drag.startPoint.x,
-        point.y - drag.startPoint.y,
-        drag.viewportSize,
+        (point.x - drag.startPoint.x) / drag.designScale,
+        (point.y - drag.startPoint.y) / drag.designScale,
+        CANONICAL_DESIGN_SIZE,
       ),
       'canvas-drag',
     );

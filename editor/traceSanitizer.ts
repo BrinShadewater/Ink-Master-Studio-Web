@@ -198,6 +198,8 @@ export const serializeSafeTraceDocument = (
   );
   const root = parsed.documentElement;
   root.setAttribute('viewBox', `0 0 ${value.width} ${value.height}`);
+  root.setAttribute('width', String(value.width));
+  root.setAttribute('height', String(value.height));
   for (const candidate of value.paths) {
     const path = parsePathLike(candidate);
     const element = parsed.createElementNS(SVG_NAMESPACE, 'path');

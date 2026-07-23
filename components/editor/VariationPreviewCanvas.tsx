@@ -7,6 +7,10 @@ import {
 } from 'react';
 import { renderDesignLayers } from '../../editor/compositor';
 import {
+  CANONICAL_DESIGN_SIZE,
+  containCanonicalSurface,
+} from '../../editor/canonicalSurface';
+import {
   getDecodedImageSources,
   type DecodedImageEntry,
 } from '../../editor/decodedImages';
@@ -105,9 +109,10 @@ export const reducePreviewFailureAuthority = (
   };
 };
 
-interface PreviewViewport {
+export interface PreviewViewport {
   size: Size;
   pixelRatio: number;
+  designRect: ReturnType<typeof containCanonicalSurface>;
 }
 
 interface UseVariationPreviewSurfaceOptions extends Omit<VariationPreviewCanvasProps, 'ariaLabel'> {
@@ -118,6 +123,7 @@ interface UseVariationPreviewSurfaceOptions extends Omit<VariationPreviewCanvasP
 const initialViewport: PreviewViewport = {
   size: { width: 0, height: 0 },
   pixelRatio: 1,
+  designRect: containCanonicalSurface({ width: 0, height: 0 }),
 };
 
 const finiteDimension = (value: number) =>
@@ -140,6 +146,21 @@ export const resolveBoundedPixelSize = (
     width: Math.max(1, Math.round(rawWidth * scale)),
     height: Math.max(1, Math.round(rawHeight * scale)),
   };
+};
+
+export const resolveCanonicalPixelSize = (
+  viewport: Size,
+  pixelRatio: number,
+  maxPixelDimension: number,
+): Size => {
+  const contained = containCanonicalSurface(viewport);
+  if (contained.width <= 0) return { width: 0, height: 0 };
+  const ratio = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
+  const maximum = Number.isFinite(maxPixelDimension)
+    ? Math.max(1, Math.floor(maxPixelDimension))
+    : 1;
+  const edge = Math.max(1, Math.round(Math.min(maximum, contained.width * ratio)));
+  return { width: edge, height: edge };
 };
 
 const canonicalTransform = (layer: DesignLayer) => ({
@@ -284,7 +305,7 @@ export const composeBoundedVariationFrame = (
     pixelRatio,
     maxPixelDimension,
   } = options;
-  const dimensions = resolveBoundedPixelSize(viewport, pixelRatio, maxPixelDimension);
+  const dimensions = resolveCanonicalPixelSize(viewport, pixelRatio, maxPixelDimension);
   if (
     dimensions.width === 0 ||
     dimensions.height === 0 ||
@@ -302,8 +323,11 @@ export const composeBoundedVariationFrame = (
   context.filter = 'none';
   context.clearRect(0, 0, dimensions.width, dimensions.height);
   context.save();
-  context.scale(dimensions.width / viewport.width, dimensions.height / viewport.height);
-  renderDesignLayers(context, viewport, variation.layers, {
+  context.scale(
+    dimensions.width / CANONICAL_DESIGN_SIZE.width,
+    dimensions.height / CANONICAL_DESIGN_SIZE.height,
+  );
+  renderDesignLayers(context, CANONICAL_DESIGN_SIZE, variation.layers, {
     metadataById: assetsById,
     imagesById: getDecodedImageSources(imagesById),
   });
@@ -342,9 +366,16 @@ const paintFrame = (
   frame: RgbaFrame,
   background: PreviewBackground,
   zoom: number,
+  viewport: PreviewViewport,
+  maxPixelDimension: PreviewPixelBound,
 ) => {
-  if (canvas.width !== frame.width) canvas.width = frame.width;
-  if (canvas.height !== frame.height) canvas.height = frame.height;
+  const display = resolveBoundedPixelSize(
+    viewport.size,
+    viewport.pixelRatio,
+    maxPixelDimension,
+  );
+  if (canvas.width !== display.width) canvas.width = display.width;
+  if (canvas.height !== display.height) canvas.height = display.height;
   if (frameCanvas.width !== frame.width) frameCanvas.width = frame.width;
   if (frameCanvas.height !== frame.height) frameCanvas.height = frame.height;
   const context = canvas.getContext('2d');
@@ -358,13 +389,17 @@ const paintFrame = (
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = background;
   context.fillRect(0, 0, canvas.width, canvas.height);
+  const designRect = containCanonicalSurface({
+    width: canvas.width,
+    height: canvas.height,
+  });
   const safeZoom = Number.isFinite(zoom) ? Math.max(0.01, zoom) : 1;
-  const width = canvas.width * safeZoom;
-  const height = canvas.height * safeZoom;
+  const width = designRect.width * safeZoom;
+  const height = designRect.height * safeZoom;
   context.drawImage(
     frameCanvas,
-    (canvas.width - width) / 2,
-    (canvas.height - height) / 2,
+    designRect.x + (designRect.width - width) / 2,
+    designRect.y + (designRect.height - height) / 2,
     width,
     height,
   );
@@ -418,6 +453,7 @@ export const useVariationPreviewSurface = ({
       const next: PreviewViewport = {
         size: { width, height },
         pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        designRect: containCanonicalSurface({ width, height }),
       };
       setViewport((current) => (
         current.size.width === next.size.width &&
@@ -492,6 +528,8 @@ export const useVariationPreviewSurface = ({
       lastReadyFrameRef.current ?? frame,
       background,
       zoom,
+      viewport,
+      maxPixelDimension,
     );
 
     if (variation.look.id === 'original') {
@@ -503,7 +541,15 @@ export const useVariationPreviewSurface = ({
         height: frame.height,
       };
       updateFailureAuthority({ type: 'clear' }, true);
-      paintFrame(canvas, frameCanvasRef.current, frame, background, zoom);
+      paintFrame(
+        canvas,
+        frameCanvasRef.current,
+        frame,
+        background,
+        zoom,
+        viewport,
+        maxPixelDimension,
+      );
       return undefined;
     }
 
@@ -533,7 +579,15 @@ export const useVariationPreviewSurface = ({
       }
       updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
-        paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
+        paintFrame(
+          canvasRef.current,
+          frameCanvasRef.current,
+          selected.displayFrame,
+          background,
+          zoom,
+          viewport,
+          maxPixelDimension,
+        );
       }
     });
     return () => { active = false; };
@@ -583,7 +637,15 @@ export const useVariationPreviewSurface = ({
       }
       updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
-        paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
+        paintFrame(
+          canvasRef.current,
+          frameCanvasRef.current,
+          selected.displayFrame,
+          background,
+          zoom,
+          viewport,
+          maxPixelDimension,
+        );
       }
     });
     return () => { active = false; };
@@ -595,6 +657,8 @@ export const useVariationPreviewSurface = ({
     surfaceId,
     updateFailureAuthority,
     variation.look.id,
+    viewport,
+    maxPixelDimension,
     zoom,
   ]);
 

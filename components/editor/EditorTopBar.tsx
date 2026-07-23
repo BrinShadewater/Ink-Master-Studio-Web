@@ -1,5 +1,6 @@
 import {
   CopyPlus,
+  Download,
   FolderOpen,
   Redo2,
   RefreshCw,
@@ -30,6 +31,7 @@ export interface EditorTopBarProps {
   onRetrySave: () => void;
   onImport: () => void;
   onOpenProjects: () => void;
+  onExport: () => void;
 }
 
 export interface ProjectNameDraftState {
@@ -135,6 +137,7 @@ export const EditorTopBar = ({
   onRetrySave,
   onImport,
   onOpenProjects,
+  onExport,
 }: EditorTopBarProps) => {
   const [projectNameState, updateProjectNameState] = useReducer(
     projectNameDraftReducer,
@@ -267,6 +270,7 @@ export const EditorTopBar = ({
         <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
         <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
+        <IconButton label="Export" icon={Download} disabled={!projectId} onClick={onExport} />
         <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
       </div>
     </header>
