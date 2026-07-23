@@ -37,7 +37,7 @@ Execution base: 0499f81.
 Task 1: complete (commits f5f448d..04e778c, spec compliant and quality approved after forcing Original for injected legacy Look fields; 30 focused tests, typecheck, and diff check reported passing). Rendering, history, and deterministic texture checks remain assigned to Tasks 2 through 5.
 Task 2: complete (commits ee5a806..eb048b7, spec compliant and quality approved; 37 focused tests, typecheck, and diff check reported passing).
 Task 3: complete (commits 6a3c393..b2e4a11, spec compliant and quality approved; 17 focused tests, typecheck, and diff check reported passing; reviewer verified literal golden fixtures for all eight Looks and deterministic alpha/seed behavior).
-Task 4: pending.
+Task 4: implementation complete, pending review (26 focused tests, typecheck, production build, and diff check passed).
 Task 5: pending.
 Task 6: pending.
 Task 7: pending.
