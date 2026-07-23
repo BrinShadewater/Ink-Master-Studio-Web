@@ -10,6 +10,7 @@ import type { LookRenderOutcome } from '../editor/lookRenderCoordinator';
 import type { RgbaFrame } from '../editor/lookProcessor';
 import type { DesignVariation, EditorAsset, ImageLayer } from '../editor/model';
 import {
+  canRetainReadyPreviewFrame,
   composeBoundedVariationFrame,
   resolveBoundedPixelSize,
   selectPreviewOutcomeFrame,
@@ -276,6 +277,18 @@ test('preview outcome selection ignores stale work and preserves the last ready 
     readyFrame: ready,
     failure: 'Look preview failed.',
   });
+});
+
+test('retains a ready frame only for the same variation and bounded dimensions', () => {
+  const ready = frame(1);
+  const authority = { variationId: 'variation-a', width: ready.width, height: ready.height };
+  assert.equal(canRetainReadyPreviewFrame(authority, 'variation-a', ready), true);
+  assert.equal(canRetainReadyPreviewFrame(authority, 'variation-b', ready), false);
+  assert.equal(canRetainReadyPreviewFrame(authority, 'variation-a', {
+    ...ready,
+    width: ready.width + 1,
+  }), false);
+  assert.equal(canRetainReadyPreviewFrame(null, 'variation-a', ready), false);
 });
 
 test('preview failure authority clears for normal work and survives only a same-key Retry', () => {

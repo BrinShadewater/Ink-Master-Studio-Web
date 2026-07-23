@@ -65,6 +65,23 @@ export interface PreviewFailureAuthority {
   message: string;
 }
 
+export interface ReadyPreviewFrameAuthority {
+  variationId: string;
+  width: number;
+  height: number;
+}
+
+export const canRetainReadyPreviewFrame = (
+  authority: ReadyPreviewFrameAuthority | null,
+  variationId: string,
+  frame: RgbaFrame,
+) => Boolean(
+  authority &&
+  authority.variationId === variationId &&
+  authority.width === frame.width &&
+  authority.height === frame.height
+);
+
 export type PreviewFailureAuthorityEvent =
   | { type: 'clear' }
   | { type: 'start'; renderKey: string; retry: boolean }
@@ -331,6 +348,7 @@ export const useVariationPreviewSurface = ({
   const currentRenderKeyRef = useRef<string | null>(null);
   const unprocessedFrameRef = useRef<RgbaFrame | null>(null);
   const lastReadyFrameRef = useRef<RgbaFrame | null>(null);
+  const lastReadyAuthorityRef = useRef<ReadyPreviewFrameAuthority | null>(null);
   const failureAuthorityRef = useRef<PreviewFailureAuthority | null>(null);
   const failureCallbackRef = useRef(onFailureChange);
   const viewportCallbackRef = useRef(onViewportChange);
@@ -387,6 +405,14 @@ export const useVariationPreviewSurface = ({
     }
     compositionCanvasRef.current ??= document.createElement('canvas');
     frameCanvasRef.current ??= document.createElement('canvas');
+    const variationChanged = Boolean(
+      lastReadyAuthorityRef.current &&
+      lastReadyAuthorityRef.current.variationId !== variation.id
+    );
+    if (variationChanged) {
+      lastReadyFrameRef.current = null;
+      lastReadyAuthorityRef.current = null;
+    }
     const composition = composeBoundedVariationFrame(compositionCanvasRef.current, {
       variation,
       assetsById,
@@ -396,6 +422,14 @@ export const useVariationPreviewSurface = ({
       maxPixelDimension,
     });
     if (!composition) {
+      if (variationChanged) {
+        const context = canvas.getContext('2d');
+        if (context) {
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.fillStyle = background;
+          context.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
       currentRenderKeyRef.current = null;
       unprocessedFrameRef.current = null;
       coordinator.clearSurface(surfaceId);
@@ -404,6 +438,10 @@ export const useVariationPreviewSurface = ({
     }
 
     const { frame, renderKey } = composition;
+    if (!canRetainReadyPreviewFrame(lastReadyAuthorityRef.current, variation.id, frame)) {
+      lastReadyFrameRef.current = null;
+      lastReadyAuthorityRef.current = null;
+    }
     currentRenderKeyRef.current = renderKey;
     unprocessedFrameRef.current = frame;
     paintFrame(
@@ -417,6 +455,11 @@ export const useVariationPreviewSurface = ({
     if (variation.look.id === 'original') {
       coordinator.clearSurface(surfaceId);
       lastReadyFrameRef.current = frame;
+      lastReadyAuthorityRef.current = {
+        variationId: variation.id,
+        width: frame.width,
+        height: frame.height,
+      };
       updateFailureAuthority({ type: 'clear' }, true);
       paintFrame(canvas, frameCanvasRef.current, frame, background, zoom);
       return undefined;
@@ -439,6 +482,13 @@ export const useVariationPreviewSurface = ({
       );
       if (!selected) return;
       lastReadyFrameRef.current = selected.readyFrame;
+      if (selected.readyFrame) {
+        lastReadyAuthorityRef.current = {
+          variationId: variation.id,
+          width: selected.readyFrame.width,
+          height: selected.readyFrame.height,
+        };
+      }
       updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
         paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
@@ -482,6 +532,13 @@ export const useVariationPreviewSurface = ({
       );
       if (!selected) return;
       lastReadyFrameRef.current = selected.readyFrame;
+      if (selected.readyFrame) {
+        lastReadyAuthorityRef.current = {
+          variationId: variation.id,
+          width: selected.readyFrame.width,
+          height: selected.readyFrame.height,
+        };
+      }
       updateFailureAuthority({ type: 'outcome', expectedRenderKey: renderKey, outcome });
       if (canvasRef.current) {
         paintFrame(canvasRef.current, frameCanvasRef.current, selected.displayFrame, background, zoom);
@@ -502,6 +559,8 @@ export const useVariationPreviewSurface = ({
   useEffect(() => () => {
     currentRenderKeyRef.current = null;
     unprocessedFrameRef.current = null;
+    lastReadyFrameRef.current = null;
+    lastReadyAuthorityRef.current = null;
     coordinator.clearSurface(surfaceId);
     updateFailureAuthority({ type: 'clear' }, true);
   }, [coordinator, surfaceId, updateFailureAuthority]);

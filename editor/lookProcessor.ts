@@ -363,8 +363,9 @@ export const blendLookStrength = (
   ) {
     throw new Error('Invalid Look frame.');
   }
-  const output = new Uint8ClampedArray(original.length);
   const amount = clamp(strength, 0, 100) / 100;
+  if (amount === 0) return new Uint8ClampedArray(original);
+  const output = new Uint8ClampedArray(original.length);
 
   // Blend color in premultiplied space so changing alpha cannot expose color fringes.
   for (let index = 0; index < output.length; index += 4) {

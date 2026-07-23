@@ -108,12 +108,19 @@ test('Strength 0, 50, and 100 use premultiplied-alpha interpolation', () => {
   assert.deepEqual([...blendLookStrength(original, processed, 100)], [0, 0, 255, 255]);
 });
 
-test('Strength blending clears RGB whenever final alpha is zero', () => {
+test('Strength 0 is byte-identical even when transparent pixels retain hidden RGB', () => {
   const original = new Uint8ClampedArray([240, 120, 20, 0]);
   const processed = new Uint8ClampedArray([10, 20, 30, 0]);
-  assert.deepEqual([...blendLookStrength(original, processed, 0)], [0, 0, 0, 0]);
+  assert.deepEqual([...blendLookStrength(original, processed, 0)], [240, 120, 20, 0]);
   assert.deepEqual([...blendLookStrength(original, processed, 50)], [0, 0, 0, 0]);
   assert.deepEqual([...blendLookStrength(original, processed, 100)], [0, 0, 0, 0]);
+});
+
+test('every processed Look at Strength 0 returns the exact input bytes', () => {
+  for (const id of processedLookIds) {
+    const look = { ...createDefaultLook(id, 0), strength: 0 } as VariationLook;
+    assert.deepEqual([...applyVariationLook(frame, look).pixels], [...frame.pixels], id);
+  }
 });
 
 test('Graphic Halftone has explicit transparent and solid alpha semantics', () => {
