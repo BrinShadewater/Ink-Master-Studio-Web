@@ -33,6 +33,10 @@ import {
 } from './traceSanitizer';
 
 const RENDER_ERROR = 'Could not render T-shirt artwork.';
+export const T_SHIRT_EXPORT_SOURCE_TILE_EDGE = 1024;
+export const T_SHIRT_EXPORT_SOURCE_TILE_BYTES =
+  T_SHIRT_EXPORT_SOURCE_TILE_EDGE * T_SHIRT_EXPORT_SOURCE_TILE_EDGE * 4;
+export const T_SHIRT_EXPORT_LANCZOS3_RADIUS = 3;
 
 export interface TShirtExportRendererDependencies {
   createCanvas: (width: number, height: number) => OffscreenCanvas;
@@ -58,7 +62,7 @@ const workerXmlPlatform: TraceXmlPlatform = {
 export const createBrowserTShirtExportRendererDependencies =
 (): TShirtExportRendererDependencies => {
   const resizer = createPica({
-    tile: 1024,
+    tile: T_SHIRT_EXPORT_SOURCE_TILE_EDGE,
     concurrency: 1,
     features: ['js', 'wasm'],
   });
@@ -359,6 +363,232 @@ const mapLocalRectToSource = (
   };
 };
 
+interface RasterAxisTile {
+  sourceStart: number;
+  sourceSize: number;
+  destinationStart: number;
+  destinationSize: number;
+  innerDestinationStart: number;
+  innerDestinationSize: number;
+}
+
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.min(maximum, Math.max(minimum, value));
+
+const getRasterAxisTiles = (
+  visibleStart: number,
+  visibleSize: number,
+  sourceLimit: number,
+  destinationSize: number,
+): RasterAxisTile[] => {
+  const scale = destinationSize / visibleSize;
+  const overlap = Math.ceil(
+    T_SHIRT_EXPORT_LANCZOS3_RADIUS / Math.min(1, scale),
+  ) + 1;
+  const maximumCoreSize =
+    T_SHIRT_EXPORT_SOURCE_TILE_EDGE - overlap * 2;
+  if (
+    !Number.isFinite(scale) ||
+    scale <= 0 ||
+    overlap <= 0 ||
+    maximumCoreSize < 1
+  ) {
+    throw new Error(RENDER_ERROR);
+  }
+
+  const sourceStart = clamp(Math.floor(visibleStart), 0, sourceLimit);
+  const sourceEnd = clamp(
+    Math.ceil(visibleStart + visibleSize),
+    0,
+    sourceLimit,
+  );
+  if (sourceEnd <= sourceStart) throw new Error(RENDER_ERROR);
+
+  const mapToDestination = (sourcePosition: number) => clamp(
+    Math.round(
+      (sourcePosition - visibleStart) * destinationSize / visibleSize,
+    ),
+    0,
+    destinationSize,
+  );
+  const tiles: RasterAxisTile[] = [];
+  for (
+    let innerSourceStart = sourceStart;
+    innerSourceStart < sourceEnd;
+    innerSourceStart += maximumCoreSize
+  ) {
+    const innerSourceEnd = Math.min(
+      sourceEnd,
+      innerSourceStart + maximumCoreSize,
+    );
+    const tileSourceStart = Math.max(
+      sourceStart,
+      innerSourceStart - overlap,
+    );
+    const tileSourceEnd = Math.min(sourceEnd, innerSourceEnd + overlap);
+    const tileDestinationStart = mapToDestination(tileSourceStart);
+    const tileDestinationEnd = mapToDestination(tileSourceEnd);
+    const innerDestinationStart = mapToDestination(innerSourceStart);
+    const innerDestinationEnd = mapToDestination(innerSourceEnd);
+    const sourceSize = tileSourceEnd - tileSourceStart;
+    const tileDestinationSize =
+      tileDestinationEnd - tileDestinationStart;
+    const innerDestinationSize =
+      innerDestinationEnd - innerDestinationStart;
+    if (innerDestinationSize <= 0) continue;
+    if (
+      sourceSize <= 0 ||
+      sourceSize > T_SHIRT_EXPORT_SOURCE_TILE_EDGE ||
+      tileDestinationSize <= 0 ||
+      tileDestinationSize > destinationSize ||
+      innerDestinationStart < tileDestinationStart ||
+      innerDestinationEnd > tileDestinationEnd
+    ) {
+      throw new Error(RENDER_ERROR);
+    }
+    tiles.push({
+      sourceStart: tileSourceStart,
+      sourceSize,
+      destinationStart: tileDestinationStart,
+      destinationSize: tileDestinationSize,
+      innerDestinationStart,
+      innerDestinationSize,
+    });
+  }
+  if (tiles.length === 0) throw new Error(RENDER_ERROR);
+  return tiles;
+};
+
+const prepareTiledRasterRegion = async (
+  bitmap: ImageBitmap,
+  visibleSource: Rect,
+  preparationSize: Size,
+  viewport: Size,
+  filter: string,
+  dependencies: TShirtExportRendererDependencies,
+  ownership: RendererOwnership,
+) => {
+  const horizontalTiles = getRasterAxisTiles(
+    visibleSource.x,
+    visibleSource.width,
+    bitmap.width,
+    preparationSize.width,
+  );
+  const verticalTiles = getRasterAxisTiles(
+    visibleSource.y,
+    visibleSource.height,
+    bitmap.height,
+    preparationSize.height,
+  );
+  const maximumDestinationEdge = Math.ceil(
+    Math.hypot(viewport.width, viewport.height),
+  );
+  const maximumDestinationBytes =
+    maximumDestinationEdge * maximumDestinationEdge * 4;
+  const preparedCanvas = ownCanvas(
+    dependencies,
+    ownership,
+    preparationSize.width,
+    preparationSize.height,
+  );
+  const preparedContext = canvasContext(preparedCanvas);
+  preparedContext.clearRect(
+    0,
+    0,
+    preparationSize.width,
+    preparationSize.height,
+  );
+  preparedContext.filter = 'none';
+
+  for (const vertical of verticalTiles) {
+    for (const horizontal of horizontalTiles) {
+      let sourceCanvas: OffscreenCanvas | null = null;
+      let destinationCanvas: OffscreenCanvas | null = null;
+      let resizedCanvas: OffscreenCanvas | null = null;
+      try {
+        sourceCanvas = ownCanvas(
+          dependencies,
+          ownership,
+          horizontal.sourceSize,
+          vertical.sourceSize,
+        );
+        if (
+          sourceCanvas.width * sourceCanvas.height * 4 >
+          T_SHIRT_EXPORT_SOURCE_TILE_BYTES
+        ) {
+          throw new Error(RENDER_ERROR);
+        }
+        const sourceContext = canvasContext(sourceCanvas);
+        sourceContext.filter = filter;
+        sourceContext.drawImage(
+          bitmap,
+          horizontal.sourceStart,
+          vertical.sourceStart,
+          horizontal.sourceSize,
+          vertical.sourceSize,
+          0,
+          0,
+          horizontal.sourceSize,
+          vertical.sourceSize,
+        );
+
+        destinationCanvas = ownCanvas(
+          dependencies,
+          ownership,
+          horizontal.destinationSize,
+          vertical.destinationSize,
+        );
+        if (
+          destinationCanvas.width > maximumDestinationEdge ||
+          destinationCanvas.height > maximumDestinationEdge ||
+          destinationCanvas.width * destinationCanvas.height * 4 >
+            maximumDestinationBytes
+        ) {
+          throw new Error(RENDER_ERROR);
+        }
+        resizedCanvas = await dependencies.resize(
+          sourceCanvas,
+          destinationCanvas,
+          { filter: 'lanczos3' },
+        );
+        ownership.canvases.add(resizedCanvas);
+        if (
+          resizedCanvas.width !== destinationCanvas.width ||
+          resizedCanvas.height !== destinationCanvas.height
+        ) {
+          throw new Error(RENDER_ERROR);
+        }
+
+        const innerSourceX =
+          horizontal.innerDestinationStart -
+          horizontal.destinationStart;
+        const innerSourceY =
+          vertical.innerDestinationStart -
+          vertical.destinationStart;
+        preparedContext.drawImage(
+          resizedCanvas,
+          innerSourceX,
+          innerSourceY,
+          horizontal.innerDestinationSize,
+          vertical.innerDestinationSize,
+          horizontal.innerDestinationStart,
+          vertical.innerDestinationStart,
+          horizontal.innerDestinationSize,
+          vertical.innerDestinationSize,
+        );
+      } finally {
+        releaseCanvas(ownership, sourceCanvas);
+        releaseCanvas(ownership, destinationCanvas);
+        if (resizedCanvas !== destinationCanvas) {
+          releaseCanvas(ownership, resizedCanvas);
+        }
+      }
+    }
+  }
+
+  return preparedCanvas;
+};
+
 const drawPreparedLocalRegion = (
   context: DesignCanvasContext,
   image: CanvasImageSource,
@@ -456,45 +686,65 @@ const renderRasterLayer = async (
       ownership,
       authoritativeAsset,
     );
-    cropCanvas = ownCanvas(
-      dependencies,
-      ownership,
-      visibleSource.width,
-      visibleSource.height,
-    );
-    const cropContext = canvasContext(cropCanvas);
-    cropContext.filter = usesPreparedAsset
+    const filter = usesPreparedAsset
       ? 'none'
       : buildCanvasFilter(layer.adjustments);
-    cropContext.drawImage(
-      bitmap,
-      visibleSource.x,
-      visibleSource.y,
-      visibleSource.width,
-      visibleSource.height,
-      0,
-      0,
-      cropCanvas.width,
-      cropCanvas.height,
-    );
-
-    resizeCanvas = ownCanvas(
-      dependencies,
-      ownership,
-      preparationSize.width,
-      preparationSize.height,
-    );
-    resizedCanvas = await dependencies.resize(
-      cropCanvas,
-      resizeCanvas,
-      { filter: 'lanczos3' },
-    );
-    ownership.canvases.add(resizedCanvas);
+    const sourceCanvasWidth = positiveCanvasEdge(visibleSource.width);
+    const sourceCanvasHeight = positiveCanvasEdge(visibleSource.height);
     if (
-      resizedCanvas.width !== resizeCanvas.width ||
-      resizedCanvas.height !== resizeCanvas.height
+      sourceCanvasWidth <= T_SHIRT_EXPORT_SOURCE_TILE_EDGE &&
+      sourceCanvasHeight <= T_SHIRT_EXPORT_SOURCE_TILE_EDGE &&
+      sourceCanvasWidth * sourceCanvasHeight * 4 <=
+        T_SHIRT_EXPORT_SOURCE_TILE_BYTES
     ) {
-      throw new Error(RENDER_ERROR);
+      cropCanvas = ownCanvas(
+        dependencies,
+        ownership,
+        visibleSource.width,
+        visibleSource.height,
+      );
+      const cropContext = canvasContext(cropCanvas);
+      cropContext.filter = filter;
+      cropContext.drawImage(
+        bitmap,
+        visibleSource.x,
+        visibleSource.y,
+        visibleSource.width,
+        visibleSource.height,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+      );
+
+      resizeCanvas = ownCanvas(
+        dependencies,
+        ownership,
+        preparationSize.width,
+        preparationSize.height,
+      );
+      resizedCanvas = await dependencies.resize(
+        cropCanvas,
+        resizeCanvas,
+        { filter: 'lanczos3' },
+      );
+      ownership.canvases.add(resizedCanvas);
+      if (
+        resizedCanvas.width !== resizeCanvas.width ||
+        resizedCanvas.height !== resizeCanvas.height
+      ) {
+        throw new Error(RENDER_ERROR);
+      }
+    } else {
+      resizedCanvas = await prepareTiledRasterRegion(
+        bitmap,
+        visibleSource,
+        preparationSize,
+        viewport,
+        filter,
+        dependencies,
+        ownership,
+      );
     }
 
     drawPreparedLocalRegion(

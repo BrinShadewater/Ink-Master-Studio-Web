@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import createPica from 'pica';
-import { getTraceLayerDrawRect } from '../editor/geometry';
+import { getLayerDrawRect, getTraceLayerDrawRect } from '../editor/geometry';
 import { createDefaultBackgroundRemoval } from '../editor/imagePrepModel';
 import { createDefaultLook } from '../editor/lookModel';
 import type {
@@ -14,6 +14,8 @@ import type {
 import { createDefaultTraceSettings } from '../editor/traceModel';
 import {
   renderTShirtExport,
+  T_SHIRT_EXPORT_SOURCE_TILE_BYTES,
+  T_SHIRT_EXPORT_SOURCE_TILE_EDGE,
   type TShirtExportRendererDependencies,
 } from '../editor/tshirtExportRenderer';
 import type {
@@ -23,6 +25,8 @@ import type {
 
 const edge = 1500;
 const outputHeight = 1800;
+const rgbaBytesPerPixel = 4;
+const fakePixelStorageLimit = 16 * 1024 * 1024;
 
 interface FakeBitmap {
   width: number;
@@ -99,7 +103,10 @@ class FakeCanvas {
   }
 
   private resetPixels() {
-    this.pixels = new Uint8ClampedArray(this.currentWidth * this.currentHeight * 4);
+    const byteLength = this.currentWidth * this.currentHeight * rgbaBytesPerPixel;
+    this.pixels = new Uint8ClampedArray(
+      byteLength <= fakePixelStorageLimit ? byteLength : rgbaBytesPerPixel,
+    );
   }
 }
 
@@ -674,6 +681,114 @@ test('prepares only rotated visible raster and trace regions at canonical pixel 
   assert.ok(records.canvases.slice(1, -1).every(({ initialWidth, initialHeight }) =>
     initialWidth <= maximumVisibleEdge && initialHeight <= maximumVisibleEdge));
   assert.ok(rendered.metadata.largestRasterScale > 100);
+});
+
+test('bounds adjusted source staging for a 10k raster before Lanczos resize', async () => {
+  const adjustments = { brightness: 25, contrast: -15, saturation: 40 };
+  const largeLayer = imageLayer('large-source', 'large-source', {
+    name: 'Large adjusted source',
+    adjustments,
+  });
+  const fixture = snapshot(
+    [largeLayer],
+    [asset('large-source', 10_000, 10_000)],
+  );
+  const { dependencies, records } = createHarness();
+
+  await renderTShirtExport(fixture, dependencies);
+
+  assert.ok(records.resizeCalls.length > 1, 'large source is resized in tiles');
+  const maximumDestinationEdge = Math.ceil(Math.hypot(edge, edge));
+  const maximumDestinationBytes =
+    maximumDestinationEdge * maximumDestinationEdge * rgbaBytesPerPixel;
+  for (const resizeCall of records.resizeCalls) {
+    assert.ok(
+      resizeCall.source.initialWidth <= T_SHIRT_EXPORT_SOURCE_TILE_EDGE,
+    );
+    assert.ok(
+      resizeCall.source.initialHeight <= T_SHIRT_EXPORT_SOURCE_TILE_EDGE,
+    );
+    assert.ok(
+      resizeCall.source.initialWidth *
+        resizeCall.source.initialHeight *
+        rgbaBytesPerPixel <= T_SHIRT_EXPORT_SOURCE_TILE_BYTES,
+    );
+    assert.ok(resizeCall.destinationWidth <= maximumDestinationEdge);
+    assert.ok(resizeCall.destinationHeight <= maximumDestinationEdge);
+    assert.equal(
+      resizeCall.source.context.filter,
+      'brightness(125%) contrast(85%) saturate(140%)',
+      'original-only adjustments precede every Lanczos tile resize',
+    );
+  }
+
+  const bitmap = records.bitmaps[0];
+  assert.ok(bitmap);
+  const sourceDraws = records.draws.filter(({ image }) =>
+    image === bitmap as unknown as CanvasImageSource);
+  assert.ok(sourceDraws.length > 1);
+  for (const { args } of sourceDraws) {
+    assert.equal(args[2], args[6], 'source tile is not natively pre-resized');
+    assert.equal(args[3], args[7], 'source tile is not natively pre-resized');
+  }
+  const firstSourceRow = sourceDraws
+    .filter(({ args }) => args[1] === sourceDraws[0].args[1])
+    .sort((left, right) => left.args[0] - right.args[0]);
+  assert.ok(firstSourceRow.length > 1);
+  assert.ok(
+    firstSourceRow[1].args[0] <
+      firstSourceRow[0].args[0] + firstSourceRow[0].args[2],
+    'neighboring source tiles retain Lanczos overlap',
+  );
+
+  const expectedDraw = getLayerDrawRect(
+    { width: 10_000, height: 10_000 },
+    { width: edge, height: edge },
+    largeLayer.transform,
+    largeLayer.crop,
+  );
+  const master = records.canvases.find(({ initialWidth, initialHeight }) =>
+    initialWidth === edge && initialHeight === edge);
+  assert.ok(master);
+  const visibleComposite = records.draws.find(({ canvas, args }) =>
+    canvas === master &&
+    args.length === 8 &&
+    args[6] === expectedDraw.width &&
+    args[7] === expectedDraw.height);
+  assert.ok(visibleComposite, 'canonical visible output geometry is unchanged');
+  const preparedCanvas = visibleComposite.image as unknown as FakeCanvas;
+  const resizedCanvases = new Set(
+    records.resizeCalls.map(({ destination }) => destination),
+  );
+  const destinationCoreDraws = records.draws.filter(({ canvas, image }) =>
+    canvas === preparedCanvas &&
+    resizedCanvases.has(image as unknown as FakeCanvas));
+  let coveredDestinationPixels = 0;
+  for (const { args } of destinationCoreDraws) {
+    assert.equal(args[2], args[6], 'Lanczos core is copied at 1:1 width');
+    assert.equal(args[3], args[7], 'Lanczos core is copied at 1:1 height');
+    coveredDestinationPixels += args[6] * args[7];
+  }
+  assert.equal(
+    coveredDestinationPixels,
+    expectedDraw.width * expectedDraw.height,
+    'non-overlapping tile cores cover every canonical destination pixel',
+  );
+
+  assert.ok(records.bitmaps.every(({ closed }) => closed));
+  const output = records.canvases.at(-1);
+  for (const canvas of records.canvases.filter((item) => item !== output)) {
+    assert.ok(canvas.initialWidth <= maximumDestinationEdge);
+    assert.ok(canvas.initialHeight <= maximumDestinationEdge);
+    assert.ok(
+      canvas.initialWidth *
+        canvas.initialHeight *
+        rgbaBytesPerPixel <= maximumDestinationBytes,
+    );
+  }
+  assert.ok(records.canvases
+    .filter((canvas) => canvas !== output)
+    .every(({ disposed }) => disposed));
 });
 
 test('decode and canvas failures close bitmaps and dispose every created canvas', async () => {
