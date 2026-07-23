@@ -32,10 +32,17 @@ test('maps normalized trace controls to deterministic ImageTracer options', () =
     ...createDefaultTraceSettings(),
     blur: 5,
     palette: ['#112233', '#abcdef'],
-  }).pal, [
-    { r: 17, g: 34, b: 51, a: 255 },
-    { r: 171, g: 205, b: 239, a: 255 },
-  ]);
+  }), {
+    numberofcolors: 6,
+    ltres: 4.06,
+    qtres: 4.06,
+    pathomit: 5,
+    blurradius: 5,
+    colorsampling: 2,
+    viewbox: true,
+    strokewidth: 1,
+    desc: false,
+  });
 });
 
 test('traces bounded RGBA fixtures exactly without mutating caller pixels', () => {
@@ -66,4 +73,23 @@ test('traces bounded RGBA fixtures exactly without mutating caller pixels', () =
     }, settings),
     /Invalid trace frame/,
   );
+});
+
+test('keeps transparent trace regions transparent when a recolor palette is present', () => {
+  const markup = traceRgbaFrame({
+    width: 2,
+    height: 2,
+    pixels: new Uint8ClampedArray([
+      0, 0, 0, 0,
+      255, 0, 0, 255,
+      0, 0, 0, 0,
+      255, 0, 0, 255,
+    ]),
+  }, {
+    ...createDefaultTraceSettings(),
+    palette: ['#22c55e'],
+  });
+
+  assert.match(markup, /opacity="0"/);
+  assert.doesNotMatch(markup, /rgb\(34,197,94\)/);
 });

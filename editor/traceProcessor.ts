@@ -6,17 +6,10 @@ const MAX_TRACE_EDGE = 1_280;
 
 const round = (value: number) => Number(value.toFixed(2));
 
-const hexToPaletteColor = (color: string) => ({
-  r: Number.parseInt(color.slice(1, 3), 16),
-  g: Number.parseInt(color.slice(3, 5), 16),
-  b: Number.parseInt(color.slice(5, 7), 16),
-  a: 255,
-});
-
 export const mapTraceOptions = (value: TraceSettings): ImageTracerOptions => {
   const settings = normalizeTraceSettings(value);
   const threshold = round(10 - settings.detail * 0.099);
-  const options: ImageTracerOptions = {
+  return {
     numberofcolors: settings.colors,
     ltres: threshold,
     qtres: threshold,
@@ -27,10 +20,6 @@ export const mapTraceOptions = (value: TraceSettings): ImageTracerOptions => {
     strokewidth: 1,
     desc: false,
   };
-  if (settings.palette.length > 0) {
-    options.pal = settings.palette.map(hexToPaletteColor);
-  }
-  return options;
 };
 
 export const traceRgbaFrame = (

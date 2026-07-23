@@ -61,7 +61,7 @@ test('recolors first-appearance fills without changing geometry or caller state'
     '<svg viewBox="0 0 10 10">' +
       '<path d="M0 0 L1 1 Z" fill="#ff0000" stroke="#ff0000"/>' +
       '<path d="M2 2 L3 3 Z" fill="#00ff00"/>' +
-      '<path d="M4 4 L5 5 Z" fill="#ff0000"/>' +
+      '<path d="M4 4 L5 5 Z" fill="#ff0000" opacity="0"/>' +
     '</svg>',
     xmlPlatform,
   );
@@ -71,5 +71,6 @@ test('recolors first-appearance fills without changing geometry or caller state'
   assert.deepEqual(recolored.paths.map(({ d }) => d), document.paths.map(({ d }) => d));
   assert.deepEqual(recolored.paths.map(({ fill }) => fill), ['#112233', '#112233', '#112233']);
   assert.equal(recolored.paths[0].stroke, '#112233');
+  assert.equal(recolored.paths[2].opacity, 0);
   assert.deepEqual(document, original);
 });

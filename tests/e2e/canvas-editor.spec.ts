@@ -1,9 +1,15 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const artifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'task-7', name);
 const phase2aArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2a', name);
 const phase2bArtifactPath = (name: string) => path.join(process.cwd(), 'test-results', 'phase-2b', name);
+const phase2cArtifactPath = (name: string) => {
+  const directory = path.join(process.cwd(), 'test-results', 'phase-2c');
+  mkdirSync(directory, { recursive: true });
+  return path.join(directory, name);
+};
 
 type LookRecipeSnapshot = Record<string, string | number>;
 
@@ -375,6 +381,70 @@ const uploadTransparentFixture = async (
   });
 };
 
+const createPhase2CFixture = async (page: Page, size: number): Promise<Buffer> => {
+  const bytes = await page.evaluate(async (fixtureSize) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = fixtureSize;
+    canvas.height = fixtureSize;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+
+    context.fillStyle = '#e8dfd0';
+    context.fillRect(0, 0, fixtureSize, fixtureSize);
+    for (let x = 0; x < fixtureSize; x += 16) {
+      context.fillStyle = x % 32 === 0 ? '#e5dccd' : '#ebe2d3';
+      context.fillRect(x, 0, 16, 5);
+    }
+
+    context.fillStyle = '#164e63';
+    context.fillRect(
+      Math.round(fixtureSize * 0.2),
+      Math.round(fixtureSize * 0.17),
+      Math.round(fixtureSize * 0.6),
+      Math.round(fixtureSize * 0.66),
+    );
+    context.fillRect(
+      Math.round(fixtureSize * 0.16),
+      Math.round(fixtureSize * 0.44),
+      Math.round(fixtureSize * 0.68),
+      Math.round(fixtureSize * 0.18),
+    );
+    context.fillStyle = '#e11d48';
+    context.fillRect(
+      Math.round(fixtureSize * 0.32),
+      Math.round(fixtureSize * 0.29),
+      Math.round(fixtureSize * 0.36),
+      Math.round(fixtureSize * 0.42),
+    );
+
+    context.fillStyle = '#e8dfd0';
+    context.fillRect(
+      Math.round(fixtureSize * 0.47),
+      Math.round(fixtureSize * 0.43),
+      Math.round(fixtureSize * 0.06),
+      Math.round(fixtureSize * 0.06),
+    );
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => result ? resolve(result) : reject(new Error('Phase 2C fixture failed.')),
+        'image/png',
+      );
+    });
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  }, size);
+  return Buffer.from(bytes);
+};
+
+const uploadPhase2CFixture = async (page: Page, size: number, name: string) => {
+  const buffer = await createPhase2CFixture(page, size);
+  await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer,
+  });
+};
+
 const uploadLayerFixture = async (page: Page, width: number, height: number, name: string) => {
   const buffer = await createPngFixture(page, width, height);
   await page.locator('input[type="file"][aria-label="Add layer image file"]').setInputFiles({
@@ -412,6 +482,22 @@ const expectCanvasPainted = async (canvas: Locator) => {
     }
     return colors.size;
   })).toBeGreaterThanOrEqual(4);
+};
+
+const expectCanvasNonblank = async (canvas: Locator) => {
+  await expect.poll(async () => canvas.evaluate((element) => {
+    const target = element as HTMLCanvasElement;
+    const context = target.getContext('2d');
+    if (!context || target.width === 0 || target.height === 0) return 0;
+    const pixels = context.getImageData(0, 0, target.width, target.height).data;
+    const colors = new Set<string>();
+    const step = Math.max(4, Math.floor((target.width * target.height) / 400));
+    for (let pixel = 0; pixel < pixels.length; pixel += step * 4) {
+      colors.add(`${pixels[pixel]}:${pixels[pixel + 1]}:${pixels[pixel + 2]}:${pixels[pixel + 3]}`);
+      if (colors.size >= 2) break;
+    }
+    return colors.size;
+  })).toBeGreaterThanOrEqual(2);
 };
 
 const readPersistedEditorState = async (page: Page, projectName: string) => page.evaluate((name) => (
@@ -573,6 +659,29 @@ interface PersistedWorkspaceSnapshot {
   assets: PersistedAssetSnapshot[];
 }
 
+interface PersistedPhase2CWorkspaceSnapshot {
+  projectId: string;
+  sourceAssetId: string;
+  variation: {
+    id: string;
+    name: string;
+    selectedLayerId: string;
+    layers: Array<Record<string, any>>;
+  };
+  assets: Array<{
+    id: string;
+    role: 'prepared-image' | 'cleanup-corrections' | 'trace-svg' | null;
+    mimeType: string;
+    blobDigest: string;
+    text: string | null;
+    preparedSamples: {
+      cornerAlpha: number;
+      enclosedAlpha: number;
+      foregroundAlpha: number;
+    } | null;
+  }>;
+}
+
 const readPersistedComposition = async (page: Page, projectName: string) => page.evaluate((name) => (
   new Promise<PersistedComposition | null>((resolve, reject) => {
     const openRequest = indexedDB.open('inkmaster-studio');
@@ -701,6 +810,81 @@ const readPersistedWorkspace = async (page: Page, projectName: string) => page.e
   } satisfies PersistedWorkspaceSnapshot;
 }, projectName);
 
+const readPersistedPhase2CWorkspace = async (
+  page: Page,
+  projectName: string,
+) => page.evaluate(async (name) => {
+  const records = await new Promise<{ projects: any[]; assets: any[] }>((resolve, reject) => {
+    const openRequest = indexedDB.open('inkmaster-studio');
+    openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+    openRequest.onsuccess = () => {
+      const database = openRequest.result;
+      const transaction = database.transaction(['editor-projects', 'editor-assets']);
+      const projectsRequest = transaction.objectStore('editor-projects').getAll();
+      const assetsRequest = transaction.objectStore('editor-assets').getAll();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not read editor workspace.'));
+      transaction.oncomplete = () => {
+        database.close();
+        resolve({ projects: projectsRequest.result, assets: assetsRequest.result });
+      };
+    };
+  });
+  const project = records.projects.find((candidate) => candidate.name === name);
+  const variation = project?.variations.find(
+    (candidate: { id: string }) => candidate.id === project.activeVariationId,
+  );
+  if (!project || !variation) return null;
+
+  const assets = await Promise.all(records.assets
+    .filter((asset) => asset.projectId === project.id)
+    .map(async (asset) => {
+      const bytes = new Uint8Array(await asset.blob.arrayBuffer());
+      const digestBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      let preparedSamples = null;
+      if (asset.role === 'prepared-image') {
+        const bitmap = await createImageBitmap(asset.blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Could not inspect prepared pixels.');
+        context.drawImage(bitmap, 0, 0);
+        const alphaAt = (x: number, y: number) =>
+          context.getImageData(
+            Math.max(0, Math.min(bitmap.width - 1, Math.round(x))),
+            Math.max(0, Math.min(bitmap.height - 1, Math.round(y))),
+            1,
+            1,
+          ).data[3];
+        preparedSamples = {
+          cornerAlpha: alphaAt(1, 1),
+          enclosedAlpha: alphaAt(bitmap.width * 0.5, bitmap.height * 0.46),
+          foregroundAlpha: alphaAt(bitmap.width * 0.5, bitmap.height * 0.65),
+        };
+        bitmap.close();
+      }
+      return {
+        id: asset.id,
+        role: asset.role ?? null,
+        mimeType: asset.mimeType,
+        blobDigest: [...digestBytes].map(
+          (byte) => byte.toString(16).padStart(2, '0'),
+        ).join(''),
+        text: asset.role === 'cleanup-corrections' || asset.role === 'trace-svg'
+          ? new TextDecoder().decode(bytes)
+          : null,
+        preparedSamples,
+      };
+    }));
+
+  return {
+    projectId: project.id,
+    sourceAssetId: project.sourceAssetId,
+    variation: structuredClone(variation),
+    assets,
+  } satisfies PersistedPhase2CWorkspaceSnapshot;
+}, projectName);
+
 const expectPersistedImageAssets = (
   snapshot: PersistedWorkspaceSnapshot,
   expected: Record<string, { width: number; height: number }>,
@@ -738,6 +922,44 @@ const setLookRange = async (page: Page, label: string, value: number) => {
   await range.blur();
   await expect(range).toHaveValue(String(value));
 };
+
+const setEditorRange = async (page: Page, label: string, value: number) => {
+  const range = page.getByLabel(label, { exact: true });
+  await expect(range).toBeEnabled();
+  await range.fill(String(value));
+  await range.blur();
+  await expect(range).toHaveValue(String(value));
+  await expect(range).toBeEnabled();
+};
+
+const sourcePointOnCanvas = async (
+  canvas: Locator,
+  sourceX: number,
+  sourceY: number,
+) => {
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Canvas bounds are unavailable.');
+  const edge = Math.min(bounds.width, bounds.height);
+  const designLeft = bounds.x + (bounds.width - edge) / 2;
+  const designTop = bounds.y + (bounds.height - edge) / 2;
+  const fittedEdge = edge * 0.904;
+  return {
+    x: designLeft + edge * 0.048 + fittedEdge * sourceX,
+    y: designTop + edge * 0.048 + fittedEdge * sourceY,
+  };
+};
+
+const canonicalDragValue = (
+  origin: number,
+  delta: number,
+  canvas: { width: number; height: number },
+) => Number((origin + delta / Math.min(canvas.width, canvas.height)).toFixed(6));
+
+const expectedCanonicalDragValue = (
+  origin: number,
+  delta: number,
+  canvas: { width: number; height: number },
+) => String(Number(canonicalDragValue(origin, delta, canvas).toFixed(2)));
 
 const setLookColor = async (page: Page, label: string, value: string) => {
   const input = page.getByLabel(label, { exact: true });
@@ -825,16 +1047,20 @@ test('composes ordered image and text layers with persistence on desktop', async
   await page.mouse.down();
   await page.mouse.move(center.x + canvasBox.width * 0.1, center.y - canvasBox.height * 0.08);
   await page.mouse.up();
+  const expectedStoredX = canonicalDragValue(0.5, canvasBox.width * 0.1, canvasBox);
+  const expectedStoredY = canonicalDragValue(0.5, -canvasBox.height * 0.08, canvasBox);
+  const expectedDragX = expectedCanonicalDragValue(0.5, canvasBox.width * 0.1, canvasBox);
+  const expectedDragY = expectedCanonicalDragValue(0.5, -canvasBox.height * 0.08, canvasBox);
   await expect(canvas).toHaveAttribute('data-selected-layer-id', duplicateLayerId!);
-  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
-  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue(expectedDragX);
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue(expectedDragY);
 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.5');
   await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.5');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
-  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
-  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue(expectedDragX);
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue(expectedDragY);
 
   const expectedLayerNames = [
     'phase-2a-base.png',
@@ -859,7 +1085,7 @@ test('composes ordered image and text layers with persistence on desktop', async
     letterSpacing: 3,
     outlineWidth: 3,
     outlineColor: '#f8fafc',
-    transform: { x: 0.6, y: 0.42 },
+    transform: { x: expectedStoredX, y: expectedStoredY },
   });
   await expectCanvasPainted(canvas);
   const canvasBeforeReload = await readCanvasPixels(canvas);
@@ -885,8 +1111,8 @@ test('composes ordered image and text layers with persistence on desktop', async
   await expect(page.getByLabel('Content', { exact: true })).toHaveValue('INK\nIN ORDER');
   await expect(page.getByLabel('Font', { exact: true })).toHaveValue('Georgia');
   await expect(page.getByLabel('Size', { exact: true })).toHaveValue('88');
-  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
-  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('0.42');
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue(expectedDragX);
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue(expectedDragY);
   await expectCanvasPainted(canvas);
   await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
   const workspaceAfterReopen = await readPersistedWorkspace(page, 'phase-2a-base');
@@ -1196,8 +1422,12 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4);
     await page.mouse.up();
-    await expect(page.getByLabel('X position')).toHaveValue('0.6');
-    await expect(page.getByLabel('Y position')).toHaveValue('0.4');
+    await expect(page.getByLabel('X position')).toHaveValue(
+      expectedCanonicalDragValue(0.5, box.width * 0.1, box),
+    );
+    await expect(page.getByLabel('Y position')).toHaveValue(
+      expectedCanonicalDragValue(0.5, -box.height * 0.1, box),
+    );
   }
 });
 
@@ -1324,7 +1554,9 @@ test('edits text layers and gates image tools across selection fallback paths', 
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await expect(crop).toBeDisabled();
   await expect(adjust).toBeDisabled();
-  await expect(crop).toHaveAccessibleDescription('Crop and Adjust are available only for image layers.');
+  await expect(crop).toHaveAccessibleDescription(
+    'Crop, Adjust, and Remove background are available only for image layers.',
+  );
   await expect(page.getByRole('heading', { name: 'Text', exact: true })).toBeVisible();
 
   await page.getByLabel('Content', { exact: true }).fill('First line\nSecond line');
@@ -1750,7 +1982,11 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
   await page.getByLabel('Strength range', { exact: true }).fill('75');
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await expect.poll(async () => (await getLookWorkerHarness(page)).active).toBe(1);
+  await expect.poll(async () => {
+    const snapshot = await getLookWorkerHarness(page);
+    return snapshot.active >= 3 &&
+      snapshot.active === snapshot.created - snapshot.terminated;
+  }).toBe(true);
 
   await page.goto('/privacy');
   await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
@@ -1778,8 +2014,12 @@ test('@task5-review preserves direct canvas drag geometry with a processed Look'
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4);
   await page.mouse.up();
-  await expect(page.getByLabel('X position')).toHaveValue('0.6');
-  await expect(page.getByLabel('Y position')).toHaveValue('0.4');
+  await expect(page.getByLabel('X position')).toHaveValue(
+    expectedCanonicalDragValue(0.5, box.width * 0.1, box),
+  );
+  await expect(page.getByLabel('Y position')).toHaveValue(
+    expectedCanonicalDragValue(0.5, -box.height * 0.1, box),
+  );
 });
 
 test('compares Looks across variations', async ({ page }) => {
@@ -2104,7 +2344,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const projectBeforeReload = await readPersistedPhase2BProject(page, projectName);
   const projectBytesBeforeReload = await readPersistedProjectBytes(page, projectName);
   expect(projectBeforeReload).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: projectName,
     sourceMetadata: { name: `${projectName}.png`, mimeType: 'image/png', width: 1200, height: 900 },
     productVariants: [],
@@ -2428,4 +2668,404 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeRetry);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
+});
+
+test('@phase2c-acceptance prepares, traces, persists, compares, and exports one owner design', async ({ page }) => {
+  test.setTimeout(180_000);
+  const projectName = 'phase-2c-owner';
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await uploadPhase2CFixture(page, 320, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+
+  await expect.poll(
+    () => readPersistedPhase2CWorkspace(page, projectName),
+  ).not.toBeNull();
+  const firstSnapshot = await readPersistedPhase2CWorkspace(page, projectName);
+  if (!firstSnapshot) throw new Error('Initial Phase 2C workspace was not persisted.');
+  const sourceBefore = firstSnapshot.assets.find(({ id }) => id === firstSnapshot.sourceAssetId);
+  expect(sourceBefore).toMatchObject({
+    role: null,
+    mimeType: 'image/png',
+  });
+
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
+  await page.getByLabel('Enable background removal', { exact: true }).check();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.backgroundRemoval?.preparedAssetId ?? null;
+  }).not.toBeNull();
+
+  await page.getByRole('button', { name: 'Pick color', exact: true }).click();
+  const pickedPoint = await sourcePointOnCanvas(canvas, 0.08, 0.08);
+  await page.mouse.click(pickedPoint.x, pickedPoint.y);
+  await expect(page.getByLabel('Tolerance', { exact: true })).toBeEnabled();
+  await setEditorRange(page, 'Tolerance', 31);
+  await setEditorRange(page, 'Edge feather', 2);
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return {
+      enabled: image?.backgroundRemoval?.enabled,
+      mode: image?.backgroundRemoval?.mode,
+      picked: Boolean(image?.backgroundRemoval?.pickedPoint),
+      tolerance: image?.backgroundRemoval?.tolerance,
+      feather: image?.backgroundRemoval?.edgeFeather,
+      prepared: Boolean(image?.backgroundRemoval?.preparedAssetId),
+    };
+  }).toEqual({
+    enabled: true,
+    mode: 'picked',
+    picked: true,
+    tolerance: 31,
+    feather: 2,
+    prepared: true,
+  });
+
+  await page.getByRole('button', { name: 'Erase background', exact: true }).click();
+  const correctionStart = await sourcePointOnCanvas(canvas, 0.24, 0.55);
+  const correctionEnd = await sourcePointOnCanvas(canvas, 0.3, 0.55);
+  await page.mouse.move(correctionStart.x, correctionStart.y);
+  await page.mouse.down();
+  await page.mouse.move(correctionEnd.x, correctionEnd.y);
+  await page.mouse.up();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    const correction = workspace?.assets.find(
+      ({ id }) => id === image?.backgroundRemoval?.correctionAssetId,
+    );
+    return correction?.text
+      ? JSON.parse(correction.text).strokes.map(({ mode }: { mode: string }) => mode)
+      : [];
+  }).toEqual(['erase']);
+
+  await page.getByRole('button', { name: 'Restore background', exact: true }).click();
+  await page.mouse.move(correctionStart.x, correctionStart.y);
+  await page.mouse.down();
+  await page.mouse.move(correctionEnd.x, correctionEnd.y);
+  await page.mouse.up();
+  const correctionModes = async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    const correction = workspace?.assets.find(
+      ({ id }) => id === image?.backgroundRemoval?.correctionAssetId,
+    );
+    return correction?.text
+      ? JSON.parse(correction.text).strokes.map(({ mode }: { mode: string }) => mode)
+      : [];
+  };
+  await expect.poll(correctionModes).toEqual(['erase', 'restore']);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(correctionModes).toEqual(['erase']);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(correctionModes).toEqual(['erase', 'restore']);
+
+  const preparedWorkspace = await readPersistedPhase2CWorkspace(page, projectName);
+  if (!preparedWorkspace) throw new Error('Prepared Phase 2C workspace is unavailable.');
+  const preparedImage = preparedWorkspace.variation.layers.find(({ type }) => type === 'image');
+  const preparedAsset = preparedWorkspace.assets.find(
+    ({ id }) => id === preparedImage?.backgroundRemoval?.preparedAssetId,
+  );
+  expect(preparedAsset).toMatchObject({
+    role: 'prepared-image',
+    mimeType: 'image/png',
+  });
+  expect(preparedAsset?.preparedSamples).toEqual({
+    cornerAlpha: 0,
+    enclosedAlpha: 255,
+    foregroundAlpha: 255,
+  });
+
+  await page.getByRole('button', { name: 'Trace', exact: true }).click();
+  await page.getByRole('button', { name: 'Trace Image', exact: true }).click();
+  await expect(page.getByText('Trace is current.', { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    return workspace?.variation.layers.map(({ type, visible }) => ({ type, visible }));
+  }).toEqual([
+    { type: 'image', visible: false },
+    { type: 'trace', visible: true },
+  ]);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    return workspace?.variation.layers.map(({ type, visible }) => ({ type, visible }));
+  }).toEqual([{ type: 'image', visible: true }]);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    return workspace?.variation.layers.map(({ type, visible }) => ({ type, visible }));
+  }).toEqual([
+    { type: 'image', visible: false },
+    { type: 'trace', visible: true },
+  ]);
+
+  await page.getByRole('button', {
+    name: `Select layer ${projectName}.png trace`,
+    exact: true,
+  }).click();
+  await setEditorRange(page, 'Detail', 72);
+  await setEditorRange(page, 'Smoothing', 48);
+  await page.getByRole('button', { name: 'Add palette color', exact: true }).click();
+  await page.getByLabel('Palette color 1', { exact: true }).fill('#22c55e');
+  await page.getByLabel('Palette color 1', { exact: true }).blur();
+  await page.getByRole('button', { name: 'Update Trace', exact: true }).click();
+  await expect(page.getByText('Trace is current.', { exact: true })).toBeVisible();
+  const traceTransparencyEvidence = await canvas.evaluate((element) => {
+    const target = element as HTMLCanvasElement;
+    const context = target.getContext('2d');
+    if (!context) throw new Error('Design canvas is unavailable.');
+    const bounds = target.getBoundingClientRect();
+    const edge = Math.min(bounds.width, bounds.height);
+    const designLeft = (bounds.width - edge) / 2;
+    const designTop = (bounds.height - edge) / 2;
+    const fittedEdge = edge * 0.904;
+    const read = (cssX: number, cssY: number) => {
+      const x = Math.max(0, Math.min(
+        target.width - 1,
+        Math.round(cssX * target.width / bounds.width),
+      ));
+      const y = Math.max(0, Math.min(
+        target.height - 1,
+        Math.round(cssY * target.height / bounds.height),
+      ));
+      return [...context.getImageData(x, y, 1, 1).data];
+    };
+    return {
+      canvasBackground: read(2, 2),
+      removedBackground: read(
+        designLeft + edge * 0.048 + fittedEdge * 0.08,
+        designTop + edge * 0.048 + fittedEdge * 0.08,
+      ),
+      tracedForeground: read(
+        designLeft + edge * 0.048 + fittedEdge * 0.5,
+        designTop + edge * 0.048 + fittedEdge * 0.65,
+      ),
+    };
+  });
+  expect(traceTransparencyEvidence.removedBackground)
+    .toEqual(traceTransparencyEvidence.canvasBackground);
+  expect(traceTransparencyEvidence.tracedForeground)
+    .not.toEqual(traceTransparencyEvidence.canvasBackground);
+
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await page.getByLabel('Content', { exact: true }).fill('OWNER MASTER');
+  await page.getByLabel('Content', { exact: true }).blur();
+  await page.getByRole('button', {
+    name: `Select layer ${projectName}.png trace`,
+    exact: true,
+  }).click();
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByLabel('X position', { exact: true }).fill('0.58');
+  await page.getByLabel('X position', { exact: true }).blur();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.58');
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const trace = workspace?.variation.layers.find(({ type }) => type === 'trace');
+    return {
+      x: trace?.transform?.x,
+      detail: trace?.settings?.detail,
+      smoothing: trace?.settings?.smoothing,
+      palette: trace?.settings?.palette,
+      text: workspace?.variation.layers.find(({ type }) => type === 'text')?.text,
+    };
+  }).toEqual({
+    x: 0.58,
+    detail: 72,
+    smoothing: 48,
+    palette: ['#22c55e'],
+    text: 'OWNER MASTER',
+  });
+
+  const beforeReload = await readPersistedPhase2CWorkspace(page, projectName);
+  if (!beforeReload) throw new Error('Phase 2C workspace was not saved before reload.');
+  expect(beforeReload.variation.layers.find(({ type }) => type === 'trace')).toMatchObject({
+    transform: { x: 0.58 },
+    settings: {
+      detail: 72,
+      smoothing: 48,
+      palette: ['#22c55e'],
+    },
+  });
+  expect(beforeReload.assets.some(({ role, mimeType }) =>
+    role === 'cleanup-corrections' &&
+    mimeType === 'application/vnd.inkmaster.cleanup+json')).toBe(true);
+  expect(beforeReload.assets.some(({ role, mimeType }) =>
+    role === 'trace-svg' && mimeType === 'image/svg+xml')).toBe(true);
+  const canvasBeforeReload = await readCanvasPixels(canvas);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await expect(page.getByLabel('Project name', { exact: true })).toHaveValue(projectName);
+  await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
+  const afterReload = await readPersistedPhase2CWorkspace(page, projectName);
+  expect(afterReload?.variation).toEqual(beforeReload.variation);
+  expect(afterReload?.assets.find(({ id }) => id === afterReload.sourceAssetId)?.blobDigest)
+    .toBe(sourceBefore?.blobDigest);
+
+  await page.getByRole('button', {
+    name: `Select layer ${projectName}.png trace`,
+    exact: true,
+  }).click();
+  await page.getByRole('button', { name: 'Trace', exact: true }).click();
+  await page.screenshot({
+    path: phase2cArtifactPath('desktop-image-prep-trace-1440x900.png'),
+    animations: 'disabled',
+  });
+
+  const desktopDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click();
+  const desktopDownload = await desktopDownloadPromise;
+  const desktopDownloadPath = await desktopDownload.path();
+  if (!desktopDownloadPath) throw new Error('Desktop SVG download is unavailable.');
+  const desktopSvg = readFileSync(desktopDownloadPath, 'utf8');
+  const svgEvidence = await page.evaluate((markup) => {
+    const document = new DOMParser().parseFromString(markup, 'image/svg+xml');
+    const names = [...document.querySelectorAll('*')].map((element) => element.localName);
+    return {
+      viewBox: document.documentElement.getAttribute('viewBox'),
+      paths: document.querySelectorAll('path').length,
+      texts: document.querySelectorAll('text').length,
+      images: document.querySelectorAll('image').length,
+      unsafe: names.filter((name) => [
+        'script', 'style', 'foreignObject', 'animate', 'animateTransform',
+      ].includes(name)).length,
+      parserErrors: document.querySelectorAll('parsererror').length,
+    };
+  }, desktopSvg);
+  expect(svgEvidence).toEqual({
+    viewBox: '0 0 1000 1000',
+    paths: expect.any(Number),
+    texts: 1,
+    images: 0,
+    unsafe: 0,
+    parserErrors: 0,
+  });
+  expect(svgEvidence.paths).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  const compareBoard = page.getByRole('region', { name: 'Compare Board', exact: true });
+  await expect(compareBoard).toBeVisible();
+  const comparePreviews = compareBoard.locator('canvas[data-look-preview="true"]');
+  await expect(comparePreviews).toHaveCount(2);
+  await expectCanvasNonblank(comparePreviews.nth(0));
+  await expectCanvasNonblank(comparePreviews.nth(1));
+  await compareBoard.getByRole('button', { name: 'Close Compare', exact: true }).click();
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original' });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Trace', exact: true }).click();
+  await expect(page.getByText('Trace is current.', { exact: true })).toBeVisible();
+  const mobileLayout = await page.evaluate(() => {
+    const bounds = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const canvas = document.querySelector('canvas[aria-label="Design canvas"]');
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!canvas || !inspector || !toolbar) throw new Error('Mobile editor layout is incomplete.');
+    const canvasBounds = bounds(canvas);
+    const designEdge = Math.min(canvasBounds.width, canvasBounds.height);
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      canvas: canvasBounds,
+      inspector: bounds(inspector),
+      toolbar: bounds(toolbar),
+      designFrame: { width: designEdge, height: designEdge },
+    };
+  });
+  const assertContained = (
+    rect: { top: number; bottom: number; left: number; right: number; width: number; height: number },
+    viewport: { width: number; height: number },
+    name: string,
+  ) => {
+    expect(rect.width, `${name} width`).toBeGreaterThan(0);
+    expect(rect.height, `${name} height`).toBeGreaterThan(0);
+    expect(rect.left, `${name} left`).toBeGreaterThanOrEqual(0);
+    expect(rect.top, `${name} top`).toBeGreaterThanOrEqual(0);
+    expect(rect.right, `${name} right`).toBeLessThanOrEqual(viewport.width);
+    expect(rect.bottom, `${name} bottom`).toBeLessThanOrEqual(viewport.height);
+  };
+  expect(mobileLayout.documentOverflows).toBe(false);
+  assertContained(mobileLayout.canvas, mobileLayout.viewport, 'canvas');
+  assertContained(mobileLayout.inspector, mobileLayout.viewport, 'inspector');
+  assertContained(mobileLayout.toolbar, mobileLayout.viewport, 'toolbar');
+  expect(mobileLayout.canvas.bottom).toBeLessThanOrEqual(mobileLayout.inspector.top + 1);
+  expect(mobileLayout.inspector.bottom).toBeLessThanOrEqual(mobileLayout.toolbar.top + 1);
+  expect(mobileLayout.designFrame.width).toBe(mobileLayout.designFrame.height);
+  await page.screenshot({
+    path: phase2cArtifactPath('mobile-image-prep-trace-390x844.png'),
+    animations: 'disabled',
+    fullPage: true,
+  });
+
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exportDialog = page.getByRole('dialog');
+  await expect(exportDialog).toBeVisible();
+  const exportBounds = await exportDialog.boundingBox();
+  expect(exportBounds).not.toBeNull();
+  expect(exportBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(exportBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(exportBounds!.x + exportBounds!.width).toBeLessThanOrEqual(390);
+  expect(exportBounds!.y + exportBounds!.height).toBeLessThanOrEqual(844);
+  const mobileDownloadPromise = page.waitForEvent('download');
+  await exportDialog.getByRole('button', { name: 'Download SVG', exact: true }).click();
+  const mobileDownload = await mobileDownloadPromise;
+  const mobileDownloadPath = await mobileDownload.path();
+  if (!mobileDownloadPath) throw new Error('Mobile SVG download is unavailable.');
+  expect(readFileSync(mobileDownloadPath, 'utf8')).toBe(desktopSvg);
+
+  await page.getByRole('button', { name: 'Trace', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore source', exact: true }).click();
+  await page.getByRole('button', { name: 'Layers', exact: true }).click();
+  const mobileLayers = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
+  await mobileLayers.getByRole('button', {
+    name: `Select layer ${projectName}.png`,
+    exact: true,
+  }).click();
+  await mobileLayers.getByRole('button', { name: 'Close layers', exact: true }).click();
+  await expect(mobileLayers).toHaveCount(0);
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Erase background', exact: true }).click();
+  const brushPoint = await sourcePointOnCanvas(canvas, 0.3, 0.55);
+  await page.mouse.move(brushPoint.x, brushPoint.y);
+  await expect.poll(() => canvas.evaluate((element) => {
+    const cursor = element.nextElementSibling;
+    return cursor instanceof HTMLElement && cursor.getBoundingClientRect().width > 0;
+  })).toBe(true);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    return workspace?.variation.layers
+      .filter(({ type }) => type === 'image' || type === 'trace')
+      .map(({ type, visible }) => ({ type, visible }));
+  }).toEqual([
+    { type: 'image', visible: false },
+    { type: 'trace', visible: true },
+  ]);
+
+  expect(browserErrors).toEqual([]);
 });
