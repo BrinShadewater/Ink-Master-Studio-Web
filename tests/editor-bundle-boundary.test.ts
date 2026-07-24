@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
-test('production editor entry and workers preserve Phase 3A owner-editor scope boundaries', () => {
+test('production editor entry and workers preserve Phase 3 owner-editor scope boundaries', () => {
   const assetsDirectory = path.join(process.cwd(), 'dist', 'assets');
   const entryDirectory = path.join(assetsDirectory, 'js');
   const entryFiles = readdirSync(entryDirectory).filter((file) => /^index-.*\.js$/.test(file));
@@ -12,8 +12,10 @@ test('production editor entry and workers preserve Phase 3A owner-editor scope b
   const workerFiles = readdirSync(assetsDirectory).filter((file) => /Worker-.*\.js$/.test(file));
   const traceWorkers = workerFiles.filter((file) => /^traceWorker-/.test(file));
   const backgroundWorkers = workerFiles.filter((file) => /^backgroundRemovalWorker-/.test(file));
+  const tshirtExportWorkers = workerFiles.filter((file) => /^tshirtExportWorker-/.test(file));
   assert.equal(traceWorkers.length, 1, 'Expected one trace worker chunk.');
   assert.equal(backgroundWorkers.length, 1, 'Expected one background-removal worker chunk.');
+  assert.equal(tshirtExportWorkers.length, 1, 'Expected one T-shirt export worker chunk.');
 
   const workerSources = workerFiles.map((file) => ({
     file,
