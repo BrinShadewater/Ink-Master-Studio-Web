@@ -1,4 +1,5 @@
 import { ArrowRight, Layers3, ScanLine, Shirt, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 
 export interface LandingPageProps {
   onOpenEditor: () => void;
@@ -49,6 +50,29 @@ const workflow = [
   [Shirt, 'Preview', 'Place it before production.'],
 ] as const;
 
+const garmentVariants = [
+  { id: 'black', label: 'Black', swatch: '#151515', image: '/mockups/mockup-black.png', imageClassName: 'mix-blend-multiply' },
+  { id: 'heather', label: 'Heather gray', swatch: '#6f7375', image: '/mockups/mockup-heather.png', imageClassName: 'mix-blend-multiply' },
+  { id: 'white', label: 'White', swatch: '#f2f5f4', image: '/mockups/mockup-heather.png', imageClassName: 'grayscale brightness-[1.9] contrast-[0.65]' },
+] as const;
+
+const GarmentColorPreview = () => {
+  const [selectedColor, setSelectedColor] = useState<(typeof garmentVariants)[number]['id']>('black');
+  const selected = garmentVariants.find((variant) => variant.id === selectedColor) ?? garmentVariants[0];
+
+  return <section className="mt-4 flex items-center gap-3 border-t border-[#1d5961]/75 pt-3" aria-label="Garment color preview">
+    <div className="grid h-16 w-14 shrink-0 place-items-center overflow-hidden bg-[#dfe8e7]">
+      <img src={selected.image} alt={`${selected.label} T-shirt`} className={`h-full w-full object-cover ${selected.imageClassName}`} />
+    </div>
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-[#d8fffc]">Garment color</p><span className="truncate text-xs text-[#8db0b4]">{selected.label}</span></div>
+      <div className="mt-2 flex items-center gap-2">
+        {garmentVariants.map((variant) => <button key={variant.id} type="button" className={`grid h-7 w-7 place-items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79f1ec] ${selectedColor === variant.id ? 'border-[#70eee7] ring-1 ring-[#70eee7]' : 'border-[#2c6971] hover:border-[#70eee7]'}`} aria-label={`Show ${variant.label} T-shirt`} title={variant.label} onClick={() => setSelectedColor(variant.id)}><span className="h-4 w-4 rounded-full border border-black/20" style={{ backgroundColor: variant.swatch }} /></button>)}
+      </div>
+    </div>
+  </section>;
+};
+
 export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
   <main className="min-h-dvh overflow-hidden bg-[#06171c] text-neutral-100">
     <LandingBackdrop />
@@ -95,6 +119,7 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
         <div className="pointer-events-none absolute -inset-x-10 top-[10%] h-px bg-[#3fd4d0]/80" />
         <img src="/landing-hero-siren.jpg" alt="Illustrated artwork of a sailor tied to a mast facing a data center across the sea" className="relative block aspect-[5/6] w-full object-cover object-center shadow-[0_28px_70px_rgba(0,0,0,0.5)]" />
         <p className="mt-3 text-center text-sm font-medium tracking-wide text-[#9ac9cb] md:text-base">I want to hear the siren's song</p>
+        <GarmentColorPreview />
       </div>
     </section>
 
