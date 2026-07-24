@@ -183,45 +183,50 @@ export const EditorTopBar = ({
 
   return (
     <header className="grid h-24 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:flex md:h-14 md:items-center md:gap-2 md:px-3">
-      <div className="col-start-1 row-start-1 min-w-0 self-center md:w-48 md:flex-none">
-        <label className="sr-only" htmlFor="editor-project-name">Project name</label>
-        <input
-          id="editor-project-name"
-          className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          value={projectNameState.draft}
-          aria-label="Project name"
-          spellCheck={false}
-          onChange={(event) => updateProjectNameState({ type: 'input', value: event.currentTarget.value })}
-          onBlur={commitProjectName}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              event.currentTarget.blur();
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              updateProjectNameState({ type: 'restore' });
-            }
-          }}
-        />
-        <div className="flex h-4 items-center gap-1 px-1 text-[10px] leading-none md:text-[11px]">
-          <span
-            className={saveStatus === 'error' ? 'text-red-400' : 'text-neutral-500'}
-            role="status"
-            aria-live="polite"
-          >
-            {saveStatusText[saveStatus]}
-          </span>
-          {saveStatus === 'error' ? (
-            <button
-              type="button"
-              className="-my-1 grid h-6 w-6 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-              aria-label="Retry save"
-              title="Retry save"
-              onClick={onRetrySave}
+      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 self-center md:w-64 md:flex-none">
+        <a href="/" aria-label="InkMaster Studio home" className="grid h-9 w-9 shrink-0 place-items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+          <img src="/logo/logo.png" alt="" className="h-8 w-8 object-contain" />
+        </a>
+        <div className="min-w-0 flex-1">
+          <label className="sr-only" htmlFor="editor-project-name">Project name</label>
+          <input
+            id="editor-project-name"
+            className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            value={projectNameState.draft}
+            aria-label="Project name"
+            spellCheck={false}
+            onChange={(event) => updateProjectNameState({ type: 'input', value: event.currentTarget.value })}
+            onBlur={commitProjectName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                updateProjectNameState({ type: 'restore' });
+              }
+            }}
+          />
+          <div className="flex h-4 items-center gap-1 px-1 text-[10px] leading-none md:text-[11px]">
+            <span
+              className={saveStatus === 'error' ? 'text-red-400' : 'text-neutral-500'}
+              role="status"
+              aria-live="polite"
             >
-              <RefreshCw aria-hidden="true" size={12} />
-            </button>
-          ) : null}
+              {saveStatusText[saveStatus]}
+            </span>
+            {saveStatus === 'error' ? (
+              <button
+                type="button"
+                className="-my-1 grid h-6 w-6 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                aria-label="Retry save"
+                title="Retry save"
+                onClick={onRetrySave}
+              >
+                <RefreshCw aria-hidden="true" size={12} />
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

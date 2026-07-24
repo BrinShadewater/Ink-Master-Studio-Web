@@ -141,7 +141,7 @@ const footerLinks = [
 ];
 
 export const getStaticRoute = (pathname: string): StaticRoute | null => {
-  if (pathname === '/') return null;
+  if (pathname === '/' || pathname === '/editor') return null;
   return routeByPath.get(pathname) ?? {
     id: 'not-found',
     path: pathname,

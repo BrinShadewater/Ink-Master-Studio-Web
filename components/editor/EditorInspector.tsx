@@ -150,7 +150,12 @@ const ImageInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
-        {tool === 'select' ? <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} /> : null}
+        {tool === 'select' ? (
+          <div className="grid gap-4">
+            {mode === 'advanced' ? <h3 className="text-xs font-semibold text-neutral-200">Precise placement</h3> : null}
+            <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} />
+          </div>
+        ) : null}
 
         {tool === 'crop' ? (
           (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
