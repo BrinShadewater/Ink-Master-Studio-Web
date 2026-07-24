@@ -3402,11 +3402,11 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   await uploadTransparentFixture(page, 640, 640, 'phase-3b-export.png');
   await page.getByRole('button', { name: 'Product', exact: true }).click();
   await page.getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'T-shirt PNG', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
   await expect(dialog).toContainText('Proof only');
-  await dialog.getByRole('button', { name: 'Generate PNG', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
   await expect(dialog.getByText('Proof ready', { exact: true })).toBeVisible({ timeout: 150_000 });
   await expect(dialog).toContainText('1500 x 1800 px');
   await expect(dialog).toContainText('10 x 12 in');

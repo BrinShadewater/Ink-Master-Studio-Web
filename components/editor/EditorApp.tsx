@@ -634,7 +634,7 @@ export const EditorApp = () => {
         dispatch={workspace.dispatch}
       />
 
-      {tool === 'product' && project && variation && product ? (
+      {project && variation && product ? (
         <ProductExportDialog open={exportOpen} projectName={project.name} variation={variation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
       ) : (
         <ExportMenu open={exportOpen} projectName={project?.name ?? 'Untitled design'} variation={variation} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />

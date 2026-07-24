@@ -231,7 +231,7 @@ test('mobile toolbar exposes a stable Layers command', () => {
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
 });
 
-test('top bar exposes SVG export as a project command', () => {
+test('top bar exposes export as a project command', () => {
   const enabled = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.doesNotMatch(enabled, /aria-label="Export"[^>]*disabled=""/);
   assert.match(enabled, /aria-label="Export"[\s\S]*?lucide-download/);

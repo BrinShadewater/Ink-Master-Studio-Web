@@ -21,7 +21,8 @@ test('Product export dialog presents the fixed production and proof PNG presets'
     returnFocusRef: createRef<HTMLButtonElement>(),
     onClose: () => undefined,
   }));
-  assert.match(markup, /T-shirt PNG/);
+  assert.match(markup, /Print-ready PNG/);
+  assert.match(markup, /Exporting a PNG keeps your cleaned raster artwork and transparency intact/);
   assert.match(markup, /Printify Full Front/);
   assert.match(markup, /4500 x 5400 px, 300 DPI, 15 x 18 in/);
   assert.match(markup, /Standard Tee/);
@@ -29,6 +30,6 @@ test('Product export dialog presents the fixed production and proof PNG presets'
   assert.match(markup, /Proof only/);
   assert.match(markup, /15 x 18 in/);
   assert.match(markup, /3000 x 3600 px, 300 DPI, 10 x 12 in/);
-  assert.match(markup, /Generate PNG/);
+  assert.match(markup, /Create PNG/);
   assert.match(markup, /role="radiogroup"/);
 });
