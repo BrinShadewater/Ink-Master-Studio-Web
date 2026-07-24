@@ -97,7 +97,7 @@ test('normalizes trace controls and fingerprints source plus settings', () => {
     palette: ['#ABC', 'bad', '#112233'],
   });
   assert.deepEqual(normalized, {
-    colors: 16,
+    colors: 32,
     detail: 0,
     smoothing: 46,
     blur: 5,

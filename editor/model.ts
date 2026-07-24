@@ -47,6 +47,15 @@ export interface LayerTransform {
   flipY: boolean;
 }
 
+export const CANVAS_SAFE_ZONE_TRANSFORM: LayerTransform = {
+  x: 0.5,
+  y: 0.5,
+  scale: 1,
+  rotation: 0,
+  flipX: false,
+  flipY: false,
+};
+
 export interface CropRect { x: number; y: number; width: number; height: number }
 export interface ImageAdjustments { brightness: number; contrast: number; saturation: number }
 
@@ -183,7 +192,7 @@ export const createTextLayer = (text = 'Text'): TextLayer => ({
   name: 'Text',
   visible: true,
   opacity: 1,
-  transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+  transform: { ...CANVAS_SAFE_ZONE_TRANSFORM },
   text: normalizeTextContent(text),
   fontFamily: 'Arial',
   fontSize: 48,
@@ -198,7 +207,7 @@ export const createEditorProject = (name: string, asset: EditorAsset): EditorPro
   const timestamp = Date.now();
   const layer: ImageLayer = {
     id: createEditorId('layer'), type: 'image', name: asset.name, assetId: asset.id, visible: true, opacity: 1,
-    transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0, flipX: false, flipY: false },
+    transform: { ...CANVAS_SAFE_ZONE_TRANSFORM },
     crop: { x: 0, y: 0, width: 1, height: 1 },
     adjustments: { brightness: 0, contrast: 0, saturation: 0 },
     backgroundRemoval: createDefaultBackgroundRemoval(),

@@ -238,10 +238,10 @@ test('top bar exposes SVG export as a project command', () => {
   assert.match(disabled, /aria-label="Export"[^>]*disabled=""/);
 });
 
-test('top bar exposes Easy and Advanced editor modes', () => {
+test('top bar defaults to Basic and exposes Advanced editor mode', () => {
   const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.match(markup, /aria-label="Editor mode"/);
-  assert.match(markup, /aria-checked="true"[^>]*>Easy/);
+  assert.match(markup, /aria-checked="true"[^>]*>Basic/);
   assert.match(markup, /aria-checked="false"[^>]*>Adv/);
 });
 
@@ -836,7 +836,10 @@ test('Looks inspector renders nine actual selected-state previews and complete c
     assert.match(markup, new RegExp(`data-look-id="${id}"`));
   }
   assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
-  assert.match(markup, />Strength</);
+  assert.match(markup, />Preset strength</);
+  assert.match(markup, />Creator presets</);
+  assert.match(markup, />Worn print texture and broken edges\.</);
+  assert.match(markup, /<label[^>]*>Distress</);
   assert.match(markup, /<summary[^>]*>More<\/summary>/);
   assert.match(markup, /aria-label="Reset Look"/);
   assert.match(markup, /aria-label="Reroll texture"/);
@@ -1133,7 +1136,7 @@ test('Looks inspector replaces layer-specific content for a selected text layer'
     dispatch: () => undefined,
   }));
 
-  assert.match(markup, /<h2[^>]*>Looks<\/h2>/);
+  assert.match(markup, /<h2[^>]*>Creator finish<\/h2>/);
   assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
   assert.doesNotMatch(markup, /<h2[^>]*>Text<\/h2>/);
 });
@@ -1181,6 +1184,31 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   for (const adjustment of ['brightness', 'contrast', 'saturation']) {
     assert.match(adjustmentsMarkup, new RegExp(`id="editor-${adjustment}"[^>]*min="-100"[^>]*max="100"[^>]*step="1"`));
   }
+});
+
+test('Basic image inspector keeps placement direct-manipulation-first', () => {
+  const source = createEditorAsset('project-basic-image-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Basic image inspector', source);
+  const layer = project.variations[0].layers[0];
+  assert.equal(layer.type, 'image');
+  const markup = renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer,
+    tool: 'select',
+    mode: 'easy',
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    dispatch: () => undefined,
+  }));
+  assert.doesNotMatch(markup, /editor-position-x|editor-position-y|editor-scale/);
+  assert.match(markup, /editor-rotation/);
+  assert.match(markup, /editor-opacity/);
 });
 
 test('project drawer closes only after the requested project opens successfully', async () => {

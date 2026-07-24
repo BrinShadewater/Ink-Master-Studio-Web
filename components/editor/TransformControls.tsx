@@ -93,9 +93,14 @@ export const NumberControl = ({ id, label, value, bounds, onChange, onEnd }: Num
 export interface TransformControlsProps {
   layer: DesignLayer;
   dispatch: (command: EditorCommand) => void;
+  showNumericPlacement?: boolean;
 }
 
-export const TransformControls = ({ layer, dispatch }: TransformControlsProps) => {
+export const TransformControls = ({
+  layer,
+  dispatch,
+  showNumericPlacement = true,
+}: TransformControlsProps) => {
   const endHistoryGroup = () => dispatch({ type: 'end-history-group' });
   const updateTransform = (
     transform: DesignLayer['transform'],
@@ -104,7 +109,7 @@ export const TransformControls = ({ layer, dispatch }: TransformControlsProps) =
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3">
+      {showNumericPlacement ? <div className="grid grid-cols-2 gap-3">
         <NumberControl
           id="editor-position-x"
           label="X position"
@@ -121,8 +126,8 @@ export const TransformControls = ({ layer, dispatch }: TransformControlsProps) =
           onChange={(value) => updateTransform({ ...layer.transform, y: value }, 'inspector-position-y')}
           onEnd={endHistoryGroup}
         />
-      </div>
-      <RangeControl
+      </div> : null}
+      {showNumericPlacement ? <RangeControl
         id="editor-scale"
         label="Scale"
         value={Math.round(layer.transform.scale * 100)}
@@ -130,7 +135,7 @@ export const TransformControls = ({ layer, dispatch }: TransformControlsProps) =
         bounds={controlBounds.scale}
         onChange={(value) => updateTransform({ ...layer.transform, scale: value / 100 }, 'inspector-scale')}
         onEnd={endHistoryGroup}
-      />
+      /> : null}
       <RangeControl
         id="editor-rotation"
         label="Rotation"

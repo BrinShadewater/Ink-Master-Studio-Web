@@ -102,10 +102,12 @@ const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium
 const ImageInspector = ({
   layer,
   tool,
+  mode,
   dispatch,
 }: {
   layer: ImageLayer;
   tool: EditorTool;
+  mode: 'easy' | 'advanced';
   dispatch: (command: EditorCommand) => void;
 }) => {
   const endHistoryGroup = () => dispatch({ type: 'end-history-group' });
@@ -148,7 +150,7 @@ const ImageInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
-        {tool === 'select' ? <TransformControls layer={layer} dispatch={dispatch} /> : null}
+        {tool === 'select' ? <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} /> : null}
 
         {tool === 'crop' ? (
           (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
@@ -299,7 +301,7 @@ export const EditorInspector = ({
             onDone={onBackgroundDone}
           />
         ) : (
-          <ImageInspector layer={layer} tool={tool} dispatch={dispatch} />
+          <ImageInspector layer={layer} tool={tool} mode={mode} dispatch={dispatch} />
         )
       ) : (
         <>
@@ -307,7 +309,7 @@ export const EditorInspector = ({
             <h2 className="text-sm font-semibold text-neutral-100">Transform</h2>
           </div>
           <div className="grid gap-5 p-4">
-            <TransformControls layer={layer} dispatch={dispatch} />
+            <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} />
           </div>
         </>
       )}

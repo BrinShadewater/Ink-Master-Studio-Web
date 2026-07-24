@@ -55,6 +55,18 @@ const lookLabels: Record<LookId, string> = {
   'distressed-print': 'Distressed Print',
 };
 
+const lookDescriptions: Record<LookId, string> = {
+  original: 'Keep the artwork unchanged.',
+  'clean-photo': 'Crisper color and edge clarity.',
+  'high-contrast': 'Stronger darks and highlights.',
+  monochrome: 'Single-color print treatment.',
+  duotone: 'Two-color ink conversion.',
+  posterized: 'Reduced tonal color blocks.',
+  'graphic-halftone': 'Dot-screen graphic texture.',
+  'vintage-ink': 'Faded, warm ink with grain.',
+  'distressed-print': 'Worn print texture and broken edges.',
+};
+
 type CandidateRecipes = Record<LookId, VariationLook>;
 type ControlBounds = { min: number; max: number; step: number };
 
@@ -227,6 +239,16 @@ export const LooksInspector = ({
   const updateLook = (patch: Partial<VariationLook>, historyGroup: string) => {
     setLook({ ...variation.look, ...patch } as VariationLook, historyGroup);
   };
+  const updateDistress = (wear: number) => {
+    if (variation.look.id === 'distressed-print') {
+      updateLook({ wear }, 'look-distress');
+      return;
+    }
+    setLook({
+      ...createDefaultLook('distressed-print', createLookSeed()),
+      wear,
+    }, 'look-distress');
+  };
   const numericControl = (
     id: string,
     label: string,
@@ -363,7 +385,7 @@ export const LooksInspector = ({
   return (
     <>
       <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-neutral-800 bg-neutral-900 px-4">
-        <h2 className="text-sm font-semibold text-neutral-100">Looks</h2>
+        <h2 className="text-sm font-semibold text-neutral-100">Creator finish</h2>
         <button
           type="button"
           className={commandButtonClass}
@@ -379,7 +401,12 @@ export const LooksInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
-        <div className="grid grid-cols-3 gap-2" aria-label="Look previews">
+        <div className="grid gap-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-xs font-semibold text-neutral-200">Creator presets</h3>
+            <p className="text-[11px] text-neutral-500">Choose a print direction</p>
+          </div>
+        <div className="grid grid-cols-2 gap-2" aria-label="Look previews">
           {LOOK_IDS.map((lookId) => {
             const selected = variation.look.id === lookId;
             const recipe = selected ? variation.look : candidatesRef.current![lookId];
@@ -420,15 +447,28 @@ export const LooksInspector = ({
                     }}
                   />
                 </span>
-                <span className="block min-h-8 break-words px-0.5">{lookLabels[lookId]}</span>
+                <span className="grid min-h-11 gap-0.5 px-0.5">
+                  <span className="font-medium text-neutral-200">{lookLabels[lookId]}</span>
+                  <span className="leading-3 text-neutral-500">{lookDescriptions[lookId]}</span>
+                </span>
               </button>
             );
           })}
         </div>
+        </div>
+
+        <NumericLookControl
+          id="editor-look-distress"
+          label="Distress"
+          value={variation.look.id === 'distressed-print' ? variation.look.wear : 0}
+          bounds={lookControlBounds.wear}
+          onChange={updateDistress}
+          onEnd={endHistoryGroup}
+        />
 
         <NumericLookControl
           id="editor-look-strength"
-          label="Strength"
+          label="Preset strength"
           value={variation.look.strength}
           bounds={lookControlBounds.strength}
           disabled={variation.look.id === 'original'}
