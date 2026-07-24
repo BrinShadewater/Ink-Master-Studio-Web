@@ -15,6 +15,11 @@ const phase3aArtifactPath = (name: string) => {
   mkdirSync(directory, { recursive: true });
   return path.join(directory, name);
 };
+const phase3bArtifactPath = (name: string) => {
+  const directory = path.join(process.cwd(), 'test-results', 'phase-3b');
+  mkdirSync(directory, { recursive: true });
+  return path.join(directory, name);
+};
 
 type LookRecipeSnapshot = Record<string, string | number>;
 
@@ -3387,4 +3392,37 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   expect(JSON.stringify(originalVariation?.layers)).toBe(originalLayerBytes);
   expect(final?.sourceDigest).toBe(initial.sourceDigest);
   expect(browserErrors).toEqual([]);
+});
+
+test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the product editor', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await uploadTransparentFixture(page, 640, 640, 'phase-3b-export.png');
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'T-shirt PNG', exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
+  await expect(dialog).toContainText('Proof only');
+  await dialog.getByRole('button', { name: 'Generate PNG', exact: true }).click();
+  await expect(dialog.getByText('Proof ready', { exact: true })).toBeVisible({ timeout: 150_000 });
+  await expect(dialog).toContainText('1500 x 1800 px');
+  await expect(dialog).toContainText('10 x 12 in');
+  await expect(dialog).toContainText('150 x 150 DPI');
+  await expect(dialog).toContainText('8-bit RGBA');
+  await expect(dialog).toContainText('Transparency');
+  await expect(dialog).toContainText('Proof only. Do not send this preset to production.');
+  const downloadPromise = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/-draft-proof\.png$/);
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error('The generated PNG download is unavailable.');
+  const content = readFileSync(downloadPath);
+  expect([...content.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  await page.screenshot({
+    path: phase3bArtifactPath('tshirt-png-receipt-1440x900.png'),
+    animations: 'disabled',
+  });
 });

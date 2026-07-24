@@ -119,5 +119,7 @@ if (scope) {
     writeResolution: writePngResolution,
     getPreset: getTShirtExportPreset,
   });
-  scope.addEventListener('message', (event) => { void handler(event.data, scope.postMessage); });
+  scope.addEventListener('message', (event) => {
+    void handler(event.data, (message, transfer) => scope.postMessage(message, transfer));
+  });
 }

@@ -27,6 +27,8 @@ test('Product export dialog presents the fixed production and proof PNG presets'
   assert.match(markup, /Standard Tee/);
   assert.match(markup, /Draft Proof/);
   assert.match(markup, /Proof only/);
+  assert.match(markup, /15 x 18 in/);
+  assert.match(markup, /3000 x 3600 px, 300 DPI, 10 x 12 in/);
   assert.match(markup, /Generate PNG/);
   assert.match(markup, /role="radiogroup"/);
 });

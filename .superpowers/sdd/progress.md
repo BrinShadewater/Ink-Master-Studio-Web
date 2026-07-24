@@ -67,3 +67,13 @@ Task 5: complete (direct photographic T-shirt placement canvas with fixed compos
 Task 6: complete (Product toolbar mode, 11-color inspector, numeric placement controls, Product/Compare/Layers mutual exclusion, responsive full-column inspector, autosave, and source-immutable reopen; 540-test Node/build gate and real-browser desktop/mobile QA passed).
 Task 7: complete (schema-5 browser typing, deterministic Phase 3A owner acceptance, pixel/source digest/layer-byte proof, reviewed desktop/mobile screenshots, tightened bundle and lifecycle boundary, 540 Node tests, and 27 Chromium E2E tests passed).
 Final review: complete (functional range `049af46..2820575`; no Critical or Important findings remain). Protected preview `dpl_HHWo3wbv4LF9gvkcRqYmjfydMVMX` is READY at runtime commit `2820575ff09eb1f9f7929a8801918d6c22d77a05`; authenticated `/` and `/privacy` returned HTTP 200 and unauthenticated `/` redirected to Vercel SSO.
+
+Phase 3B validated T-shirt PNG export (plan commit dc2c057)
+
+Execution location: current checkout on main (continuing the owner-approved Phase 3 workflow).
+Task 1: complete (commit 0d7f3ac, spec compliant and quality approved; 7 focused tests, typecheck, and diff check passed).
+Task 2: complete (commits 2e7deac..6f65f95, spec compliant and quality approved after PNG structure and receipt-authority hardening; 22 focused tests, typecheck, and diff check passed).
+Task 3: complete (commits 55d8b53..a7caa31, spec compliant and quality approved after dispatched-snapshot and async asset-capture authority fixes; 9 focused tests, typecheck, and diff check passed).
+Task 4: complete (commits 7c2fbf7..2e789b9, locally reviewed and approved after canonical-density and bounded large-source staging repairs; 42 focused renderer/Look/compositor/preview tests, typecheck, build, Pica alpha check, and diff check passed).
+Task 5: complete (commit 7211a29 with browser-worker integration verified by the Phase 3B Chromium acceptance flow; ordered progress, transferable PNG bytes, pHYs injection, and output canvas release covered).
+Task 6: complete (commit 9aaa251 plus follow-up integration repairs; product export dialog provides fixed presets, validated receipt, proof warning, exact download, and React effect-safe fingerprint invalidation).

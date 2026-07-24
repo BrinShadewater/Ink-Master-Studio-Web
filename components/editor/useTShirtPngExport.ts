@@ -26,6 +26,7 @@ export const useTShirtPngExport = (input: Input) => {
   const [state, setState] = useState<TShirtPngExportState>({ status: 'idle' });
   const generation = useRef(0);
   const url = useRef<string | null>(null);
+  const currentFingerprint = useRef<string | null>(null);
   const coordinator = useRef<TShirtExportCoordinator | null>(null);
   if (!coordinator.current) {
     coordinator.current = new TShirtExportCoordinator(createBrowserTShirtExportWorker, {
@@ -35,6 +36,8 @@ export const useTShirtPngExport = (input: Input) => {
   const fingerprint = useMemo(() => {
     try { return createTShirtExportFingerprint(input); } catch { return null; }
   }, [input]);
+  const latestFingerprint = useRef(fingerprint);
+  latestFingerprint.current = fingerprint;
   const clear = useCallback(() => {
     generation.current += 1;
     coordinator.current?.cancel();
@@ -43,11 +46,22 @@ export const useTShirtPngExport = (input: Input) => {
     setState({ status: 'idle' });
   }, []);
 
-  useEffect(() => clear, [clear]);
-  useEffect(() => { clear(); }, [fingerprint]);
+  useEffect(() => () => {
+    generation.current += 1;
+    coordinator.current?.cancel();
+    if (url.current) URL.revokeObjectURL(url.current);
+    url.current = null;
+  }, []);
+  useEffect(() => {
+    if (fingerprint !== latestFingerprint.current) return;
+    if (currentFingerprint.current === fingerprint) return;
+    currentFingerprint.current = fingerprint;
+    clear();
+  }, [clear, fingerprint]);
 
   const generate = useCallback(async () => {
     if (!fingerprint) return setState({ status: 'failed', message: 'Export artwork is incomplete.' });
+    currentFingerprint.current = fingerprint;
     const request = generation.current + 1;
     generation.current = request;
     setState({ status: 'capturing' });
