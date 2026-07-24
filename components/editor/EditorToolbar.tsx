@@ -25,6 +25,7 @@ export interface EditorToolbarProps {
   onToggleCompare?: () => void;
   compareButtonRef?: Ref<HTMLButtonElement>;
   activeToolButtonRef?: Ref<HTMLButtonElement>;
+  mode?: 'easy' | 'advanced';
 }
 
 const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
@@ -51,6 +52,7 @@ export const EditorToolbar = ({
   onToggleCompare,
   compareButtonRef,
   activeToolButtonRef,
+  mode = 'advanced',
 }: EditorToolbarProps) => (
   <nav
     className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
@@ -81,7 +83,7 @@ export const EditorToolbar = ({
         Product is available after importing artwork.
       </p>
     ) : null}
-    {tools.map(({ id, label, icon: Icon }) => {
+    {tools.filter(({ id }) => mode === 'advanced' || id !== 'looks').map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
       const productConflict = tool === 'product' &&
         id !== 'select' &&
@@ -126,7 +128,7 @@ export const EditorToolbar = ({
         </button>
       );
     })}
-    <button
+    {mode === 'advanced' ? <button
       ref={compareButtonRef}
       type="button"
       className={`${toolButtonClass} ${compareOpen ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
@@ -138,7 +140,7 @@ export const EditorToolbar = ({
       onClick={onToggleCompare}
     >
       <Columns2 aria-hidden="true" size={19} strokeWidth={1.8} />
-    </button>
+    </button> : null}
     <button
       ref={layersButtonRef}
       type="button"

@@ -2,7 +2,7 @@ import ImageTracer, { type ImageTracerOptions } from 'imagetracerjs';
 import type { RgbaFrame } from './backgroundRemovalProcessor';
 import { normalizeTraceSettings, type TraceSettings } from './traceModel';
 
-const MAX_TRACE_EDGE = 1_280;
+export const MAX_TRACE_EDGE = 1_280;
 
 const round = (value: number) => Number(value.toFixed(2));
 

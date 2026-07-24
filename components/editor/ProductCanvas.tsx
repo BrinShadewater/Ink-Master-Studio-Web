@@ -260,6 +260,7 @@ export const ProductCanvas = ({
           <div
             data-product-artwork="true"
             className="absolute z-10 cursor-move touch-none ring-1 ring-emerald-500/80"
+            data-product-print="garment-blended"
             style={{
               left: artwork.center.x,
               top: artwork.center.y,
@@ -267,6 +268,8 @@ export const ProductCanvas = ({
               height: baseEdge,
               transform: `translate(-50%, -50%) rotate(${product.placement.rotation}deg) scale(${product.placement.scale})`,
               transformOrigin: 'center',
+              mixBlendMode: 'multiply',
+              filter: 'saturate(0.96) contrast(0.98) drop-shadow(0 1px 1px rgb(0 0 0 / 0.22))',
             }}
             onPointerDown={(event) => beginPointer(event, 'move')}
           >

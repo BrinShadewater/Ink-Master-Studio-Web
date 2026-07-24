@@ -2904,6 +2904,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
   await setEditorRange(page, 'Detail', 72);
   await setEditorRange(page, 'Smoothing', 48);
   await page.getByRole('button', { name: 'Add palette color', exact: true }).click();

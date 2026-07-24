@@ -115,6 +115,7 @@ export const EditorApp = () => {
   const workspace = useEditorWorkspace();
   const imagesById = useDecodedEditorImages(workspace.assetUrlsById);
   const [tool, setTool] = useState<EditorTool>('select');
+  const [editorMode, setEditorMode] = useState<'easy' | 'advanced'>('easy');
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
@@ -166,6 +167,12 @@ export const EditorApp = () => {
     ? getTShirtMockup(product.mockupSlug)
     : null;
   const productMockup = useProductMockup(requestedProductMockup);
+
+  useEffect(() => {
+    if (editorMode !== 'easy') return;
+    if (tool === 'looks') setTool('select');
+    if (compareOpen) setCompareOpen(false);
+  }, [compareOpen, editorMode, tool]);
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
@@ -400,6 +407,8 @@ export const EditorApp = () => {
         onOpenProjects={() => setProjectsOpen(true)}
         onExport={() => setExportOpen(true)}
         exportButtonRef={exportButtonRef}
+        mode={editorMode}
+        onModeChange={setEditorMode}
       />
 
       <section className={compareOpen
@@ -423,6 +432,7 @@ export const EditorApp = () => {
           onToggleCompare={toggleCompare}
           compareButtonRef={compareButtonRef}
           activeToolButtonRef={activeToolButtonRef}
+          mode={editorMode}
         />
         {compareOpen && project ? (
           <CompareBoard
@@ -557,6 +567,7 @@ export const EditorApp = () => {
                   setProductArtworkRetryGeneration((current) => current + 1);
                 }}
                 onReturnToDesign={() => setTool('select')}
+                mode={editorMode}
                 dispatch={workspace.dispatch}
               />
             </div>

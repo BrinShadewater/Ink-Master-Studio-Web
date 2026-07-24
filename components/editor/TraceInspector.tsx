@@ -9,10 +9,11 @@ export interface TraceInspectorProps {
   traceLayer: TraceLayer | null;
   workflow: TraceWorkflow;
   dispatch: (command: EditorCommand) => void;
+  mode?: 'easy' | 'advanced';
 }
 
 const traceBounds = {
-  colors: { min: 2, max: 16, step: 1 },
+  colors: { min: 2, max: 32, step: 1 },
   detail: { min: 0, max: 100, step: 1 },
   smoothing: { min: 0, max: 100, step: 1 },
   blur: { min: 0, max: 5, step: 1 },
@@ -34,6 +35,7 @@ export const TraceInspector = ({
   traceLayer,
   workflow,
   dispatch,
+  mode = 'advanced',
 }: TraceInspectorProps) => {
   const update = (
     key: keyof Pick<TraceSettings, 'colors' | 'detail' | 'smoothing' | 'blur'>,
@@ -71,7 +73,7 @@ export const TraceInspector = ({
           onChange={(value) => update('colors', value)}
           onEnd={workflow.endSettingsEdit}
         />
-        <RangeControl
+        {mode === 'advanced' ? <><RangeControl
           id="editor-trace-detail"
           label="Detail"
           value={workflow.settings.detail}
@@ -108,7 +110,7 @@ export const TraceInspector = ({
               aria-label="Add palette color"
               title="Add palette color"
               disabled={
-                workflow.settings.palette.length >= 16 ||
+                workflow.settings.palette.length >= 32 ||
                 workflow.status === 'processing'
               }
               onClick={() => updatePalette([
@@ -155,7 +157,7 @@ export const TraceInspector = ({
               ))}
             </div>
           )}
-        </fieldset>
+        </fieldset></> : null}
 
         {traceLayer && !workflow.stale && workflow.status !== 'failed' ? (
           <p className="text-xs text-neutral-500">Trace is current.</p>

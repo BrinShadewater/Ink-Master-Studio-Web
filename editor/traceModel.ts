@@ -73,10 +73,10 @@ export const normalizeTraceSettings = (value: unknown): TraceSettings => {
     ? source.palette
       .map(normalizeHexColor)
       .filter((color): color is string => color !== null)
-      .slice(0, 16)
+      .slice(0, 32)
     : [];
   return {
-    colors: normalizeInteger(source.colors, defaults.colors, 2, 16),
+    colors: normalizeInteger(source.colors, defaults.colors, 2, 32),
     detail: normalizeInteger(source.detail, defaults.detail, 0, 100),
     smoothing: normalizeInteger(source.smoothing, defaults.smoothing, 0, 100),
     blur: normalizeInteger(source.blur, defaults.blur, 0, 5),

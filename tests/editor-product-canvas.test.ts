@@ -50,6 +50,8 @@ test('renders a labeled photographic shirt, transparent artwork, and resize cont
   assert.match(markup, /aria-label="Product artwork"/);
   assert.match(markup, /aria-label="Resize product artwork"/);
   assert.match(markup, /data-product-artwork="true"/);
+  assert.match(markup, /data-product-print="garment-blended"/);
+  assert.match(markup, /mix-blend-mode:multiply/);
 });
 
 test('announces initial loading and exposes recovery for initial shirt failure', () => {

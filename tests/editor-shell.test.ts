@@ -238,6 +238,49 @@ test('top bar exposes SVG export as a project command', () => {
   assert.match(disabled, /aria-label="Export"[^>]*disabled=""/);
 });
 
+test('top bar exposes Easy and Advanced editor modes', () => {
+  const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
+  assert.match(markup, /aria-label="Editor mode"/);
+  assert.match(markup, /aria-checked="true"[^>]*>Easy/);
+  assert.match(markup, /aria-checked="false"[^>]*>Adv/);
+});
+
+test('easy mode hides specialist Looks and Compare commands', () => {
+  const easy = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select', mode: 'easy', onToolChange: () => undefined, onOpenLayers: () => undefined,
+  }));
+  assert.doesNotMatch(easy, /aria-label="Looks"|aria-label="Compare"/);
+  const advanced = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select', mode: 'advanced', onToolChange: () => undefined, onOpenLayers: () => undefined,
+  }));
+  assert.match(advanced, /aria-label="Looks"/);
+  assert.match(advanced, /aria-label="Compare"/);
+});
+
+test('easy Trace mode retains color choice while hiding specialist controls', () => {
+  const source = createEditorAsset('project-easy-trace', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Easy trace', source);
+  const layer = project.variations[0].layers[0];
+  assert.equal(layer.type, 'image');
+  const markup = renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer,
+    tool: 'trace',
+    mode: 'easy',
+    traceWorkflow: {
+      status: 'idle', error: null, stale: false, canGenerate: true,
+      settings: createDefaultTraceSettings(), updateSettings: () => undefined,
+      endSettingsEdit: () => undefined, generate: () => undefined, retry: () => undefined,
+    },
+    dispatch: () => undefined,
+  }));
+  assert.match(markup, /id="editor-trace-colors"/);
+  assert.doesNotMatch(markup, /id="editor-trace-detail"|Trace palette/);
+});
+
 test('export menu presents blockers or enables a vector-only SVG download', () => {
   const source = createEditorAsset('project-export-menu', new Blob(['source']), {
     name: 'Image A', width: 100, height: 80,
@@ -462,7 +505,7 @@ test('trace inspector exposes bounded controls, palette, retry, and source resto
     dispatch: () => undefined,
   }));
 
-  assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="16"[^>]*step="1"/);
+  assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="32"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-detail"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-smoothing"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-blur"[^>]*min="0"[^>]*max="5"[^>]*step="1"/);

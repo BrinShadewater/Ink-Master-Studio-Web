@@ -83,6 +83,7 @@ export interface EditorInspectorProps {
   productArtworkError?: string | null;
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
+  mode?: 'easy' | 'advanced';
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -211,6 +212,7 @@ export const EditorInspector = ({
   productArtworkError = null,
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
+  mode = 'advanced',
   dispatch,
 }: EditorInspectorProps) => {
   if (tool === 'product' && product) {
@@ -266,6 +268,7 @@ export const EditorInspector = ({
           traceLayer={layer.type === 'trace' ? layer : null}
           workflow={traceWorkflow}
           dispatch={dispatch}
+          mode={mode}
         />
       </aside>
     );

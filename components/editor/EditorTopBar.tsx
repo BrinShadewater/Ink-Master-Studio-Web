@@ -33,6 +33,8 @@ export interface EditorTopBarProps {
   onOpenProjects: () => void;
   onExport: () => void;
   exportButtonRef?: RefObject<HTMLButtonElement | null>;
+  mode?: 'easy' | 'advanced';
+  onModeChange?: (mode: 'easy' | 'advanced') => void;
 }
 
 export interface ProjectNameDraftState {
@@ -142,6 +144,8 @@ export const EditorTopBar = ({
   onOpenProjects,
   onExport,
   exportButtonRef,
+  mode = 'easy',
+  onModeChange = () => undefined,
 }: EditorTopBarProps) => {
   const [projectNameState, updateProjectNameState] = useReducer(
     projectNameDraftReducer,
@@ -271,8 +275,12 @@ export const EditorTopBar = ({
       </div>
 
       <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands">
-        <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
-        <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
+        <div className="flex h-8 border border-neutral-700 bg-neutral-900" role="radiogroup" aria-label="Editor mode">
+          <button type="button" role="radio" aria-checked={mode === 'easy'} className={`w-9 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Easy</button>
+          <button type="button" role="radio" aria-checked={mode === 'advanced'} className={`w-9 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}>Adv</button>
+        </div>
+        <div className="hidden md:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
+        <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} /></div>
         <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
         <IconButton label="Export" icon={Download} disabled={!projectId} onClick={onExport} buttonRef={exportButtonRef} />
         <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
