@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { LandingPage } from './components/LandingPage';
-import { EditorApp } from './components/editor/EditorApp';
+
+const EditorApp = lazy(async () => {
+  const module = await import('./components/editor/EditorApp');
+  return { default: module.EditorApp };
+});
 
 const editorPath = '/editor';
 
@@ -19,7 +23,7 @@ const App = () => {
   }, []);
 
   return pathname === editorPath
-    ? <EditorApp />
+    ? <Suspense fallback={<main className="grid min-h-dvh place-items-center bg-[#0b121a] text-sm text-neutral-300" role="status">Opening editor...</main>}><EditorApp /></Suspense>
     : <LandingPage onOpenEditor={() => navigate(editorPath)} />;
 };
 

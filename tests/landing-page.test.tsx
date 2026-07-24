@@ -19,6 +19,8 @@ test('landing page presents the branded print-design workflow', () => {
   assert.match(markup, /Show Black T-shirt/);
   assert.match(markup, /Show Heather gray T-shirt/);
   assert.match(markup, /Show White T-shirt/);
+  assert.match(markup, /aria-pressed="true"/);
+  assert.doesNotMatch(markup, />Resources</);
   assert.doesNotMatch(markup, /Explore templates/);
   assert.doesNotMatch(markup, />Pricing</);
 });
