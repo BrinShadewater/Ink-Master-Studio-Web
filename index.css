@@ -23,3 +23,19 @@ body {
   background: #159f9f;
   color: #fbfcfe;
 }
+
+@keyframes landing-particle-drift {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(22px, -72px, 0); }
+  100% { transform: translate3d(-8px, -148px, 0); }
+}
+
+.landing-particle {
+  animation-name: landing-particle-drift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-particle { animation: none; }
+}

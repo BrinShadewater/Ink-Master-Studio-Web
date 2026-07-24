@@ -11,9 +11,47 @@ const Brand = () => (
   </div>
 );
 
+const particles = Array.from({ length: 34 }, (_, index) => ({
+  id: index,
+  size: 2 + (index % 4),
+  left: (index * 37) % 100,
+  bottom: (index * 19) % 110 - 10,
+  duration: 16 + (index % 7) * 3,
+  delay: -((index * 5) % 22),
+  opacity: 0.2 + (index % 5) * 0.08,
+}));
+
+const LandingBackdrop = () => (
+  <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+    <div
+      className="absolute inset-0 opacity-[0.07]"
+      style={{
+        backgroundImage: 'linear-gradient(#39bebd 1px, transparent 1px), linear-gradient(90deg, #39bebd 1px, transparent 1px)',
+        backgroundSize: '56px 56px',
+      }}
+    />
+    {particles.map((particle) => (
+      <span
+        key={particle.id}
+        className="landing-particle absolute rounded-full bg-emerald-300"
+        style={{
+          width: particle.size,
+          height: particle.size,
+          left: `${particle.left}%`,
+          bottom: `${particle.bottom}%`,
+          opacity: particle.opacity,
+          animationDuration: `${particle.duration}s`,
+          animationDelay: `${particle.delay}s`,
+        }}
+      />
+    ))}
+  </div>
+);
+
 export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
   <main className="min-h-dvh bg-neutral-950 text-neutral-100">
-    <header className="border-b border-neutral-800 bg-neutral-950/95 px-5 py-3 md:px-8">
+    <LandingBackdrop />
+    <header className="relative z-10 border-b border-neutral-800 bg-neutral-950/95 px-5 py-3 md:px-8">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         <Brand />
         <button
@@ -26,11 +64,12 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
       </div>
     </header>
 
-    <section className="mx-auto grid min-h-[calc(100dvh-128px)] max-w-7xl items-center gap-10 px-5 py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.75fr)] md:px-8 md:py-14">
+    <section className="relative z-10 mx-auto grid min-h-[calc(100dvh-128px)] max-w-7xl items-center gap-10 px-5 py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.75fr)] md:px-8 md:py-14">
       <div className="max-w-xl">
-        <h1 className="text-4xl font-semibold leading-tight text-neutral-50 md:text-6xl">InkMaster Studio</h1>
+        <img src="/logo/logo.png" alt="InkMaster Studio" className="h-16 w-16 object-contain drop-shadow-2xl" />
+        <h1 className="mt-4 text-4xl font-semibold leading-tight text-neutral-50 md:text-6xl">InkMaster Studio</h1>
         <p className="mt-5 max-w-lg text-base leading-7 text-neutral-300 md:text-lg">
-          A focused workspace for turning artwork into print-ready apparel designs, without losing control of the original.
+          Turn original artwork into print-ready merch from one focused workspace. Build variations, control the finish, preview on a product, and export without losing the source.
         </p>
         <button
           type="button"
@@ -49,12 +88,12 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
       </div>
     </section>
 
-    <section className="border-t border-neutral-800 bg-neutral-900/70">
+    <section className="relative z-10 border-t border-neutral-800 bg-neutral-900/70">
       <div className="mx-auto grid max-w-7xl gap-px md:grid-cols-3">
         {[
-          [Layers3, 'Canvas-first', 'Keep the design surface central.'],
-          [SlidersHorizontal, 'Creator finish', 'Tune print character when you need it.'],
-          [Shirt, 'Product preview', 'Place artwork on the garment before export.'],
+          [Layers3, 'Start with artwork', 'Import an image and keep the original intact.'],
+          [SlidersHorizontal, 'Shape the finish', 'Use creator presets, distress, color, and trace controls.'],
+          [Shirt, 'Check the product', 'Place artwork on the garment before export.'],
         ].map(([Icon, title, description]) => {
           const FeatureIcon = Icon as typeof Layers3;
           return (

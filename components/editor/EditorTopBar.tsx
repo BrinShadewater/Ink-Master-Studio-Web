@@ -184,8 +184,9 @@ export const EditorTopBar = ({
   return (
     <header className="grid h-24 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:flex md:h-14 md:items-center md:gap-2 md:px-3">
       <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 self-center md:w-64 md:flex-none">
-        <a href="/" aria-label="InkMaster Studio home" className="grid h-9 w-9 shrink-0 place-items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+        <a href="/" aria-label="InkMaster Studio home" className="flex h-9 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
           <img src="/logo/logo.png" alt="" className="h-8 w-8 object-contain" />
+          <span className="hidden text-[11px] font-semibold text-neutral-200 lg:block">InkMaster</span>
         </a>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
