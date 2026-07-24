@@ -210,7 +210,7 @@ export const LayerPanel = ({
                 <li
                   key={layer.id}
                   data-layer-id={layer.id}
-                  className={`border ${selected ? 'border-emerald-500 bg-neutral-800' : 'border-transparent hover:border-neutral-700'}`}
+                  className={`rounded-md border ${selected ? 'border-emerald-500 bg-neutral-800 shadow-sm' : 'border-transparent hover:border-neutral-700'}`}
                 >
                   <div className="grid grid-cols-[32px_minmax(0,1fr)_32px] items-center">
                     <button

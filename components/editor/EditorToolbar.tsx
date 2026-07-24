@@ -38,7 +38,7 @@ const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
   { id: 'product', label: 'Product', icon: Shirt },
 ];
 
-const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
 export const EditorToolbar = ({
   tool,
@@ -55,7 +55,7 @@ export const EditorToolbar = ({
   mode = 'advanced',
 }: EditorToolbarProps) => (
   <nav
-    className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[52px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
+    className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[60px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
     {layerType !== 'image' ? (
@@ -108,7 +108,7 @@ export const EditorToolbar = ({
           key={id}
           ref={selected ? activeToolButtonRef : undefined}
           type="button"
-          className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
+          className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
           aria-label={label}
           aria-pressed={selected}
           aria-describedby={disabledReason}
@@ -131,7 +131,7 @@ export const EditorToolbar = ({
     {mode === 'advanced' ? <button
       ref={compareButtonRef}
       type="button"
-      className={`${toolButtonClass} ${compareOpen ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
+      className={`${toolButtonClass} ${compareOpen ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
       aria-label="Compare"
       aria-pressed={compareOpen}
       title={variationCount < 2 ? 'Compare requires at least two variations' : compareOpen ? 'Close Compare' : 'Compare'}

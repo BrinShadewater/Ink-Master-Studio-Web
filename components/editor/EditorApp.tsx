@@ -412,8 +412,8 @@ export const EditorApp = () => {
       />
 
       <section className={compareOpen
-        ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[52px_minmax(0,1fr)] md:grid-rows-1'
-        : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[52px_minmax(0,1fr)_280px] md:grid-rows-1'}>
+        ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[60px_minmax(0,1fr)] md:grid-rows-1'
+        : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
         <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
@@ -514,7 +514,7 @@ export const EditorApp = () => {
               {!project ? (
                 <button
                   type="button"
-                  className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(240px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 border border-dashed border-neutral-600 bg-neutral-900 px-5 text-sm font-medium text-neutral-200 transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(260px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 bg-neutral-900/95 px-5 text-sm font-medium text-neutral-200 shadow-xl transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Upload aria-hidden="true" size={20} />

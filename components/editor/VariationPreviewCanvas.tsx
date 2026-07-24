@@ -27,7 +27,7 @@ import type {
   EditorAsset,
 } from '../../editor/model';
 
-export type PreviewBackground = '#1f1f1f' | '#f5f5f3' | '#161616' | 'transparent';
+export type PreviewBackground = '#1f1f1f' | '#27313d' | '#f5f5f3' | '#161616' | 'transparent';
 export type PreviewPixelBound = 240 | 800 | 1600;
 
 export interface VariationPreviewCanvasProps {

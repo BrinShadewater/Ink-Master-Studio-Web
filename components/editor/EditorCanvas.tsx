@@ -128,7 +128,7 @@ export const EditorCanvas = ({
     imagesById,
     coordinator,
     maxPixelDimension: 1600,
-    background: '#1f1f1f',
+    background: '#27313d',
     retryGeneration: lookRetryGeneration,
     onFailureChange: onLookFailureChange,
   });
@@ -309,7 +309,7 @@ export const EditorCanvas = ({
         className="block h-full min-h-0 w-full touch-none"
         data-selected-layer-id={variation?.selectedLayerId || undefined}
         data-background-mode={backgroundMode}
-        style={{ background: '#1f1f1f' }}
+        style={{ background: '#27313d' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => {

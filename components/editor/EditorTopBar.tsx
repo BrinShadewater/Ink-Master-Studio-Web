@@ -101,7 +101,7 @@ interface IconButtonProps {
   buttonRef?: RefObject<HTMLButtonElement | null>;
 }
 
-const iconButtonClass = 'grid h-10 w-10 shrink-0 place-items-center border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent';
+const iconButtonClass = 'grid h-9 w-9 shrink-0 place-items-center rounded-md border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent';
 
 const IconButton = ({ label, icon: Icon, onClick, disabled = false, buttonRef }: IconButtonProps) => (
   <button
@@ -182,7 +182,7 @@ export const EditorTopBar = ({
   };
 
   return (
-    <header className="grid h-24 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 md:flex md:h-14 md:items-center md:gap-2 md:px-3">
+    <header className="grid h-24 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:flex md:h-14 md:items-center md:gap-2 md:px-3">
       <div className="col-start-1 row-start-1 min-w-0 self-center md:w-48 md:flex-none">
         <label className="sr-only" htmlFor="editor-project-name">Project name</label>
         <input
@@ -229,7 +229,7 @@ export const EditorTopBar = ({
         <label className="sr-only" htmlFor="editor-variation">Variation</label>
         <select
           id="editor-variation"
-          className="h-10 w-24 shrink-0 border border-neutral-700 bg-neutral-900 px-1 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32 md:px-2"
+          className="h-9 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
           value={activeVariationId}
           disabled={variations.length === 0}
           aria-label="Variation"
@@ -243,7 +243,7 @@ export const EditorTopBar = ({
         <label className="sr-only" htmlFor="editor-variation-name">Variation name</label>
         <input
           id="editor-variation-name"
-          className="h-10 min-w-0 flex-1 border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="h-9 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           value={variationNameState.draft}
           aria-label="Variation name"
           disabled={variations.length === 0}
@@ -275,9 +275,9 @@ export const EditorTopBar = ({
       </div>
 
       <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands">
-        <div className="flex h-8 border border-neutral-700 bg-neutral-900" role="radiogroup" aria-label="Editor mode">
-          <button type="button" role="radio" aria-checked={mode === 'easy'} className={`w-9 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Easy</button>
-          <button type="button" role="radio" aria-checked={mode === 'advanced'} className={`w-9 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}>Adv</button>
+        <div className="flex h-8 rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
+          <button type="button" role="radio" aria-checked={mode === 'easy'} className={`rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Easy</button>
+          <button type="button" role="radio" aria-checked={mode === 'advanced'} className={`rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}>Adv</button>
         </div>
         <div className="hidden md:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} /></div>
