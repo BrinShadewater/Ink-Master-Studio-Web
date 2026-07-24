@@ -43,7 +43,7 @@ const createProps = (
   };
 };
 
-test('renders a labeled photographic shirt, transparent artwork, and resize control', () => {
+test('renders a labeled photographic shirt with undarkened transparent artwork and resize control', () => {
   const markup = renderToStaticMarkup(createElement(ProductCanvas, createProps()));
   assert.match(markup, /aria-label="T-shirt product preview"/);
   assert.match(markup, /alt="Black T-shirt"/);
@@ -51,7 +51,7 @@ test('renders a labeled photographic shirt, transparent artwork, and resize cont
   assert.match(markup, /aria-label="Resize product artwork"/);
   assert.match(markup, /data-product-artwork="true"/);
   assert.match(markup, /data-product-print="garment-blended"/);
-  assert.match(markup, /mix-blend-mode:multiply/);
+  assert.match(markup, /mix-blend-mode:normal/);
 });
 
 test('announces initial loading and exposes recovery for initial shirt failure', () => {

@@ -268,8 +268,8 @@ export const ProductCanvas = ({
               height: baseEdge,
               transform: `translate(-50%, -50%) rotate(${product.placement.rotation}deg) scale(${product.placement.scale})`,
               transformOrigin: 'center',
-              mixBlendMode: 'multiply',
-              filter: 'saturate(0.96) contrast(0.98) drop-shadow(0 1px 1px rgb(0 0 0 / 0.22))',
+              mixBlendMode: 'normal',
+              filter: 'saturate(1.02) contrast(1.02) drop-shadow(0 1px 1px rgb(0 0 0 / 0.18))',
             }}
             onPointerDown={(event) => beginPointer(event, 'move')}
           >

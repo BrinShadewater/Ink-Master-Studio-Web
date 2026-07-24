@@ -1,4 +1,4 @@
-import { ArrowRight, Layers3, SlidersHorizontal, Shirt } from 'lucide-react';
+import { ArrowRight, Layers3, ScanLine, Shirt, Sparkles } from 'lucide-react';
 
 export interface LandingPageProps {
   onOpenEditor: () => void;
@@ -64,26 +64,51 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
       </div>
     </header>
 
-    <section className="relative z-10 mx-auto grid min-h-[calc(100dvh-128px)] max-w-7xl items-center gap-10 px-5 py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.75fr)] md:px-8 md:py-14">
+    <section className="relative z-10 mx-auto grid min-h-[calc(100dvh-128px)] max-w-7xl items-center gap-10 px-5 py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(430px,1.1fr)] md:px-8 md:py-14">
       <div className="max-w-xl">
-        <img src="/logo/logo.png" alt="InkMaster Studio" className="h-16 w-16 object-contain drop-shadow-2xl" />
-        <h1 className="mt-4 text-4xl font-semibold leading-tight text-neutral-50 md:text-6xl">InkMaster Studio</h1>
-        <p className="mt-5 max-w-lg text-base leading-7 text-neutral-300 md:text-lg">
-          Turn original artwork into print-ready merch from one focused workspace. Build variations, control the finish, preview on a product, and export without losing the source.
+        <div className="flex items-center gap-3 text-sm font-medium text-teal-300">
+          <img src="/logo/logo.png" alt="" className="h-14 w-14 object-contain drop-shadow-2xl" />
+          Canvas-first merch studio
+        </div>
+        <h1 className="mt-7 text-4xl font-semibold leading-[1.04] text-neutral-50 md:text-6xl">Turn artwork into a print-ready shirt design.</h1>
+        <p className="mt-6 max-w-lg text-base leading-7 text-neutral-300 md:text-lg">
+          Clean up the source, shape the finish, place it on a garment, and export a production-sized PNG from one focused canvas.
         </p>
         <button
           type="button"
           className="mt-8 flex h-11 items-center gap-2 rounded-md bg-emerald-500 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
           onClick={onOpenEditor}
         >
-          Start a design <ArrowRight aria-hidden="true" size={17} />
+          Start designing <ArrowRight aria-hidden="true" size={17} />
         </button>
+        <div className="mt-10 grid gap-4 border-t border-neutral-800 pt-6 sm:grid-cols-3">
+          {[
+            [Layers3, 'Build', 'Artwork stays editable.'],
+            [Sparkles, 'Finish', 'Control color and distress.'],
+            [Shirt, 'Preview', 'Place it before export.'],
+          ].map(([Icon, title, description]) => {
+            const WorkflowIcon = Icon as typeof Layers3;
+            return (
+              <div key={title as string}>
+                <WorkflowIcon aria-hidden="true" size={18} className="text-teal-300" />
+                <p className="mt-2 text-sm font-semibold text-neutral-100">{title as string}</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-400">{description as string}</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="relative aspect-[4/5] overflow-hidden rounded-lg border border-neutral-700 bg-neutral-100 shadow-2xl">
-        <img src="/mockups/mockup-black.png" alt="Black T-shirt mockup" className="h-full w-full object-cover" />
-        <div className="absolute inset-x-0 bottom-0 border-t border-neutral-300 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-700">
-          Build, place, and export from one canvas.
+      <div className="relative mx-auto w-full max-w-2xl">
+        <div className="relative aspect-[4/5] overflow-hidden border border-teal-300/20 bg-neutral-950 shadow-2xl">
+          <img src="/mockups/mockup-black.png" alt="Black T-shirt mockup" className="h-full w-full object-cover" />
+          <div className="pointer-events-none absolute left-1/2 top-[50%] grid h-[25%] w-[34%] -translate-x-1/2 -translate-y-1/2 place-items-center border border-teal-300/25 bg-teal-300/10 text-center text-sm font-semibold leading-tight text-teal-100 shadow-[0_0_40px_rgba(45,212,191,0.18)]">
+            INK<br />READY
+          </div>
+          <div className="absolute inset-x-3 bottom-3 flex items-center justify-between border border-neutral-700 bg-neutral-950/90 px-3 py-2 text-xs text-neutral-300 backdrop-blur">
+            <span className="flex items-center gap-2"><ScanLine aria-hidden="true" size={15} className="text-teal-300" /> Product preview</span>
+            <span className="text-teal-300">Black tee</span>
+          </div>
         </div>
       </div>
     </section>
@@ -91,9 +116,9 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
     <section className="relative z-10 border-t border-neutral-800 bg-neutral-900/70">
       <div className="mx-auto grid max-w-7xl gap-px md:grid-cols-3">
         {[
-          [Layers3, 'Start with artwork', 'Import an image and keep the original intact.'],
-          [SlidersHorizontal, 'Shape the finish', 'Use creator presets, distress, color, and trace controls.'],
-          [Shirt, 'Check the product', 'Place artwork on the garment before export.'],
+          [Layers3, 'Canvas control', 'Position, crop, and shape the source without losing it.'],
+          [Sparkles, 'Creator finish', 'Use cleanup, color, trace, and distress when the design needs it.'],
+          [Shirt, 'Product preview', 'Check scale and placement against the garment before export.'],
         ].map(([Icon, title, description]) => {
           const FeatureIcon = Icon as typeof Layers3;
           return (

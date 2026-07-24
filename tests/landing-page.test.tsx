@@ -7,10 +7,10 @@ test('landing page presents the branded print-design workflow', () => {
   const markup = renderToStaticMarkup(<LandingPage onOpenEditor={() => undefined} />);
 
   assert.match(markup, /\/logo\/logo\.png/);
-  assert.match(markup, /Start a design/);
-  assert.match(markup, /Turn original artwork into print-ready merch/);
-  assert.match(markup, /Start with artwork/);
-  assert.match(markup, /Shape the finish/);
-  assert.match(markup, /Check the product/);
+  assert.match(markup, /Start designing/);
+  assert.match(markup, /Turn artwork into a print-ready shirt design/);
+  assert.match(markup, /Canvas-first merch studio/);
+  assert.match(markup, /Creator finish/);
+  assert.match(markup, /Product preview/);
   assert.match(markup, /landing-particle/);
 });

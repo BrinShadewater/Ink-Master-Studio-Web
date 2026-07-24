@@ -57,7 +57,11 @@ import {
   openProjectFromDrawer,
   selectLayerFromPanel,
 } from '../components/editor/EditorApp';
-import { canvasPointToCropPoint } from '../components/editor/EditorCanvas';
+import {
+  canvasPointToCropPoint,
+  getZoomedDesignRect,
+  resolveCanvasZoom,
+} from '../components/editor/EditorCanvas';
 import {
   createEditorAsset,
   createEditorProject,
@@ -1242,4 +1246,18 @@ test('selected layer helpers follow image and text selection', () => {
 
   history = reduceEditorHistory(history, { type: 'add-text-layer', layer: createTextLayer('Selected text') });
   assert.equal(getSelectedImageLayer(history.present), null);
+});
+
+test('Shift-wheel zoom stays bounded and keeps the design centered', () => {
+  assert.equal(resolveCanvasZoom(1, -100), 1.15);
+  assert.equal(resolveCanvasZoom(1, 100), 0.87);
+  assert.equal(resolveCanvasZoom(3, -100), 3);
+  assert.equal(resolveCanvasZoom(0.6, 100), 0.6);
+  assert.deepEqual(getZoomedDesignRect({ x: 100, y: 0, width: 800, height: 800, scale: 0.8 }, 1.5), {
+    x: -100,
+    y: -200,
+    width: 1200,
+    height: 1200,
+    scale: 1.2,
+  });
 });

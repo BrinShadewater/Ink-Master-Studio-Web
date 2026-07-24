@@ -161,6 +161,23 @@ const matchesAnyReference = (
     colorDistanceSquared(color, reference) <= maximumDistanceSquared + 1e-12);
 };
 
+const isSolidDarkBackground = (references: OklabColor[]) => (
+  references.length === 1 && references[0].l <= 0.08
+);
+
+const removeMatchingPixelsEverywhere = (
+  frame: RgbaFrame,
+  references: OklabColor[],
+  maximumDistanceSquared: number,
+  removed: Uint8Array,
+) => {
+  for (let index = 0; index < removed.length; index += 1) {
+    if (matchesAnyReference(frame, index, references, maximumDistanceSquared)) {
+      removed[index] = 1;
+    }
+  }
+};
+
 const floodMatchingPixels = (
   frame: RgbaFrame,
   seeds: number[],
@@ -390,6 +407,17 @@ export const applyBackgroundRemoval = (
       maximumDistance * maximumDistance,
       removed,
     );
+
+    // A solid black backdrop commonly remains inside closed counters in lettering.
+    // Remove matching pixels globally in that narrow case; restore strokes keep black artwork recoverable.
+    if (settings.mode === 'auto' && isSolidDarkBackground(references)) {
+      removeMatchingPixelsEverywhere(
+        input.frame,
+        references,
+        maximumDistance * maximumDistance,
+        removed,
+      );
+    }
 
     if (settings.mode === 'picked' && settings.pickedPoint) {
       const pickedIndex = pointToPixelIndex(input.frame, settings.pickedPoint);

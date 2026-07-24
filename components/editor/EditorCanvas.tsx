@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
 import { hitTestDesignLayers } from '../../editor/compositor';
 import {
   CANONICAL_DESIGN_SIZE,
+  containCanonicalSurface,
   displayPointToDesignPoint,
 } from '../../editor/canonicalSurface';
 import {
@@ -35,6 +36,32 @@ const emptyVariation: DesignVariation = {
 };
 
 const EDITOR_CANVAS_SURFACE_ID = 'editor-main-preview';
+const MIN_CANVAS_ZOOM = 0.6;
+const MAX_CANVAS_ZOOM = 3;
+
+export const resolveCanvasZoom = (current: number, deltaY: number) => {
+  const direction = deltaY < 0 ? 1 : -1;
+  return Math.max(
+    MIN_CANVAS_ZOOM,
+    Math.min(MAX_CANVAS_ZOOM, Number((current * (direction > 0 ? 1.15 : 1 / 1.15)).toFixed(3))),
+  );
+};
+
+export const getZoomedDesignRect = (
+  designRect: ReturnType<typeof containCanonicalSurface>,
+  zoom: number,
+) => {
+  const safeZoom = Number.isFinite(zoom) ? Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, zoom)) : 1;
+  const width = designRect.width * safeZoom;
+  const height = designRect.height * safeZoom;
+  return {
+    x: designRect.x + (designRect.width - width) / 2,
+    y: designRect.y + (designRect.height - height) / 2,
+    width,
+    height,
+    scale: Number((designRect.scale * safeZoom).toFixed(6)),
+  };
+};
 
 export interface EditorCanvasProps {
   variation: DesignVariation | null;
@@ -115,6 +142,7 @@ export const EditorCanvas = ({
   const dragRef = useRef<DragState | null>(null);
   const strokeRef = useRef<StrokeState | null>(null);
   const [brushCursor, setBrushCursor] = useState<Point | null>(null);
+  const [zoom, setZoom] = useState(1);
   const activeVariation = variation ?? emptyVariation;
   const imageSourcesById = useMemo(
     () => getDecodedImageSources(imagesById),
@@ -128,10 +156,15 @@ export const EditorCanvas = ({
     imagesById,
     coordinator,
     maxPixelDimension: 1600,
-    background: '#27313d',
+    background: 'transparent',
+    zoom,
     retryGeneration: lookRetryGeneration,
     onFailureChange: onLookFailureChange,
   });
+  const zoomedDesignRect = useMemo(
+    () => getZoomedDesignRect(viewport.designRect, zoom),
+    [viewport.designRect, zoom],
+  );
 
   const getCanvasPoint = (event: PointerEvent<HTMLCanvasElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -145,7 +178,7 @@ export const EditorCanvas = ({
     if (!selectedImage) return null;
     const source = assetsById[selectedImage.assetId];
     if (!source) return null;
-    const designPoint = displayPointToDesignPoint(point, viewport.designRect);
+    const designPoint = displayPointToDesignPoint(point, zoomedDesignRect);
     if (!designPoint) return null;
     return canvasPointToCropPoint(
       designPoint,
@@ -196,7 +229,7 @@ export const EditorCanvas = ({
     const context = event.currentTarget.getContext('2d');
     if (!context) return;
     const point = getCanvasPoint(event);
-    const designPoint = displayPointToDesignPoint(point, viewport.designRect);
+    const designPoint = displayPointToDesignPoint(point, zoomedDesignRect);
     if (!designPoint) return;
     const hitLayer = hitTestDesignLayers(
       context,
@@ -214,7 +247,7 @@ export const EditorCanvas = ({
       layerId: hitLayer.id,
       startPoint: point,
       transform: { ...hitLayer.transform },
-      designScale: viewport.designRect.scale,
+      designScale: zoomedDesignRect.scale,
     };
   };
 
@@ -285,6 +318,12 @@ export const EditorCanvas = ({
     finishDrag(event);
   };
 
+  const handleWheel = (event: WheelEvent<HTMLCanvasElement>) => {
+    if (!event.shiftKey) return;
+    event.preventDefault();
+    setZoom((current) => resolveCanvasZoom(current, event.deltaY));
+  };
+
   useEffect(() => {
     if (backgroundMode === 'idle') {
       strokeRef.current = null;
@@ -302,14 +341,14 @@ export const EditorCanvas = ({
   }, [backgroundMode, onBackgroundModeChange]);
 
   return (
-    <div className="relative h-full min-h-0 w-full">
+    <div className="relative h-full min-h-0 w-full bg-[#101820]">
       <canvas
         ref={canvasRef}
         aria-label="Design canvas"
         className="block h-full min-h-0 w-full touch-none"
         data-selected-layer-id={variation?.selectedLayerId || undefined}
         data-background-mode={backgroundMode}
-        style={{ background: '#27313d' }}
+        style={{ background: 'transparent' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => {
@@ -317,6 +356,7 @@ export const EditorCanvas = ({
         }}
         onPointerUp={finishPointer}
         onPointerCancel={cancelPointer}
+        onWheel={handleWheel}
       />
       {brushCursor && (backgroundMode === 'erase' || backgroundMode === 'restore') ? (
         <div

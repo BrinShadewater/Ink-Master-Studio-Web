@@ -101,6 +101,27 @@ test('detects light, dark, colored, and uneven edge backgrounds', () => {
   assert.equal(alphaAt(result, 2, 2), 255);
 });
 
+test('clears solid black background trapped inside closed text counters', () => {
+  const frame = rgbaFrame(7, 7, [
+    '000000', '000000', '000000', '000000', '000000', '000000', '000000',
+    '000000', 'ffffff', 'ffffff', 'ffffff', 'ffffff', 'ffffff', '000000',
+    '000000', 'ffffff', '000000', '000000', '000000', 'ffffff', '000000',
+    '000000', 'ffffff', '000000', 'ffffff', '000000', 'ffffff', '000000',
+    '000000', 'ffffff', '000000', '000000', '000000', 'ffffff', '000000',
+    '000000', 'ffffff', 'ffffff', 'ffffff', 'ffffff', 'ffffff', '000000',
+    '000000', '000000', '000000', '000000', '000000', '000000', '000000',
+  ]);
+
+  const result = applyBackgroundRemoval({
+    frame,
+    settings: { ...createDefaultBackgroundRemoval(), enabled: true, edgeFeather: 0 },
+    corrections: noCorrections,
+  });
+
+  assert.equal(alphaAt(result, 3, 3), 255, 'white letterform remains');
+  assert.equal(alphaAt(result, 2, 3), 0, 'enclosed black counter is removed');
+});
+
 test('ignores transparent border colors and clears hidden RGB in transparent output', () => {
   const frame = rgbaFrame(3, 3, [
     'ff00ff00', 'ff00ff00', 'ff00ff00',
