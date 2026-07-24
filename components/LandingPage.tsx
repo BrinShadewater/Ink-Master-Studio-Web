@@ -9,8 +9,8 @@ const particles = Array.from({ length: 170 }, (_, index) => ({
 }));
 
 const garments = [
-  { id: 'black', label: 'Black', swatch: '#17191d', image: '/mockups/mockup-black.png', imageClass: 'mix-blend-multiply brightness-[1.22] contrast-[1.04]' },
-  { id: 'heather', label: 'Heather gray', swatch: '#74787a', image: '/mockups/mockup-heather.png', imageClass: 'mix-blend-multiply brightness-[1.08] contrast-[1.02]' },
+  { id: 'black', label: 'Black', swatch: '#17191d', image: '/landing-tee-black.png', imageClass: 'object-contain brightness-[0.72] contrast-[1.15]' },
+  { id: 'heather', label: 'Heather gray', swatch: '#74787a', image: '/landing-tee-heather.png', imageClass: 'object-contain' },
   { id: 'white', label: 'White', swatch: '#f5f6f4', image: '/landing-tee-white.png', imageClass: 'object-contain' },
 ] as const;
 
@@ -28,13 +28,13 @@ const ProductStage = () => {
   const printBlend = selectedId === 'white' ? 'mix-blend-multiply' : 'mix-blend-screen';
 
   return <div className="relative mx-auto w-full max-w-[760px]">
-    <div className="relative aspect-[1.08/1] overflow-hidden border border-[#3c5666] bg-[#121f29] shadow-[0_28px_80px_rgba(0,0,0,0.7)]">
+    <div className="relative aspect-[1.08/1] overflow-hidden border border-[#53697f] bg-[#2b3949] shadow-[0_28px_80px_rgba(0,0,0,0.7)]">
       <div className="absolute inset-7 border border-[#496574]/35" />
       <div className="absolute inset-x-0 top-6 flex justify-between px-9 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
       <div className="absolute inset-y-0 left-6 flex flex-col justify-between py-12 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
       <Crosshair aria-hidden="true" className="absolute left-5 top-10 text-[#4a9ca2]" size={24} />
       <Crosshair aria-hidden="true" className="absolute bottom-10 right-5 text-[#4a9ca2]" size={24} />
-      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-cover ${selected.imageClass}`} />
+      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-contain ${selected.imageClass}`} />
       <p className={`absolute inset-x-[25%] top-[31%] text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
       <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" className={`absolute left-[40%] top-[38%] h-[22%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
       <p className={`absolute inset-x-[19%] top-[64%] text-center text-[9px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
