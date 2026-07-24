@@ -14,7 +14,7 @@ import {
   getDecodedImageSources,
   type DecodedImageEntry,
 } from '../../editor/decodedImages';
-import type { Size } from '../../editor/geometry';
+import type { Point, Size } from '../../editor/geometry';
 import { serializeVariationLook } from '../../editor/lookModel';
 import {
   type LookRenderCoordinator,
@@ -39,6 +39,7 @@ export interface VariationPreviewCanvasProps {
   maxPixelDimension: PreviewPixelBound;
   background: PreviewBackground;
   zoom?: number;
+  pan?: Point;
   ariaLabel: string;
   onFailureChange?: (message: string | null) => void;
   retryGeneration?: number;
@@ -125,6 +126,8 @@ const initialViewport: PreviewViewport = {
   pixelRatio: 1,
   designRect: containCanonicalSurface({ width: 0, height: 0 }),
 };
+
+const noPan: Point = { x: 0, y: 0 };
 
 const finiteDimension = (value: number) =>
   Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -366,6 +369,7 @@ const paintFrame = (
   frame: RgbaFrame,
   background: PreviewBackground,
   zoom: number,
+  pan: Point,
   viewport: PreviewViewport,
   maxPixelDimension: PreviewPixelBound,
 ) => {
@@ -396,8 +400,8 @@ const paintFrame = (
   const height = designRect.height * safeZoom;
   context.drawImage(
     frameCanvas,
-    designRect.x + (designRect.width - width) / 2,
-    designRect.y + (designRect.height - height) / 2,
+    designRect.x + (designRect.width - width) / 2 + pan.x,
+    designRect.y + (designRect.height - height) / 2 + pan.y,
     width,
     height,
   );
@@ -425,6 +429,7 @@ export const useVariationPreviewSurface = ({
   maxPixelDimension,
   background,
   zoom = 1,
+  pan = noPan,
   onFailureChange,
   retryGeneration = 0,
   onViewportChange,
@@ -536,6 +541,7 @@ export const useVariationPreviewSurface = ({
       lastReadyFrameRef.current ?? frame,
       background,
       zoom,
+      pan,
       viewport,
       maxPixelDimension,
     );
@@ -555,6 +561,7 @@ export const useVariationPreviewSurface = ({
         frame,
         background,
         zoom,
+        pan,
         viewport,
         maxPixelDimension,
       );
@@ -593,6 +600,7 @@ export const useVariationPreviewSurface = ({
           selected.displayFrame,
           background,
           zoom,
+          pan,
           viewport,
           maxPixelDimension,
         );
@@ -610,6 +618,7 @@ export const useVariationPreviewSurface = ({
     variation,
     viewport,
     zoom,
+    pan,
     updateFailureAuthority,
   ]);
 
@@ -651,6 +660,7 @@ export const useVariationPreviewSurface = ({
           selected.displayFrame,
           background,
           zoom,
+          pan,
           viewport,
           maxPixelDimension,
         );
@@ -668,6 +678,7 @@ export const useVariationPreviewSurface = ({
     viewport,
     maxPixelDimension,
     zoom,
+    pan,
   ]);
 
   useEffect(() => () => {

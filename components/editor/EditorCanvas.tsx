@@ -50,13 +50,14 @@ export const resolveCanvasZoom = (current: number, deltaY: number) => {
 export const getZoomedDesignRect = (
   designRect: ReturnType<typeof containCanonicalSurface>,
   zoom: number,
+  pan: Point = { x: 0, y: 0 },
 ) => {
   const safeZoom = Number.isFinite(zoom) ? Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, zoom)) : 1;
   const width = designRect.width * safeZoom;
   const height = designRect.height * safeZoom;
   return {
-    x: designRect.x + (designRect.width - width) / 2,
-    y: designRect.y + (designRect.height - height) / 2,
+    x: designRect.x + (designRect.width - width) / 2 + pan.x,
+    y: designRect.y + (designRect.height - height) / 2 + pan.y,
     width,
     height,
     scale: Number((designRect.scale * safeZoom).toFixed(6)),
@@ -93,6 +94,12 @@ interface StrokeState {
   pointerId: number;
   mode: 'erase' | 'restore';
   points: NormalizedPoint[];
+}
+
+interface PanState {
+  pointerId: number;
+  startPoint: Point;
+  startPan: Point;
 }
 
 export const canvasPointToCropPoint = (
@@ -141,8 +148,10 @@ export const EditorCanvas = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const strokeRef = useRef<StrokeState | null>(null);
+  const panRef = useRef<PanState | null>(null);
   const [brushCursor, setBrushCursor] = useState<Point | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const activeVariation = variation ?? emptyVariation;
   const imageSourcesById = useMemo(
     () => getDecodedImageSources(imagesById),
@@ -158,12 +167,13 @@ export const EditorCanvas = ({
     maxPixelDimension: 1600,
     background: 'transparent',
     zoom,
+    pan,
     retryGeneration: lookRetryGeneration,
     onFailureChange: onLookFailureChange,
   });
   const zoomedDesignRect = useMemo(
-    () => getZoomedDesignRect(viewport.designRect, zoom),
-    [viewport.designRect, zoom],
+    () => getZoomedDesignRect(viewport.designRect, zoom, pan),
+    [viewport.designRect, zoom, pan],
   );
 
   const getCanvasPoint = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -203,6 +213,16 @@ export const EditorCanvas = ({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (event.button === 1) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      panRef.current = {
+        pointerId: event.pointerId,
+        startPoint: getCanvasPoint(event),
+        startPan: { ...pan },
+      };
+      return;
+    }
     if (
       backgroundMode !== 'idle' &&
       viewport.size.width > 0 &&
@@ -252,6 +272,15 @@ export const EditorCanvas = ({
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    const panState = panRef.current;
+    if (panState?.pointerId === event.pointerId) {
+      const point = getCanvasPoint(event);
+      setPan({
+        x: panState.startPan.x + point.x - panState.startPoint.x,
+        y: panState.startPan.y + point.y - panState.startPoint.y,
+      });
+      return;
+    }
     if (backgroundMode !== 'idle') {
       const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
       for (const coalesced of events) {
@@ -286,6 +315,14 @@ export const EditorCanvas = ({
   };
 
   const finishPointer = (event: PointerEvent<HTMLCanvasElement>) => {
+    const panState = panRef.current;
+    if (panState?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      panRef.current = null;
+      return;
+    }
     const stroke = strokeRef.current;
     if (stroke?.pointerId === event.pointerId) {
       const normalized = getBackgroundPoint(getCanvasPoint(event));
@@ -307,6 +344,14 @@ export const EditorCanvas = ({
   };
 
   const cancelPointer = (event: PointerEvent<HTMLCanvasElement>) => {
+    const panState = panRef.current;
+    if (panState?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      panRef.current = null;
+      return;
+    }
     const stroke = strokeRef.current;
     if (stroke?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -345,7 +390,7 @@ export const EditorCanvas = ({
       <canvas
         ref={canvasRef}
         aria-label="Design canvas"
-        className="block h-full min-h-0 w-full touch-none"
+        className="block h-full min-h-0 w-full cursor-grab touch-none active:cursor-grabbing"
         data-selected-layer-id={variation?.selectedLayerId || undefined}
         data-background-mode={backgroundMode}
         style={{ background: 'transparent' }}

@@ -1260,4 +1260,15 @@ test('Shift-wheel zoom stays bounded and keeps the design centered', () => {
     height: 1200,
     scale: 1.2,
   });
+  assert.deepEqual(getZoomedDesignRect(
+    { x: 100, y: 0, width: 800, height: 800, scale: 0.8 },
+    1,
+    { x: 45, y: -30 },
+  ), {
+    x: 145,
+    y: -30,
+    width: 800,
+    height: 800,
+    scale: 0.8,
+  });
 });

@@ -234,7 +234,7 @@ export const ProductCanvas = ({
     <section
       ref={stageRef}
       aria-label="T-shirt product preview"
-      className="relative h-full min-h-0 overflow-hidden bg-neutral-200"
+      className="relative h-full min-h-0 overflow-hidden bg-[#0b1b22]"
       onPointerMove={movePointer}
       onPointerUp={finishPointer}
       onPointerCancel={finishPointer}
@@ -251,12 +251,41 @@ export const ProductCanvas = ({
             top: mockupRect.y,
             width: mockupRect.width,
             height: mockupRect.height,
+            mixBlendMode: 'multiply',
           }}
         />
       ) : null}
 
       {displayedMockup ? (
         <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[5] border border-dashed border-teal-300/35"
+            style={{
+              left: regionRect.x,
+              top: regionRect.y,
+              width: regionRect.width,
+              height: regionRect.height,
+            }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[5] w-px bg-teal-300/50"
+            style={{
+              left: regionRect.x + regionRect.width / 2,
+              top: regionRect.y,
+              height: regionRect.height,
+            }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[5] h-px bg-teal-300/50"
+            style={{
+              left: regionRect.x,
+              top: regionRect.y + regionRect.height / 2,
+              width: regionRect.width,
+            }}
+          />
           <div
             data-product-artwork="true"
             className="absolute z-10 cursor-move touch-none ring-1 ring-emerald-500/80"

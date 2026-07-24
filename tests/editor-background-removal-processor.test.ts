@@ -122,6 +122,30 @@ test('clears solid black background trapped inside closed text counters', () => 
   assert.equal(alphaAt(result, 2, 3), 0, 'enclosed black counter is removed');
 });
 
+test('picked dark background clears matching closed regions globally', () => {
+  const frame = rgbaFrame(5, 5, [
+    '111111', '111111', '111111', '111111', '111111',
+    '111111', 'ffffff', 'ffffff', 'ffffff', '111111',
+    '111111', 'ffffff', '111111', 'ffffff', '111111',
+    '111111', 'ffffff', 'ffffff', 'ffffff', '111111',
+    '111111', '111111', '111111', '111111', '111111',
+  ]);
+  const result = applyBackgroundRemoval({
+    frame,
+    settings: {
+      ...createDefaultBackgroundRemoval(),
+      enabled: true,
+      mode: 'picked',
+      pickedPoint: { x: 0, y: 0 },
+      edgeFeather: 0,
+    },
+    corrections: noCorrections,
+  });
+
+  assert.equal(alphaAt(result, 2, 2), 0);
+  assert.equal(alphaAt(result, 1, 1), 255);
+});
+
 test('ignores transparent border colors and clears hidden RGB in transparent output', () => {
   const frame = rgbaFrame(3, 3, [
     'ff00ff00', 'ff00ff00', 'ff00ff00',

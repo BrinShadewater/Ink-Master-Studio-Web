@@ -161,8 +161,8 @@ const matchesAnyReference = (
     colorDistanceSquared(color, reference) <= maximumDistanceSquared + 1e-12);
 };
 
-const isSolidDarkBackground = (references: OklabColor[]) => (
-  references.length === 1 && references[0].l <= 0.08
+const isDarkBackground = (references: OklabColor[]) => (
+  references.length > 0 && references.every((reference) => reference.l <= 0.2)
 );
 
 const removeMatchingPixelsEverywhere = (
@@ -408,9 +408,10 @@ export const applyBackgroundRemoval = (
       removed,
     );
 
-    // A solid black backdrop commonly remains inside closed counters in lettering.
-    // Remove matching pixels globally in that narrow case; restore strokes keep black artwork recoverable.
-    if (settings.mode === 'auto' && isSolidDarkBackground(references)) {
+    // Dark backdrops commonly remain inside closed counters in lettering. When the
+    // sampled border is entirely dark, remove matching pixels globally; Restore
+    // keeps intentional dark artwork recoverable.
+    if (settings.mode === 'auto' && isDarkBackground(references)) {
       removeMatchingPixelsEverywhere(
         input.frame,
         references,
@@ -422,13 +423,22 @@ export const applyBackgroundRemoval = (
     if (settings.mode === 'picked' && settings.pickedPoint) {
       const pickedIndex = pointToPixelIndex(input.frame, settings.pickedPoint);
       if (sourcePixels[pickedIndex * 4 + 3] > 0) {
+        const pickedReference = colorAt(input.frame, pickedIndex);
         floodMatchingPixels(
           input.frame,
           [pickedIndex],
-          [colorAt(input.frame, pickedIndex)],
+          [pickedReference],
           maximumDistance * maximumDistance,
           removed,
         );
+        if (pickedReference.l <= 0.2) {
+          removeMatchingPixelsEverywhere(
+            input.frame,
+            [pickedReference],
+            maximumDistance * maximumDistance,
+            removed,
+          );
+        }
       }
     }
 
