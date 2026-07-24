@@ -90,16 +90,11 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => (
         </div>
       </div>
 
-      <div className="relative mx-auto w-full max-w-[640px] self-end md:self-center">
-        <div className="pointer-events-none absolute -inset-x-10 bottom-0 h-px bg-[#3fd4d0]/80" />
-        <img src="/landing-hero-shirt-v2.png" alt="Black T-shirt with a turquoise abstract screenprint" className="relative block aspect-[4/5] w-full object-cover object-center shadow-[0_28px_70px_rgba(0,0,0,0.5)]" />
-        <div className="absolute bottom-4 left-4 flex items-center gap-2 border border-[#2e7d85] bg-[#06171c]/90 px-3 py-2 text-xs text-[#cbf7f4] backdrop-blur">
-          <span className="h-2 w-2 rounded-full bg-[#54e2da]" /> Production preview
-        </div>
-        <div className="absolute right-4 top-4 border border-[#2e7d85] bg-[#06171c]/90 px-3 py-2 text-right text-xs backdrop-blur">
-          <p className="font-semibold text-[#d8fffc]">Black tee</p>
-          <p className="mt-0.5 text-[#83b4b7]">Print-ready canvas</p>
-        </div>
+      <div className="relative mx-auto w-full max-w-[600px] self-end md:self-center">
+        <p className="mb-3 text-center text-xl font-semibold tracking-wide text-[#a8f1ec] md:text-2xl">Tie me to the mast</p>
+        <div className="pointer-events-none absolute -inset-x-10 top-[10%] h-px bg-[#3fd4d0]/80" />
+        <img src="/landing-hero-siren.jpg" alt="Illustrated artwork of a sailor tied to a mast facing a data center across the sea" className="relative block aspect-[5/6] w-full object-cover object-center shadow-[0_28px_70px_rgba(0,0,0,0.5)]" />
+        <p className="mt-3 text-center text-sm font-medium tracking-wide text-[#9ac9cb] md:text-base">I want to hear the siren's song</p>
       </div>
     </section>
 
