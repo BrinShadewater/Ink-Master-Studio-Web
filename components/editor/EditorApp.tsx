@@ -620,6 +620,13 @@ export const EditorApp = () => {
                 productArtworkError={productArtworkError}
                 productPreviewMode={productPreviewMode}
                 onProductPreviewModeChange={setProductPreviewMode}
+                productArtworkVariation={productArtworkVariation}
+                onEnhanceProductArtwork={() => {
+                  if (productArtworkVariation && productArtworkVariation.id !== variation?.id) {
+                    workspace.dispatch({ type: 'select-variation', variationId: productArtworkVariation.id });
+                  }
+                  setTool('enhance');
+                }}
                 onRetryProduct={() => {
                   productMockup.retry();
                   setProductArtworkRetryGeneration((current) => current + 1);

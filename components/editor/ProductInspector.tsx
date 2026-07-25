@@ -1,4 +1,5 @@
 import type { EditorCommand } from '../../editor/history';
+import type { DesignVariation, EditorAsset } from '../../editor/model';
 import {
   TSHIRT_MOCKUPS,
   getTShirtMockup,
@@ -10,6 +11,7 @@ import {
   type ProductPreviewMode,
   type TShirtProductVariant,
 } from '../../editor/productModel';
+import { getTShirtExportPreset, resolveTShirtExportGeometry } from '../../editor/tshirtExportModel';
 import { NumberControl, RangeControl } from './TransformControls';
 
 export interface ProductInspectorProps {
@@ -20,6 +22,9 @@ export interface ProductInspectorProps {
   variations?: Array<{ id: string; name: string }>;
   previewMode?: ProductPreviewMode;
   onPreviewModeChange?: (mode: ProductPreviewMode) => void;
+  artworkVariation?: DesignVariation | null;
+  assetsById?: Record<string, EditorAsset>;
+  onEnhanceResolution?: () => void;
   dispatch: (command: EditorCommand) => void;
   onRetry: () => void;
   onReturnToDesign: () => void;
@@ -52,6 +57,23 @@ const rotationBounds = {
 
 const actionClass = 'h-9 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
+export const getProductReadinessEstimate = (
+  variation: DesignVariation | null | undefined,
+  product: TShirtProductVariant,
+  assetsById: Record<string, EditorAsset> | undefined,
+) => {
+  const imageAssets = variation?.layers
+    .filter((layer): layer is Extract<DesignVariation['layers'][number], { type: 'image' }> => layer.type === 'image')
+    .map((layer) => assetsById?.[layer.assetId])
+    .filter((asset): asset is EditorAsset => Boolean(asset)) ?? [];
+  if (imageAssets.length === 0) return null;
+  const sourceSide = Math.min(...imageAssets.map((asset) => Math.min(asset.width, asset.height)));
+  const preset = getTShirtExportPreset('printify-full-front');
+  const renderedSide = resolveTShirtExportGeometry(preset, product.placement).renderedSide;
+  const scale = renderedSide / Math.max(1, sourceSide);
+  return { sourceSide, scale, status: scale <= 1 ? 'ready' as const : scale <= 2 ? 'review' as const : 'enhance' as const };
+};
+
 export const ProductInspector = ({
   product,
   mockupStatus,
@@ -60,6 +82,9 @@ export const ProductInspector = ({
   variations = [],
   previewMode = 'rgb',
   onPreviewModeChange = () => undefined,
+  artworkVariation = null,
+  assetsById = {},
+  onEnhanceResolution = () => undefined,
   dispatch,
   onRetry,
   onReturnToDesign,
@@ -71,6 +96,7 @@ export const ProductInspector = ({
     historyGroup: string,
   ) => dispatch({ type: 'set-product-placement', placement, historyGroup });
   const failure = mockupStatus === 'failed' || Boolean(artworkError);
+  const readiness = getProductReadinessEstimate(artworkVariation, product, assetsById);
 
   return (
     <>
@@ -149,6 +175,12 @@ export const ProductInspector = ({
             {(['rgb', 'print'] as const).map((mode) => <button key={mode} type="button" className={`h-9 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${previewMode === mode ? 'bg-emerald-500 text-neutral-950' : 'bg-neutral-950 text-neutral-300 hover:bg-neutral-800'}`} aria-pressed={previewMode === mode} onClick={() => onPreviewModeChange(mode)}>{mode === 'rgb' ? 'RGB' : 'Print intent'}</button>)}
           </div>
         </section>
+
+        {readiness ? <section className={`grid gap-2 border p-3 ${readiness.status === 'ready' ? 'border-emerald-900/70 bg-emerald-950/20' : readiness.status === 'review' ? 'border-amber-900/70 bg-amber-950/20' : 'border-red-900/70 bg-red-950/20'}`} aria-labelledby="product-readiness-title">
+          <div className="flex items-center justify-between gap-3"><h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">Full-front print check</h3><span className={`text-[10px] font-semibold uppercase ${readiness.status === 'ready' ? 'text-emerald-300' : readiness.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>{readiness.status === 'ready' ? 'Good' : readiness.status === 'review' ? 'Review' : 'Enhance'}</span></div>
+          <p className="text-xs leading-5 text-neutral-400">Largest source edge: {readiness.sourceSide}px. Estimated scale for a 15 in x 18 in full-front PNG: {readiness.scale.toFixed(2)}x.</p>
+          {readiness.status === 'enhance' ? <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button> : null}
+        </section> : null}
 
         <section aria-labelledby="product-placement-title" className="grid gap-3">
           <div>

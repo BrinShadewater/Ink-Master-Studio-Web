@@ -17,6 +17,7 @@ import {
   ProductInspector,
   createCenterProductPlacementCommand,
   createResetProductPlacementCommand,
+  getProductReadinessEstimate,
 } from '../components/editor/ProductInspector';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
 import { TraceInspector } from '../components/editor/TraceInspector';
@@ -418,6 +419,10 @@ test('product inspector exposes the complete shirt catalog and bounded placement
     placement: DEFAULT_PRODUCT_PLACEMENT,
     historyGroup: 'product-reset',
   });
+  assert.deepEqual(
+    getProductReadinessEstimate(project.variations[0], product, { [source.id]: source }),
+    { sourceSide: 80, scale: 40.5, status: 'enhance' },
+  );
 });
 
 test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {
