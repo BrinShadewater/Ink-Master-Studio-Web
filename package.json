@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && node --test tests/production-styles.test.mjs && tsx --test tests/*.test.ts",
+    "test": "npm run typecheck && npm run build && node --test tests/production-styles.test.mjs tests/reachability.test.mjs && tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "verify": "npm test && npm run test:e2e"
   },
