@@ -86,7 +86,7 @@ services/                      Image processing, export, and persistence helpers
 workers/imageProcessing.worker Worker-backed image pipeline
 specs/printify.ts              Printify service and product preset data
 api/edit-image.ts              Server-side AI cleanup boundary
-archive/                       Superseded components, excluded from the build
+docs/archive/                  Superseded components, excluded from the build
 public/mockups/                Product mockup assets
 public/logo/                   Brand assets
 ```
@@ -103,9 +103,9 @@ entry point** and is not included in the production bundle. `npm test` runs a
 reachability check that lists every such module against a committed allowlist,
 so this stays visible rather than drifting silently.
 
-Four fully superseded components were moved to `archive/`, which is excluded
+Four fully superseded components were moved to `docs/archive/`, which is excluded
 from TypeScript compilation. They are kept for reference, not for use; see
-`archive/README.md`.
+`docs/archive/README.md`.
 
 The editor has a Basic/Advanced mode toggle in its top bar. Advanced mode there
 means denser inspector controls inside the canvas editor. It is a different
