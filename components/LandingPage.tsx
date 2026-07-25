@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown, Crosshair, Download, Layers3, Shirt, Sparkles } from 'lucide-react';
+import { ArrowRight, Crosshair, Download, Layers3, Shirt, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 export interface LandingPageProps { onOpenEditor: () => void; }
@@ -35,9 +35,11 @@ const ProductStage = () => {
       <Crosshair aria-hidden="true" className="absolute left-5 top-10 text-[#4a9ca2]" size={24} />
       <Crosshair aria-hidden="true" className="absolute bottom-10 right-5 text-[#4a9ca2]" size={24} />
       <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-contain ${selected.imageClass}`} />
-      <p className={`absolute inset-x-[25%] top-[31%] text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
-      <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" className={`absolute left-[40%] top-[38%] h-[22%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
-      <p className={`absolute inset-x-[19%] top-[64%] text-center text-[9px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
+      <div className="absolute inset-x-0 top-[37%] flex h-[31%] flex-col items-center gap-1">
+        <p className={`text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
+        <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
+        <p className={`text-center text-[9px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
+      </div>
       <div className="absolute inset-x-0 bottom-0 border-t border-[#405967] bg-[#172633]/94 px-4 py-3 backdrop-blur md:px-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#93aab5]">Product</p><p className="mt-1 text-sm font-medium text-white">Classic tee</p></div>
@@ -60,16 +62,15 @@ const steps = [
 
 export const LandingPage = ({ onOpenEditor }: LandingPageProps) => <main className="min-h-dvh overflow-hidden bg-[#0b121a] text-neutral-100">
   <LandingBackdrop />
-  <header className="relative z-10 border-b-4 border-[#355463] bg-[#111b26]/96 px-5 py-4 backdrop-blur md:px-8">
+  <header className="relative z-10 border-b-4 border-[#4b697a] bg-[#162432]/98 px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur md:px-8">
     <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-5">
       <div className="flex min-w-0 items-center gap-3"><img src="/logo/logo.png" alt="InkMaster Studio" className="h-14 w-14 shrink-0 object-contain" /><div className="hidden leading-none sm:block"><p className="text-xl font-black uppercase tracking-[0.08em] text-white md:text-2xl">InkMaster</p><p className="mt-1 text-xs font-bold uppercase tracking-[0.46em] text-[#70aeb2]">Studio</p></div></div>
-      <nav aria-label="Primary navigation" className="hidden items-center gap-7 text-sm font-medium text-neutral-200 lg:flex"><a href="#features" className="transition hover:text-[#8bc5c8]">Features <ChevronDown aria-hidden="true" className="inline" size={14} /></a></nav>
-      <div className="flex shrink-0 items-center gap-2"><button type="button" className="hidden h-10 border border-[#506575] px-4 text-sm font-medium text-neutral-200 transition hover:border-[#9ac9ce] md:block">Sign in</button><button type="button" className="flex h-10 items-center gap-2 bg-[#315f6c] px-4 text-sm font-semibold text-white transition hover:bg-[#3d7781] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ac9ce]" onClick={onOpenEditor}>Start designing <ArrowRight aria-hidden="true" size={16} /></button></div>
+      <button type="button" className="flex h-10 shrink-0 items-center gap-2 bg-[#315f6c] px-4 text-sm font-semibold text-white transition hover:bg-[#3d7781] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ac9ce]" onClick={onOpenEditor}>Start designing <ArrowRight aria-hidden="true" size={16} /></button>
     </div>
   </header>
   <section className="relative z-10 mx-auto grid max-w-[1440px] items-center gap-10 px-5 py-12 md:px-8 lg:min-h-[690px] lg:grid-cols-[minmax(0,0.92fr)_minmax(580px,1.08fr)] lg:py-8">
     <div className="max-w-xl"><div className="inline-flex items-center gap-2 border border-[#496879] bg-[#121f2a] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#86b8bb]"><Crosshair aria-hidden="true" size={15} /> Canvas-first. Print-ready.</div><h1 className="mt-7 text-5xl font-black uppercase leading-[0.96] text-white md:text-6xl xl:text-7xl">Turn artwork into a <span className="text-[#6aa3a8]">print-ready</span> shirt design.</h1><p className="mt-6 max-w-lg text-base leading-7 text-[#b2c5c8] md:text-lg">Design with precision on an infinite canvas. Fine-tune the artwork, preview it on real garments, and export with confidence.</p><div className="mt-8 flex flex-wrap items-center gap-5"><button type="button" className="flex h-14 items-center gap-2 bg-[#315f6c] px-6 text-base font-bold uppercase tracking-wide text-white transition hover:bg-[#3d7781] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ac9ce]" onClick={onOpenEditor}><Sparkles aria-hidden="true" size={19} /> Start designing</button></div><div className="mt-11 hidden gap-4 border-t border-[#405b6b] pt-6 md:grid md:grid-cols-3">{steps.map(([Icon, title, detail]) => <div key={title}><Icon aria-hidden="true" className="text-[#7bb5b9]" size={25} /><p className="mt-2 text-sm font-bold uppercase text-white">{title}</p><p className="mt-1 text-xs leading-5 text-[#91aaae]">{detail}</p></div>)}</div></div>
     <ProductStage />
   </section>
-  <section id="features" className="relative z-10 border-y-4 border-[#355463] bg-[#151f2a]"><div className="mx-auto grid max-w-[1440px] gap-6 px-5 py-8 md:grid-cols-[1.15fr_repeat(3,1fr)] md:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#82b6ba]">Built for print precision</p><h2 className="mt-3 text-3xl font-black uppercase leading-none text-white">Every detail, dialed in.</h2></div>{[[Crosshair, 'Pixel-perfect control', 'Guides, alignment, and clean placement.'], [Download, 'Print-ready output', 'High-resolution PNGs for production.'], [Sparkles, 'Color you can trust', 'Finishing controls made for apparel.']].map(([Icon, title, detail]) => { const FeatureIcon = Icon as typeof Crosshair; return <div key={title as string} className="flex gap-3 border-l border-[#405b6b] pl-5"><FeatureIcon aria-hidden="true" className="shrink-0 text-[#7bb5b9]" size={25} /><div><h3 className="text-sm font-bold text-white">{title as string}</h3><p className="mt-1 text-sm leading-6 text-[#b8c7cb]">{detail as string}</p></div></div>; })}</div></section>
+  <section id="features" className="relative z-10 border-y-4 border-[#4b697a] bg-[#202f3d] shadow-[0_-8px_24px_rgba(0,0,0,0.22)]"><div className="mx-auto grid max-w-[1440px] gap-6 px-5 py-8 md:grid-cols-[1.15fr_repeat(3,1fr)] md:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#9cc5c7]">Built for print precision</p><h2 className="mt-3 text-3xl font-black uppercase leading-none text-white">Every detail, dialed in.</h2></div>{[[Crosshair, 'Pixel-perfect control', 'Guides, alignment, and clean placement.'], [Download, 'Print-ready output', 'High-resolution PNGs for production.'], [Sparkles, 'Color you can trust', 'Finishing controls made for apparel.']].map(([Icon, title, detail]) => { const FeatureIcon = Icon as typeof Crosshair; return <div key={title as string} className="flex gap-3 border-l border-[#536f80] pl-5"><FeatureIcon aria-hidden="true" className="shrink-0 text-[#90bec1]" size={25} /><div><h3 className="text-sm font-bold text-white">{title as string}</h3><p className="mt-1 text-sm leading-6 text-[#c1ced2]">{detail as string}</p></div></div>; })}</div></section>
 </main>;
