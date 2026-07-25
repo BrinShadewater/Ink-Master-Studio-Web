@@ -5,6 +5,8 @@ These files are superseded by the canvas-first editor in
 
 - `WorkflowInspector.tsx` - the former Advanced mode production panel.
 - `SimpleCreatorFlow.tsx` - the former Simple mode creator flow.
+- `Preview.tsx` - the former preview, mockup, comparison, and export surface.
+- `Controls.tsx` - the former production settings control panel.
 
 ## Status
 
