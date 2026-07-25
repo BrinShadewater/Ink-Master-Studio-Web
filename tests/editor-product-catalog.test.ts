@@ -15,23 +15,24 @@ test('declares the exact eleven restored local photographic shirts', () => {
   assert.equal(new Set(TSHIRT_MOCKUPS.map(({ slug }) => slug)).size, 11);
   assert.equal(new Set(TSHIRT_MOCKUPS.map(({ file }) => file)).size, 11);
   assert.equal(getTShirtMockup('missing').slug, 'black');
-  assert.equal(getTShirtMockup('military-green').file, '/mockups/mockup-miltarygreen.png');
+  assert.equal(getTShirtMockup('military-green').file, '/mockups/mockup-miltarygreen.webp');
 });
 
-test('resolves every catalog file to a 2048 by 2048 PNG', () => {
+test('resolves every catalog file to a 2048 by 2048 WebP', () => {
   for (const mockup of TSHIRT_MOCKUPS) {
     const bytes = readFileSync(path.join(
       process.cwd(),
       'public',
       mockup.file.replace(/^\//, ''),
     ));
-    assert.deepEqual(
-      [...bytes.subarray(0, 8)],
-      [137, 80, 78, 71, 13, 10, 26, 10],
-      `${mockup.file} is not a PNG`,
-    );
-    assert.equal(bytes.readUInt32BE(16), 2048, `${mockup.file} width`);
-    assert.equal(bytes.readUInt32BE(20), 2048, `${mockup.file} height`);
+    // RIFF container: "RIFF" ....  "WEBP" then a chunk tag.
+    assert.equal(bytes.subarray(0, 4).toString('ascii'), 'RIFF', `${mockup.file} is not RIFF`);
+    assert.equal(bytes.subarray(8, 12).toString('ascii'), 'WEBP', `${mockup.file} is not WebP`);
+    const chunk = bytes.subarray(12, 16).toString('ascii');
+    assert.equal(chunk, 'VP8 ', `${mockup.file} unexpected WebP chunk ${chunk}`);
+    // Lossy VP8 frame header: 14-bit width at byte 26, height at byte 28.
+    assert.equal(bytes.readUInt16LE(26) & 0x3fff, 2048, `${mockup.file} width`);
+    assert.equal(bytes.readUInt16LE(28) & 0x3fff, 2048, `${mockup.file} height`);
   }
 });
 
