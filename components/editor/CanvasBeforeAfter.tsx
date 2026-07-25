@@ -27,7 +27,7 @@ export const CanvasBeforeAfter = ({
   return (
     <section className="relative h-full min-h-0 overflow-hidden bg-[#101820]" aria-label={label}>
       <div className="absolute inset-0 p-4 md:p-8">
-        <div className="relative h-full overflow-hidden border border-[#355061] bg-[#e5e8e6] shadow-[0_18px_50px_rgba(0,0,0,0.28)]">
+        <div className="relative h-full overflow-hidden border border-[#355061] bg-[#aeb9b7] shadow-[0_18px_50px_rgba(0,0,0,0.28)]">
           <VariationPreviewCanvas
             surfaceId={`comparison-before:${before.id}`}
             variation={before}
@@ -35,7 +35,7 @@ export const CanvasBeforeAfter = ({
             imagesById={imagesById}
             coordinator={coordinator}
             maxPixelDimension={1600}
-            background="#f5f5f3"
+            background="#aeb9b7"
             ariaLabel="Before artwork"
           />
           <div className="absolute inset-y-0 right-0 overflow-hidden" style={{ width: `${afterWidth}%` }}>
@@ -47,7 +47,7 @@ export const CanvasBeforeAfter = ({
                 imagesById={imagesById}
                 coordinator={coordinator}
                 maxPixelDimension={1600}
-                background="#f5f5f3"
+                background="#aeb9b7"
                 ariaLabel="After artwork"
               />
             </div>

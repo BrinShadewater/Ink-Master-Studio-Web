@@ -1,5 +1,5 @@
 import { ArrowRight, Crosshair, Download, Layers3, Shirt, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface LandingPageProps { onOpenEditor: () => void; }
 
@@ -25,15 +25,22 @@ const ProductStage = () => {
   const copyTone = selectedId === 'white' ? 'text-neutral-950' : 'text-white';
   const printBlend = selectedId === 'white' ? 'mix-blend-multiply' : 'mix-blend-screen';
 
+  useEffect(() => {
+    garments.forEach(({ image }) => {
+      const mockup = new Image();
+      mockup.src = image;
+    });
+  }, []);
+
   return <div className="relative mx-auto w-full max-w-[760px]">
     <div className="relative aspect-[1.08/1] overflow-hidden border border-[#53697f] bg-[#263746] shadow-[0_28px_80px_rgba(0,0,0,0.7)]" style={{ backgroundImage: 'linear-gradient(#48616e45 1px, transparent 1px), linear-gradient(90deg, #48616e45 1px, transparent 1px)', backgroundSize: '34px 34px' }}>
       <div className="absolute inset-7 border border-[#496574]/35" />
       <div className="absolute inset-x-0 top-6 flex justify-between px-9 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
       <div className="absolute inset-y-0 left-6 flex flex-col justify-between py-12 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
-      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-contain ${selected.imageClass}`} />
+      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} decoding="async" fetchPriority="high" className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-contain ${selected.imageClass}`} />
       <div className="absolute inset-x-0 top-[37%] flex h-[31%] flex-col items-center gap-1">
         <p className={`text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
-        <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
+        <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" decoding="async" fetchPriority="high" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
         <p className={`text-center text-[9px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
       </div>
       <div className="absolute inset-x-0 bottom-0 border-t border-[#405967] bg-[#172633]/94 px-4 py-3 backdrop-blur md:px-5">
