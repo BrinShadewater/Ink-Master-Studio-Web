@@ -1,4 +1,4 @@
-import { ProcessingSettings, ProcessedResult, OutputFormat, EdgeBehavior, DetailLevel, ResizeMode, ShirtColor } from '../types';
+import { ProcessingSettings, ProcessedResult, OutputFormat, ShirtColor } from '../types';
 import { TARGET_WIDTH, TARGET_HEIGHT } from '../constants';
 import {
   compositeMockupInWorker,
@@ -6,10 +6,7 @@ import {
   processImageInWorker,
   ProcessImageWorkerOptions,
 } from './imageProcessingWorkerClient';
-import { calculateDesignPlacement } from './designPlacement';
 import { buildUpscaleMetadata } from './upscaleEngine';
-// @ts-ignore
-import ImageTracer from 'imagetracerjs';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
 
