@@ -170,9 +170,8 @@ export const EditorApp = () => {
 
   useEffect(() => {
     if (editorMode !== 'easy') return;
-    if (tool === 'looks') setTool('select');
     if (compareOpen) setCompareOpen(false);
-  }, [compareOpen, editorMode, tool]);
+  }, [compareOpen, editorMode]);
 
   useEffect(() => {
     const coordinator = new LookRenderCoordinator(createBrowserLookWorker);
@@ -417,11 +416,18 @@ export const EditorApp = () => {
         <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
+          hasImageLayer={Boolean(variation?.layers.some((layer) => layer.type === 'image'))}
           hasProject={Boolean(project)}
           onToolChange={(nextTool) => {
             if (nextTool === 'product') {
               setLayersOpen(false);
               setCompareOpen(false);
+            }
+            const requiresImage = nextTool === 'crop' || nextTool === 'adjust' ||
+              nextTool === 'remove-background' || nextTool === 'trace';
+            if (requiresImage && selectedLayerType !== 'image' && selectedLayerType !== 'trace') {
+              const imageLayer = variation?.layers.find((layer) => layer.type === 'image');
+              if (imageLayer) workspace.dispatch({ type: 'select-layer', layerId: imageLayer.id });
             }
             setTool(nextTool);
           }}
@@ -504,6 +510,9 @@ export const EditorApp = () => {
                     workspace.dispatch({ type: 'set-transform', layerId, transform, historyGroup });
                   }}
                   onTransformEnd={() => workspace.dispatch({ type: 'end-history-group' })}
+                  onCropChange={(layerId, crop, historyGroup) => {
+                    workspace.dispatch({ type: 'set-crop', layerId, crop, historyGroup });
+                  }}
                   backgroundMode={backgroundBrushMode}
                   backgroundBrushSize={backgroundBrushSize}
                   onPickBackground={backgroundRemoval.pickColor}

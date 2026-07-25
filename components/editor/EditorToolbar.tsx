@@ -16,6 +16,7 @@ import type { DesignLayer, EditorTool } from '../../editor/model';
 export interface EditorToolbarProps {
   tool: EditorTool;
   layerType?: DesignLayer['type'] | null;
+  hasImageLayer?: boolean;
   hasProject?: boolean;
   onToolChange: (tool: EditorTool) => void;
   onOpenLayers: () => void;
@@ -43,6 +44,7 @@ const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center rounded-md t
 export const EditorToolbar = ({
   tool,
   layerType = null,
+  hasImageLayer = false,
   hasProject = false,
   onToolChange,
   onOpenLayers,
@@ -58,16 +60,6 @@ export const EditorToolbar = ({
     className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[60px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
-    {layerType !== 'image' ? (
-      <p id="editor-image-tools-disabled-reason" className="sr-only">
-        Crop, Adjust, and Remove background are available only for image layers.
-      </p>
-    ) : null}
-    {layerType !== 'image' && layerType !== 'trace' ? (
-      <p id="editor-trace-disabled-reason" className="sr-only">
-        Trace is available only for image and trace layers.
-      </p>
-    ) : null}
     {compareOpen ? (
       <p id="editor-compare-disabled-reason" className="sr-only">
         Editing tools are unavailable while Compare is open.
@@ -83,15 +75,15 @@ export const EditorToolbar = ({
         Product is available after importing artwork.
       </p>
     ) : null}
-    {tools.filter(({ id }) => mode === 'advanced' || id !== 'looks').map(({ id, label, icon: Icon }) => {
+    {tools.map(({ id, label, icon: Icon }) => {
       const selected = tool === id;
       const productConflict = tool === 'product' &&
         id !== 'select' &&
         id !== 'product';
       const productUnavailable = id === 'product' && !hasProject;
-      const imageToolDisabled = layerType !== 'image' &&
+      const imageToolDisabled = !hasImageLayer &&
         (id === 'crop' || id === 'adjust' || id === 'remove-background');
-      const traceToolDisabled = id === 'trace' && layerType !== 'image' && layerType !== 'trace';
+      const traceToolDisabled = id === 'trace' && !hasImageLayer && layerType !== 'trace';
       const disabled = compareOpen || productConflict || productUnavailable ||
         imageToolDisabled || traceToolDisabled;
       const disabledReason = compareOpen
@@ -101,8 +93,8 @@ export const EditorToolbar = ({
           : productUnavailable
             ? 'editor-product-disabled-reason'
         : imageToolDisabled
-          ? 'editor-image-tools-disabled-reason'
-          : traceToolDisabled ? 'editor-trace-disabled-reason' : undefined;
+          ? undefined
+          : traceToolDisabled ? undefined : undefined;
       return (
         <button
           key={id}
@@ -118,9 +110,9 @@ export const EditorToolbar = ({
               ? `${label} is unavailable in Product mode`
               : productUnavailable
                 ? 'Product is available after importing artwork'
-            : imageToolDisabled
-              ? `${label} is available only for image layers`
-              : traceToolDisabled ? 'Trace is available only for image and trace layers' : label}
+            : imageToolDisabled || traceToolDisabled
+              ? 'Import an image layer to use this tool'
+              : label}
           disabled={disabled}
           onClick={() => onToolChange(id)}
         >

@@ -249,11 +249,12 @@ test('top bar defaults to Basic and exposes Advanced editor mode', () => {
   assert.match(markup, /aria-checked="false"[^>]*>Adv/);
 });
 
-test('easy mode hides specialist Looks and Compare commands', () => {
+test('easy mode keeps Looks available and hides Compare', () => {
   const easy = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select', mode: 'easy', onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
-  assert.doesNotMatch(easy, /aria-label="Looks"|aria-label="Compare"/);
+  assert.match(easy, /aria-label="Looks"/);
+  assert.doesNotMatch(easy, /aria-label="Compare"/);
   const advanced = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select', mode: 'advanced', onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
@@ -434,6 +435,7 @@ test('toolbar exposes Remove background only for a selected image layer', () => 
   const imageMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'remove-background',
     layerType: 'image',
+    hasImageLayer: true,
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
@@ -444,10 +446,11 @@ test('toolbar exposes Remove background only for a selected image layer', () => 
   const textMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select',
     layerType: 'text',
+    hasImageLayer: true,
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
-  assert.match(textMarkup, /aria-label="Remove background"[^>]*disabled=""/);
+  assert.doesNotMatch(textMarkup, /aria-label="Remove background"[^>]*disabled=""/);
 });
 
 test('toolbar exposes Trace only for image and trace selections', () => {
@@ -455,6 +458,7 @@ test('toolbar exposes Trace only for image and trace selections', () => {
     const markup = renderToStaticMarkup(createElement(EditorToolbar, {
       tool: 'trace',
       layerType,
+      hasImageLayer: true,
       onToolChange: () => undefined,
       onOpenLayers: () => undefined,
     }));
@@ -465,10 +469,11 @@ test('toolbar exposes Trace only for image and trace selections', () => {
   const textMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select',
     layerType: 'text',
+    hasImageLayer: true,
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
-  assert.match(textMarkup, /aria-label="Trace"[^>]*disabled=""/);
+  assert.doesNotMatch(textMarkup, /aria-label="Trace"[^>]*disabled=""/);
   assert.equal(normalizeToolForSelectedLayer('trace', { type: 'text' }), 'select');
   assert.equal(normalizeToolForSelectedLayer('trace', { type: 'trace' }), 'trace');
 });
@@ -706,18 +711,17 @@ test('toolbar disables editing commands while Compare is active and disables Com
   }
 });
 
-test('toolbar disables image-only tools with an accessible explanation for text selection', () => {
+test('toolbar keeps image tools available when a text layer is selected', () => {
   const markup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select',
     layerType: 'text',
+    hasImageLayer: true,
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
 
-  assert.match(markup, /id="editor-image-tools-disabled-reason"/);
-  assert.match(markup, /Crop, Adjust, and Remove background are available only for image layers\./);
-  assert.match(markup, /aria-label="Crop"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
-  assert.match(markup, /aria-label="Adjust"[^>]*aria-describedby="editor-image-tools-disabled-reason"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Crop"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Adjust"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /aria-label="Select"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /aria-label="Looks"[^>]*disabled=""/);
 });
@@ -835,13 +839,14 @@ test('Looks inspector renders nine actual selected-state previews and complete c
   });
 
   assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
-  assert.equal(markup.match(/<canvas[^>]*data-look-preview="true"/g)?.length, LOOK_IDS.length);
+  assert.equal(markup.match(/<canvas[^>]*data-look-preview="true"/g)?.length, LOOK_IDS.length + 2);
   for (const id of LOOK_IDS) {
     assert.match(markup, new RegExp(`data-look-id="${id}"`));
   }
   assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
   assert.match(markup, />Preset strength</);
-  assert.match(markup, />Creator presets</);
+  assert.match(markup, />Finish presets</);
+  assert.match(markup, />Before \/ after</);
   assert.match(markup, />Worn print texture and broken edges\.</);
   assert.match(markup, /<label[^>]*>Distress</);
   assert.match(markup, /<summary[^>]*>More<\/summary>/);
@@ -1041,11 +1046,11 @@ test('top bar exposes variation management and a live retryable save failure', (
     ...topBarProps,
     saveStatus: 'error',
   }));
-  assert.match(markup, /aria-label="Variation name"/);
+  assert.match(markup, /aria-label="Variant name"/);
   assert.match(markup, /aria-label="Duplicate variation"/);
   assert.match(markup, /aria-label="Delete variation"/);
   assert.match(markup, /aria-live="polite"/);
-  assert.match(markup, /Local save failed/);
+  assert.match(markup, /Project save failed/);
   assert.match(markup, /aria-label="Retry save"/);
 });
 
@@ -1078,8 +1083,14 @@ const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' 
   const project = createEditorProject('Inspector', source);
   return renderToStaticMarkup(createElement(EditorInspector, {
     project,
+    variation: project.variations[0],
     layer,
     tool,
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
     dispatch: () => undefined,
   }));
 };
@@ -1140,7 +1151,7 @@ test('Looks inspector replaces layer-specific content for a selected text layer'
     dispatch: () => undefined,
   }));
 
-  assert.match(markup, /<h2[^>]*>Creator finish<\/h2>/);
+  assert.match(markup, /<h2[^>]*>Looks<\/h2>/);
   assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
   assert.doesNotMatch(markup, /<h2[^>]*>Text<\/h2>/);
 });

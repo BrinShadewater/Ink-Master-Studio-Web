@@ -101,11 +101,13 @@ const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium
 
 const ImageInspector = ({
   layer,
+  asset,
   tool,
   mode,
   dispatch,
 }: {
   layer: ImageLayer;
+  asset: EditorAsset | undefined;
   tool: EditorTool;
   mode: 'easy' | 'advanced';
   dispatch: (command: EditorCommand) => void;
@@ -122,6 +124,23 @@ const ImageInspector = ({
     historyGroup?: string,
   ) => dispatch({ type: 'set-adjustments', layerId: layer.id, adjustments, historyGroup });
   const cropEdges = cropToEdgePercentages(layer.crop);
+  const applyAspectRatio = (ratio: number) => {
+    if (!asset) return;
+    const sourceRatio = asset.width / asset.height;
+    let width = layer.crop.width;
+    let height = width * sourceRatio / ratio;
+    if (height > 1) {
+      height = Math.min(1, layer.crop.height);
+      width = Math.min(1, height * ratio / sourceRatio);
+    }
+    updateCrop({
+      x: Math.max(0, Math.min(1 - width, layer.crop.x + (layer.crop.width - width) / 2)),
+      y: Math.max(0, Math.min(1 - height, layer.crop.y + (layer.crop.height - height) / 2)),
+      width,
+      height,
+    }, 'inspector-crop-ratio');
+    endHistoryGroup();
+  };
 
   return (
     <>
@@ -158,7 +177,7 @@ const ImageInspector = ({
         ) : null}
 
         {tool === 'crop' ? (
-          (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-8 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
             <RangeControl
               key={edge}
               id={`editor-crop-${edge}`}
@@ -172,7 +191,7 @@ const ImageInspector = ({
               )}
               onEnd={endHistoryGroup}
             />
-          ))
+          ))}</>
         ) : null}
 
         {tool === 'adjust' ? (
@@ -306,7 +325,7 @@ export const EditorInspector = ({
             onDone={onBackgroundDone}
           />
         ) : (
-          <ImageInspector layer={layer} tool={tool} mode={mode} dispatch={dispatch} />
+          <ImageInspector layer={layer} asset={assetsById[layer.assetId]} tool={tool} mode={mode} dispatch={dispatch} />
         )
       ) : (
         <>

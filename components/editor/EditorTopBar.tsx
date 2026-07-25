@@ -118,9 +118,9 @@ const IconButton = ({ label, icon: Icon, onClick, disabled = false, buttonRef }:
 );
 
 const saveStatusText: Record<SaveStatus, string> = {
-  saved: 'Saved locally',
-  saving: 'Saving locally',
-  error: 'Local save failed',
+  saved: 'Project saved locally',
+  saving: 'Saving project locally',
+  error: 'Project save failed',
 };
 
 export const EditorTopBar = ({
@@ -190,6 +190,7 @@ export const EditorTopBar = ({
         </a>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
+          <p className="px-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500">Project name</p>
           <input
             id="editor-project-name"
             className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
@@ -232,13 +233,14 @@ export const EditorTopBar = ({
       </div>
 
       <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-1 border-t border-neutral-900 md:min-w-0 md:flex-1 md:border-t-0">
-        <label className="sr-only" htmlFor="editor-variation">Variation</label>
+        <label className="sr-only" htmlFor="editor-variation">Variant selector</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant selector</span>
         <select
           id="editor-variation"
           className="h-9 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
           value={activeVariationId}
           disabled={variations.length === 0}
-          aria-label="Variation"
+          aria-label="Variant selector"
           onChange={(event) => onVariationChange(event.currentTarget.value)}
         >
           {variations.length === 0 ? <option value="">Original</option> : null}
@@ -246,12 +248,13 @@ export const EditorTopBar = ({
             <option key={variation.id} value={variation.id}>{variation.name}</option>
           ))}
         </select>
-        <label className="sr-only" htmlFor="editor-variation-name">Variation name</label>
+        <label className="sr-only" htmlFor="editor-variation-name">Variant name</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant name</span>
         <input
           id="editor-variation-name"
           className="h-9 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           value={variationNameState.draft}
-          aria-label="Variation name"
+          aria-label="Variant name"
           disabled={variations.length === 0}
           spellCheck={false}
           onChange={(event) => updateVariationNameState({ type: 'input', value: event.currentTarget.value })}

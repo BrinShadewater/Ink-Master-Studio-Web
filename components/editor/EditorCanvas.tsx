@@ -23,6 +23,7 @@ import type {
   EditorTool,
   ImageLayer,
   LayerTransform,
+  CropRect,
 } from '../../editor/model';
 import { useVariationPreviewSurface } from './VariationPreviewCanvas';
 import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
@@ -75,6 +76,7 @@ export interface EditorCanvasProps {
   onSelectLayer: (layerId: string) => void;
   onTransformChange: (layerId: string, transform: LayerTransform, historyGroup: string) => void;
   onTransformEnd: () => void;
+  onCropChange?: (layerId: string, crop: CropRect, historyGroup: string) => void;
   backgroundMode?: BackgroundBrushMode;
   backgroundBrushSize?: number;
   onPickBackground?: (point: NormalizedPoint) => void;
@@ -100,6 +102,12 @@ interface PanState {
   pointerId: number;
   startPoint: Point;
   startPan: Point;
+}
+
+interface CropDragState {
+  pointerId: number;
+  startPoint: Point;
+  crop: CropRect;
 }
 
 export const canvasPointToCropPoint = (
@@ -139,6 +147,7 @@ export const EditorCanvas = ({
   onSelectLayer,
   onTransformChange,
   onTransformEnd,
+  onCropChange,
   backgroundMode = 'idle',
   backgroundBrushSize = 32,
   onPickBackground,
@@ -149,6 +158,7 @@ export const EditorCanvas = ({
   const dragRef = useRef<DragState | null>(null);
   const strokeRef = useRef<StrokeState | null>(null);
   const panRef = useRef<PanState | null>(null);
+  const cropDragRef = useRef<CropDragState | null>(null);
   const [brushCursor, setBrushCursor] = useState<Point | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -196,6 +206,26 @@ export const EditorCanvas = ({
       source,
       selectedImage,
     );
+  };
+
+  const moveCrop = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = cropDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !selectedImage || !onCropChange) return;
+    const point = { x: event.clientX, y: event.clientY };
+    const maxX = Math.max(0, 1 - drag.crop.width);
+    const maxY = Math.max(0, 1 - drag.crop.height);
+    onCropChange(selectedImage.id, {
+      ...drag.crop,
+      x: Math.max(0, Math.min(maxX, drag.crop.x + (point.x - drag.startPoint.x) / zoomedDesignRect.width)),
+      y: Math.max(0, Math.min(maxY, drag.crop.y + (point.y - drag.startPoint.y) / zoomedDesignRect.height)),
+    }, 'canvas-crop-move');
+  };
+
+  const finishCrop = (event: PointerEvent<HTMLDivElement>) => {
+    if (!cropDragRef.current || cropDragRef.current.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    cropDragRef.current = null;
+    onTransformEnd();
   };
 
   const appendStrokePoint = (stroke: StrokeState, point: NormalizedPoint) => {
@@ -403,6 +433,29 @@ export const EditorCanvas = ({
         onPointerCancel={cancelPointer}
         onWheel={handleWheel}
       />
+      {tool === 'crop' && selectedImage ? (
+        <div
+          aria-label="Crop frame. Drag to reposition the crop."
+          className="absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)]"
+          style={{
+            left: zoomedDesignRect.x + selectedImage.crop.x * zoomedDesignRect.width,
+            top: zoomedDesignRect.y + selectedImage.crop.y * zoomedDesignRect.height,
+            width: selectedImage.crop.width * zoomedDesignRect.width,
+            height: selectedImage.crop.height * zoomedDesignRect.height,
+            backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%)',
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            cropDragRef.current = { pointerId: event.pointerId, startPoint: { x: event.clientX, y: event.clientY }, crop: { ...selectedImage.crop } };
+          }}
+          onPointerMove={moveCrop}
+          onPointerUp={finishCrop}
+          onPointerCancel={finishCrop}
+        >
+          <span className="absolute -top-7 left-0 bg-emerald-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">Drag to reposition</span>
+        </div>
+      ) : null}
       {brushCursor && (backgroundMode === 'erase' || backgroundMode === 'restore') ? (
         <div
           aria-hidden="true"

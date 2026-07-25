@@ -50,7 +50,7 @@ export const TraceInspector = ({
   return (
     <>
       <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-neutral-800 bg-neutral-900 px-4">
-        <h2 className="text-sm font-semibold text-neutral-100">Trace</h2>
+        <h2 className="text-sm font-semibold text-neutral-100">Vectorize</h2>
         {traceLayer ? (
           <button
             type="button"
@@ -64,6 +64,7 @@ export const TraceInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
+        <p className="text-xs leading-5 text-neutral-500">Vectorize creates editable SVG paths from an image. “Trace” is the technical name for the same process.</p>
         <RangeControl
           id="editor-trace-colors"
           label="Colors"

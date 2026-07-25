@@ -136,7 +136,9 @@ export const ProductCanvas = ({
     () => containProductMockup(viewport),
     [viewport],
   );
-  const placementMockup = displayedMockup ?? requestedMockup;
+  const placementMockup = displayedMockup?.slug === requestedMockup.slug
+    ? displayedMockup
+    : requestedMockup;
   const regionRect = useMemo(
     () => resolveProductRegionRect(mockupRect, placementMockup.printableRegion),
     [mockupRect, placementMockup],
@@ -240,10 +242,10 @@ export const ProductCanvas = ({
       onPointerCancel={finishPointer}
       onLostPointerCapture={finishPointer}
     >
-      {displayedMockup ? (
+      {placementMockup ? (
         <img
-          alt={`${displayedMockup.name} T-shirt`}
-          src={displayedMockup.file}
+          alt={`${placementMockup.name} T-shirt`}
+          src={placementMockup.file}
           draggable={false}
           className="pointer-events-none absolute z-0 select-none"
           style={{
@@ -256,7 +258,7 @@ export const ProductCanvas = ({
         />
       ) : null}
 
-      {displayedMockup ? (
+      {placementMockup ? (
         <>
           <div
             aria-hidden="true"
