@@ -1176,7 +1176,7 @@ test('composes ordered image and text layers with persistence on desktop', async
   await expectCanvasPainted(canvas);
   const canvasBeforeReload = await readCanvasPixels(canvas);
   await page.waitForTimeout(500);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const workspaceBeforeReload = await readPersistedWorkspace(page, 'phase-2a-base');
   expect(workspaceBeforeReload).not.toBeNull();
   expectPersistedImageAssets(workspaceBeforeReload!, {
@@ -1226,7 +1226,7 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
   await page.waitForTimeout(500);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const canvasBeforeText = await readCanvasPixels(canvas);
 
   await page.getByRole('button', { name: 'Layers' }).click();
@@ -1277,7 +1277,7 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
   expect(canvasWithText).not.toBe(canvasBeforeText);
 
   await page.waitForTimeout(500);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const mobileWorkspace = await readPersistedWorkspace(page, 'phase-2a-mobile');
   expect(mobileWorkspace).not.toBeNull();
   expect(mobileWorkspace?.composition.layers.map(({ type, name }) => ({ type, name }))).toEqual([
@@ -1374,7 +1374,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
     contrast: 25,
     x: 0.5,
   });
-  await expect(page.getByText('Saved locally')).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
 
   const desktopLayout = await page.evaluate(() => {
     const canvasBounds = document.querySelector('canvas[aria-label="Design canvas"]')?.getBoundingClientRect();
@@ -1531,7 +1531,7 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   await expect(page.getByLabel('Variation name')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate variation' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
   const layout = await page.evaluate(() => {
@@ -1831,7 +1831,7 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
     animations: 'disabled',
   });
   await retry.click();
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.65);
 });
 
@@ -1877,7 +1877,7 @@ test('imports by drop, revokes object URLs, and deletes the local project', asyn
     const events = (window as unknown as { __task7ObjectUrlEvents: { created: string[]; revoked: string[] } }).__task7ObjectUrlEvents;
     return events.revoked.filter((url) => events.created.includes(url)).length;
   })).toBeGreaterThanOrEqual(1);
-  await expect(page.getByText('Saved locally')).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open local projects' }).click();
   page.once('dialog', (dialog) => dialog.accept());
@@ -2139,7 +2139,7 @@ test('compares Looks across variations', async ({ page }) => {
       { name: 'Mono', lookId: 'monochrome' },
       { name: 'Duotone', lookId: 'duotone' },
     ]);
-  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const beforeCompare = await readPersistedProjectBytes(page, 'compare-looks');
   expect(beforeCompare).not.toBeNull();
 
@@ -2405,7 +2405,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
     desktopPngs['Distressed Press'],
   ]).size).toBe(3);
 
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
     ({ name, look }) => ({ name, look }),
   )).toEqual([
@@ -2596,7 +2596,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
     { name: 'Vintage Study', look: expectedVintageLook },
     { name: 'Dark Alternate', look: { id: 'high-contrast', strength: 100, contrast: 55, blackPoint: 12, saturation: 5 } },
   ]);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const projectBeforeCompare = await readPersistedPhase2BProject(page, projectName);
   const projectBytesBeforeCompare = await readPersistedProjectBytes(page, projectName);
 
@@ -2751,7 +2751,7 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
   const expectedRecipe = { id: 'monochrome', strength: 47, contrast: 20, brightness: 0 };
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const projectBeforeRetry = await readPersistedPhase2BProject(page, projectName);
   const projectBytesBeforeRetry = await readPersistedProjectBytes(page, projectName);
 
@@ -2963,7 +2963,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByLabel('X position', { exact: true }).fill('0.58');
   await page.getByLabel('X position', { exact: true }).blur();
   await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.58');
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
     const trace = workspace?.variation.layers.find(({ type }) => type === 'trace');
@@ -3317,7 +3317,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
     return workspace?.productVariants.find(({ variationId }) => variationId === duplicateId)?.placement.y;
   }).toBe(0.62);
 
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByLabel('Project name')).toBeVisible();
   const beforeReload = await readPersistedPhase3AWorkspace(page, projectName);
   if (!beforeReload) throw new Error('Phase 3A workspace was not saved before reload.');
   await page.reload();

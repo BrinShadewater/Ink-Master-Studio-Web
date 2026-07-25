@@ -26,6 +26,7 @@ import {
   TraceCoordinator,
   createBrowserTraceWorker,
 } from '../../editor/traceCoordinator';
+import { createDefaultLook } from '../../editor/lookModel';
 import {
   createTextLayer,
   type DesignLayer,
@@ -51,6 +52,7 @@ import { ExportMenu } from './ExportMenu';
 import { ProductCanvas } from './ProductCanvas';
 import { useProductMockup } from './useProductMockup';
 import { ProductExportDialog } from './ProductExportDialog';
+import { CanvasBeforeAfter } from './CanvasBeforeAfter';
 
 const isTextControl = (target: EventTarget | null) =>
   target instanceof HTMLElement && Boolean(target.closest('input, select, textarea'));
@@ -232,6 +234,24 @@ export const EditorApp = () => {
     dispatch: workspace.dispatch,
     commitGeneratedAsset: workspace.commitGeneratedAsset,
   });
+  const comparisonBeforeVariation = (() => {
+    if (!variation) return null;
+    if (tool === 'looks') return { ...variation, look: createDefaultLook('original') };
+    if (
+      tool !== 'enhance' ||
+      !selectedImageLayer ||
+      !resolutionWorkflow.beforeAssetId ||
+      !workspace.assetsById[resolutionWorkflow.beforeAssetId]
+    ) return null;
+    return {
+      ...variation,
+      layers: variation.layers.map((layer) => (
+        layer.id === selectedImageLayer.id && layer.type === 'image'
+          ? { ...layer, assetId: resolutionWorkflow.beforeAssetId }
+          : layer
+      )),
+    };
+  })();
 
   useEffect(() => {
     if (!lookCoordinator) return;
@@ -505,6 +525,15 @@ export const EditorApp = () => {
                   onPlacementEnd={() => workspace.dispatch({ type: 'end-history-group' })}
                   onRetry={productMockup.retry}
                   onReturnToDesign={() => setTool('select')}
+                />
+              ) : comparisonBeforeVariation && variation ? (
+                <CanvasBeforeAfter
+                  before={comparisonBeforeVariation}
+                  after={variation}
+                  assetsById={workspace.assetsById}
+                  imagesById={imagesById}
+                  coordinator={lookCoordinator}
+                  label={tool === 'enhance' ? 'Resolution enhancement comparison' : 'Finish comparison'}
                 />
               ) : (
                 <EditorCanvas

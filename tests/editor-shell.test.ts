@@ -845,14 +845,14 @@ test('Looks inspector renders nine actual selected-state previews and complete c
   });
 
   assert.equal(markup.match(/data-look-thumbnail="true"/g)?.length, LOOK_IDS.length);
-  assert.equal(markup.match(/<canvas[^>]*data-look-preview="true"/g)?.length, LOOK_IDS.length + 2);
+  assert.equal(markup.match(/<canvas[^>]*data-look-preview="true"/g)?.length, LOOK_IDS.length);
   for (const id of LOOK_IDS) {
     assert.match(markup, new RegExp(`data-look-id="${id}"`));
   }
   assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
   assert.match(markup, />Preset strength</);
   assert.match(markup, />Finish presets</);
-  assert.match(markup, />Before \/ after</);
+  assert.doesNotMatch(markup, />Before \/ after</);
   assert.match(markup, />Worn print texture and broken edges\.</);
   assert.match(markup, /<label[^>]*>Distress</);
   assert.match(markup, /<summary[^>]*>More<\/summary>/);

@@ -9,6 +9,7 @@ const MAX_ENHANCED_EDGE = 8_192;
 export interface ResolutionWorkflow {
   status: 'idle' | 'processing' | 'failed';
   error: string | null;
+  beforeAssetId: string | null;
   enhance: (scale: 2 | 4) => Promise<void>;
 }
 
@@ -29,6 +30,7 @@ export const useResolutionWorkflow = ({
 }): ResolutionWorkflow => {
   const [status, setStatus] = useState<ResolutionWorkflow['status']>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [beforeAssetId, setBeforeAssetId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const enhance = useCallback(async (scale: 2 | 4) => {
@@ -66,6 +68,7 @@ export const useResolutionWorkflow = ({
         historyGroup: 'enhance-resolution',
       });
       if (!committed) return;
+      setBeforeAssetId(layer.assetId);
       dispatch({ type: 'end-history-group' });
       setStatus('idle');
     } catch (reason) {
@@ -74,5 +77,5 @@ export const useResolutionWorkflow = ({
     }
   }, [commitGeneratedAsset, dispatch, layer, project, sourceImage, sourceSize, status]);
 
-  return { status, error, enhance };
+  return { status, error, beforeAssetId, enhance };
 };

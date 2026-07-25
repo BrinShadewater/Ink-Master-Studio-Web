@@ -209,15 +209,9 @@ export const EditorTopBar = ({
               }
             }}
           />
-          <div className="flex h-4 items-center gap-1 px-1 text-[10px] leading-none md:text-[11px]">
-            <span
-              className={saveStatus === 'error' ? 'text-red-400' : 'text-neutral-500'}
-              role="status"
-              aria-live="polite"
-            >
-              {saveStatusText[saveStatus]}
-            </span>
-            {saveStatus === 'error' ? (
+          {saveStatus === 'error' ? (
+            <div className="flex h-4 items-center gap-1 px-1 text-[10px] leading-none md:text-[11px]">
+              <span className="text-red-400" role="status" aria-live="polite">{saveStatusText[saveStatus]}</span>
               <button
                 type="button"
                 className="-my-1 grid h-6 w-6 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
@@ -227,8 +221,8 @@ export const EditorTopBar = ({
               >
                 <RefreshCw aria-hidden="true" size={12} />
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -252,7 +246,7 @@ export const EditorTopBar = ({
         <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant name</span>
         <input
           id="editor-variation-name"
-          className="h-9 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="h-9 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-48 md:flex-none"
           value={variationNameState.draft}
           aria-label="Variant name"
           disabled={variations.length === 0}

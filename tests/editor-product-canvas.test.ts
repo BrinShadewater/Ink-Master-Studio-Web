@@ -53,7 +53,7 @@ test('renders a labeled photographic shirt with undarkened transparent artwork a
   assert.match(markup, /data-product-print="garment-blended"/);
   assert.match(markup, /mix-blend-mode:normal/);
   assert.match(markup, /border-dashed border-teal-300\/35/);
-  assert.match(markup, /bg-\[#0b1b22\]/);
+  assert.match(markup, /bg-\[#c9d2d1\]/);
 });
 
 test('announces initial loading and exposes recovery for initial shirt failure', () => {

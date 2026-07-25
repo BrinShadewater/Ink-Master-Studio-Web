@@ -207,26 +207,6 @@ const ColorLookControl = ({ id, label, value, onInput, onCommit }: ColorLookCont
 
 const commandButtonClass = 'flex h-9 items-center justify-center gap-2 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
-const BeforeAfterPreview = ({
-  variation,
-  assetsById,
-  imagesById,
-  coordinator,
-}: Pick<LooksInspectorProps, 'variation' | 'assetsById' | 'imagesById' | 'coordinator'>) => {
-  const [position, setPosition] = useState(50);
-  const originalVariation = { ...variation, look: createDefaultLook('original') };
-  return <section className="grid gap-2 border-t border-neutral-800 pt-4" aria-labelledby="before-after-title">
-    <div className="flex items-baseline justify-between gap-3"><h3 id="before-after-title" className="text-xs font-semibold text-neutral-200">Before / after</h3><p className="text-[11px] text-neutral-500">Compare the original with your finish.</p></div>
-    <div className="relative aspect-[4/3] overflow-hidden border border-neutral-700 bg-[#f5f5f3]">
-      <VariationPreviewCanvas surfaceId={`look-before:${variation.id}`} variation={originalVariation} assetsById={assetsById} imagesById={imagesById} coordinator={coordinator} maxPixelDimension={800} background="#f5f5f3" ariaLabel="Original artwork preview" />
-      <div className="absolute inset-y-0 right-0 overflow-hidden" style={{ width: `${100 - position}%` }}><div className="absolute inset-y-0 right-0" style={{ width: `${10000 / Math.max(1, 100 - position)}%` }}><VariationPreviewCanvas surfaceId={`look-after:${variation.id}`} variation={variation} assetsById={assetsById} imagesById={imagesById} coordinator={coordinator} maxPixelDimension={800} background="#f5f5f3" ariaLabel="Edited artwork preview" /></div></div>
-      <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-px bg-emerald-400" style={{ left: `${position}%` }} />
-      <span className="absolute left-2 top-2 bg-neutral-950/80 px-1.5 py-1 text-[9px] font-semibold uppercase text-white">Before</span><span className="absolute right-2 top-2 bg-neutral-950/80 px-1.5 py-1 text-[9px] font-semibold uppercase text-white">After</span>
-    </div>
-    <input aria-label="Before and after position" type="range" min="0" max="100" value={position} onChange={(event) => setPosition(event.currentTarget.valueAsNumber)} className="accent-emerald-500" />
-  </section>;
-};
-
 export const LooksInspector = ({
   variation,
   assetsById,
@@ -485,8 +465,6 @@ export const LooksInspector = ({
           onChange={updateDistress}
           onEnd={endHistoryGroup}
         />
-
-        <BeforeAfterPreview variation={variation} assetsById={assetsById} imagesById={imagesById} coordinator={coordinator} />
 
         <NumericLookControl
           id="editor-look-strength"

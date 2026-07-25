@@ -236,7 +236,7 @@ export const ProductCanvas = ({
     <section
       ref={stageRef}
       aria-label="T-shirt product preview"
-      className="relative h-full min-h-0 overflow-hidden bg-[#0b1b22]"
+      className="relative h-full min-h-0 overflow-hidden bg-[#c9d2d1]"
       onPointerMove={movePointer}
       onPointerUp={finishPointer}
       onPointerCancel={finishPointer}
