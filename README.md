@@ -107,8 +107,10 @@ Four fully superseded components were moved to `archive/`, which is excluded
 from TypeScript compilation. They are kept for reference, not for use; see
 `archive/README.md`.
 
-The editor's Basic/Adv toggle controls inspector density within the editor. It
-is not related to the older production suite described above.
+The editor has a Basic/Advanced mode toggle in its top bar. Advanced mode there
+means denser inspector controls inside the canvas editor. It is a different
+thing from the older production suite described above, and the two should not be
+confused.
 
 Gemini requests remain behind the server-side `/api/edit-image` route.
 `GEMINI_API_KEY` must never be exposed through Vite `define`, `VITE_`
