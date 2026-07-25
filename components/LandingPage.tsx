@@ -9,9 +9,9 @@ const particles = Array.from({ length: 96 }, (_, index) => ({
 }));
 
 const garments = [
-  { id: 'black', label: 'Black', swatch: '#17191d', image: '/landing-tee-black.png', imageClass: 'object-contain brightness-[0.72] contrast-[1.15]' },
-  { id: 'heather', label: 'Heather gray', swatch: '#74787a', image: '/landing-tee-heather.png', imageClass: 'object-contain' },
-  { id: 'white', label: 'White', swatch: '#c9cfce', image: '/landing-tee-white.png', imageClass: 'object-contain brightness-[0.78] contrast-[0.9] saturate-[0.8]' },
+  { id: 'black', label: 'Black', swatch: '#17191d', image: '/landing-tee-black.webp', imageClass: 'object-contain brightness-[0.72] contrast-[1.15]' },
+  { id: 'heather', label: 'Heather gray', swatch: '#74787a', image: '/landing-tee-heather.webp', imageClass: 'object-contain' },
+  { id: 'white', label: 'White', swatch: '#c9cfce', image: '/landing-tee-white.webp', imageClass: 'object-contain' },
 ] as const;
 
 const LandingBackdrop = () => <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
@@ -25,11 +25,26 @@ const ProductStage = () => {
   const copyTone = selectedId === 'white' ? 'text-neutral-950' : 'text-white';
   const printBlend = selectedId === 'white' ? 'mix-blend-multiply' : 'mix-blend-screen';
 
+  // Warm the unselected garment images so swatch switching stays instant, but
+  // only once the browser is idle. Doing this on mount put roughly 1.7MB of
+  // images the visitor may never view in direct competition with first paint.
   useEffect(() => {
-    garments.forEach(({ image }) => {
-      const mockup = new Image();
-      mockup.src = image;
-    });
+    const warm = () => {
+      garments.forEach(({ image }) => {
+        if (image === selected.image) return;
+        const mockup = new Image();
+        mockup.src = image;
+      });
+    };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === 'function') {
+      const handle = idle(warm, { timeout: 3000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = window.setTimeout(warm, 1500);
+    return () => window.clearTimeout(handle);
+    // Mount-only on purpose: this warms the alternatives once. The selected
+    // garment is already being fetched by the rendered image element.
   }, []);
 
   return <div className="relative mx-auto w-full max-w-[760px]">
@@ -37,10 +52,10 @@ const ProductStage = () => {
       <div className="absolute inset-7 border border-[#496574]/35" />
       <div className="absolute inset-x-0 top-6 flex justify-between px-9 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
       <div className="absolute inset-y-0 left-6 flex flex-col justify-between py-12 text-[10px] text-[#718c98]"><span>00</span><span>200</span><span>400</span><span>600</span></div>
-      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} decoding="async" fetchPriority="high" className={`absolute inset-x-[5%] top-[2%] h-[105%] w-[90%] object-contain ${selected.imageClass}`} />
+      <img src={selected.image} alt={`${selected.label} T-shirt with featured artwork`} decoding="async" fetchPriority="high" className={`absolute inset-x-[5%] inset-y-0 h-full w-[90%] object-contain ${selected.imageClass}`} />
       <div className="absolute inset-x-0 top-[37%] flex h-[31%] flex-col items-center gap-1">
         <p className={`text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
-        <img src="/landing-siren-print.jpg" alt="Siren artwork printed on the T-shirt" decoding="async" fetchPriority="high" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
+        <img src="/landing-siren-print.webp" alt="Siren artwork printed on the T-shirt" decoding="async" fetchPriority="high" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
         <p className={`text-center text-[9px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
       </div>
       <div className="absolute inset-x-0 bottom-0 border-t border-[#405967] bg-[#172633]/94 px-4 py-3 backdrop-blur md:px-5">
@@ -67,7 +82,7 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => <main classNa
   <LandingBackdrop />
   <header className="relative z-10 border-b border-[#36515f] bg-[#101d27]/98 px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur md:px-8">
     <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-5">
-      <div className="flex min-w-0 items-center gap-3"><img src="/logo/logo.png" alt="InkMaster Studio" className="h-14 w-14 shrink-0 object-contain" /><div className="hidden leading-none sm:block"><p className="text-xl font-black uppercase tracking-[0.08em] text-white md:text-2xl">InkMaster</p><p className="mt-1 text-xs font-bold uppercase tracking-[0.46em] text-[#70aeb2]">Studio</p></div></div>
+      <div className="flex min-w-0 items-center gap-3"><img src="/logo/logo-mark.webp" alt="InkMaster Studio" className="h-14 w-14 shrink-0 object-contain" /><div className="hidden leading-none sm:block"><p className="text-xl font-black uppercase tracking-[0.08em] text-white md:text-2xl">InkMaster</p><p className="mt-1 text-xs font-bold uppercase tracking-[0.46em] text-[#70aeb2]">Studio</p></div></div>
       <button type="button" className="flex h-10 shrink-0 items-center gap-2 bg-[#315f6c] px-4 text-sm font-semibold text-white transition hover:bg-[#3d7781] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ac9ce]" onClick={onOpenEditor}>Start designing <ArrowRight aria-hidden="true" size={16} /></button>
     </div>
   </header>

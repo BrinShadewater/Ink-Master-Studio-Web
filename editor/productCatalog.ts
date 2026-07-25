@@ -26,17 +26,17 @@ export const DEFAULT_TSHIRT_PRINTABLE_REGION: ProductPrintableRegion = {
 };
 
 const catalogRows = [
-  ['black', 'Black', '/mockups/mockup-black.png', '#1A1A1A'],
-  ['burgundy', 'Burgundy', '/mockups/mockup-burgundy.png', '#6B2737'],
-  ['cardinal', 'Cardinal', '/mockups/mockup-cardinal.png', '#8B1A1A'],
-  ['charcoal', 'Charcoal', '/mockups/mockup-charcoal.png', '#3D3D3D'],
-  ['forest-green', 'Forest green', '/mockups/mockup-forestgreen.png', '#2D5A27'],
-  ['heather', 'Heather', '/mockups/mockup-heather.png', '#8E9A9A'],
-  ['military-green', 'Military green', '/mockups/mockup-miltarygreen.png', '#4A5240'],
-  ['navy', 'Navy', '/mockups/mockup-navy.png', '#1B2A4A'],
-  ['orange', 'Orange', '/mockups/mockup-orange.png', '#D4620A'],
-  ['red', 'Red', '/mockups/mockup-red.png', '#C0392B'],
-  ['royal-blue', 'Royal blue', '/mockups/mockup-royalblue.png', '#2255A4'],
+  ['black', 'Black', '/mockups/mockup-black.webp', '#1A1A1A'],
+  ['burgundy', 'Burgundy', '/mockups/mockup-burgundy.webp', '#6B2737'],
+  ['cardinal', 'Cardinal', '/mockups/mockup-cardinal.webp', '#8B1A1A'],
+  ['charcoal', 'Charcoal', '/mockups/mockup-charcoal.webp', '#3D3D3D'],
+  ['forest-green', 'Forest green', '/mockups/mockup-forestgreen.webp', '#2D5A27'],
+  ['heather', 'Heather', '/mockups/mockup-heather.webp', '#8E9A9A'],
+  ['military-green', 'Military green', '/mockups/mockup-miltarygreen.webp', '#4A5240'],
+  ['navy', 'Navy', '/mockups/mockup-navy.webp', '#1B2A4A'],
+  ['orange', 'Orange', '/mockups/mockup-orange.webp', '#D4620A'],
+  ['red', 'Red', '/mockups/mockup-red.webp', '#C0392B'],
+  ['royal-blue', 'Royal blue', '/mockups/mockup-royalblue.webp', '#2255A4'],
 ] as const satisfies readonly [
   TShirtMockupSlug,
   string,
