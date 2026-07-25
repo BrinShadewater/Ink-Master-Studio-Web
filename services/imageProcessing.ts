@@ -8,7 +8,6 @@ import {
 } from './imageProcessingWorkerClient';
 import { buildUpscaleMetadata } from './upscaleEngine';
 // @ts-ignore
-import { jsPDF } from 'jspdf';
 
 const legacyUpscaleMetadata = () => buildUpscaleMetadata(
   TARGET_WIDTH,
@@ -184,78 +183,6 @@ export const processImage = async (
   return processImageInWorker(imageSource, settings, options);
 };
 
-// --- FEATURE 8: PRINT PDF EXPORT ---
-export const generatePrintPDF = async (
-    imageUrl: string,
-    itemType: string
-  ): Promise<{ blob: Blob; url: string }> => {
-    // PDF dimensions at 72 DPI (standard PDF units = points)
-    // 8.5" x 11" = 612 x 792 points
-    const PAGE_W = 612;
-    const PAGE_H = 792;
-    const BLEED = 9;    // 0.125" = 9pt
-    const MARGIN = 36;  // 0.5" margin
-    // @ts-ignore
-    const doc = new jsPDF({ unit: 'pt', format: [PAGE_W, PAGE_H] });
-
-    const img = await loadImage(imageUrl);
-    
-    // Scale image to fit within safe area
-    const maxW = PAGE_W - MARGIN * 2;
-    const maxH = PAGE_H - MARGIN * 2 - 40; // 40pt for footer
-    const aspect = img.naturalWidth / img.naturalHeight;
-    let drawW = maxW;
-    let drawH = maxW / aspect;
-    if (drawH > maxH) { drawH = maxH; drawW = maxH * aspect; }
-    
-    // Center logic
-    const imgX = (PAGE_W - drawW) / 2;
-    const imgY = MARGIN + (maxH - drawH) / 2;
-
-    // We can pass the URL directly to addImage if it's base64 or a blob URL that jspdf can read, 
-    // but sometimes it's safer to draw to canvas first if we did complex processing.
-    // Here we can use the imageUrl directly.
-    doc.addImage(img, 'PNG', imgX, imgY, drawW, drawH);
-
-    // Bleed border (red dashed)
-    doc.setDrawColor(255, 0, 0);
-    doc.setLineWidth(0.5);
-    doc.setLineDashPattern([3, 3], 0);
-    doc.rect(BLEED, BLEED, PAGE_W - BLEED * 2, PAGE_H - BLEED * 2);
-    doc.setLineDashPattern([], 0);
-
-    // Crop marks (black)
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.5);
-    const MARK_LEN = 18;
-    const MARK_GAP = 6;
-
-    const drawCropMark = (x: number, y: number, hDir: number, vDir: number) => {
-        // Horizontal
-        doc.line(x + hDir * MARK_GAP, y, x + hDir * (MARK_GAP + MARK_LEN), y);
-        // Vertical
-        doc.line(x, y + vDir * MARK_GAP, x, y + vDir * (MARK_GAP + MARK_LEN));
-    };
-
-    drawCropMark(BLEED, BLEED, -1, -1);
-    drawCropMark(PAGE_W - BLEED, BLEED, 1, -1);
-    drawCropMark(BLEED, PAGE_H - BLEED, -1, 1);
-    drawCropMark(PAGE_W - BLEED, PAGE_H - BLEED, 1, 1);
-
-    // Footer text
-    doc.setTextColor(100);
-    doc.setFontSize(7);
-    doc.text(
-      `InkMaster AI · ${itemType} · ${img.naturalWidth}×${img.naturalHeight}px · Color Profile: sRGB IEC61966-2.1 · Bleed: 0.125"`,
-      BLEED + 4,
-      PAGE_H - 10
-    );
-
-    const blob = doc.output('blob');
-    return { blob, url: URL.createObjectURL(blob) };
-  };
-
-// --- FEATURE 3: UNDERBASE GENERATOR ---
 const generateUnderbaseOnMainThread = async (
     processedImageUrl: string,
     format: 'PNG' | 'SVG' | 'JPG'
@@ -305,92 +232,6 @@ const generateUnderbaseOnMainThread = async (
       );
     });
   };
-
-const exportRaster = async (canvas: HTMLCanvasElement, settings: ProcessingSettings): Promise<ProcessedResult> => {
-  if (settings.format === OutputFormat.PDF) {
-     const previewBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-     const previewUrl = previewBlob ? URL.createObjectURL(previewBlob) : '';
-
-     const widthInches = TARGET_WIDTH / 300;
-     const heightInches = TARGET_HEIGHT / 300;
-     
-     // @ts-ignore
-     const pdf = new jsPDF({
-         orientation: widthInches > heightInches ? 'l' : 'p',
-         unit: 'in',
-         format: [widthInches, heightInches]
-     });
-     
-     const imgData = canvas.toDataURL('image/png');
-     pdf.addImage(imgData, 'PNG', 0, 0, widthInches, heightInches);
-     
-     const pdfBlob = pdf.output('blob');
-     const pdfUrl = URL.createObjectURL(pdfBlob);
-     
-     return {
-         blob: pdfBlob,
-         url: pdfUrl,
-         previewUrl: previewUrl,
-         width: TARGET_WIDTH,
-         height: TARGET_HEIGHT,
-         upscale: legacyUpscaleMetadata()
-     };
-  }
-
-  if (settings.format === OutputFormat.JPG) {
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = TARGET_WIDTH;
-    tempCanvas.height = TARGET_HEIGHT;
-    const tempCtx = tempCanvas.getContext('2d');
-    if (tempCtx) {
-      if (settings.shirtColor === ShirtColor.WHITE) {
-        tempCtx.fillStyle = '#FFFFFF';
-      } else if (settings.shirtColor === ShirtColor.NONE) {
-        tempCtx.fillStyle = '#FFFFFF';
-      } else {
-        tempCtx.fillStyle = '#000000';
-      }
-      tempCtx.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
-      tempCtx.drawImage(canvas, 0, 0);
-      
-      return new Promise((resolve) => {
-        tempCanvas.toBlob(
-            (blob) => {
-                if (!blob) throw new Error("Failed");
-                const url = URL.createObjectURL(blob);
-                resolve({blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata()});
-            },
-            'image/jpeg',
-            0.9
-        );
-      });
-    }
-  }
-
-  let mimeType = 'image/png';
-  return new Promise((resolve) => {
-    if (settings.format === OutputFormat.SVG) {
-      // Raster wrapped in SVG
-      const dataUrl = canvas.toDataURL('image/png');
-      const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${TARGET_WIDTH}" height="${TARGET_HEIGHT}" viewBox="0 0 ${TARGET_WIDTH} ${TARGET_HEIGHT}">
-         <image href="${dataUrl}" x="0" y="0" width="${TARGET_WIDTH}" height="${TARGET_HEIGHT}" />
-      </svg>`;
-      const blob = new Blob([svgString], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
-      resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata() });
-    } else {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) throw new Error('Failed to generate blob');
-          const url = URL.createObjectURL(blob);
-          resolve({ blob, url, previewUrl: url, width: TARGET_WIDTH, height: TARGET_HEIGHT, upscale: legacyUpscaleMetadata() });
-        },
-        mimeType,
-        0.9
-      );
-    }
-  });
-};
 
 export const generateUnderbase = async (
   processedImageUrl: string,
