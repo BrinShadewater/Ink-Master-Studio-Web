@@ -175,6 +175,12 @@ export const EditorApp = () => {
       candidate.id === product.colorVariationIds[product.mockupSlug],
     ) ?? variation
     : variation;
+  const productArtworkImageLayer = productArtworkVariation?.layers.find(
+    (layer): layer is ImageLayer => layer.type === 'image',
+  ) ?? null;
+  const productArtworkUrl = productArtworkImageLayer
+    ? workspace.assetUrlsById[productArtworkImageLayer.assetId] ?? null
+    : null;
   const productMockup = useProductMockup(requestedProductMockup);
 
   useEffect(() => {
@@ -621,11 +627,20 @@ export const EditorApp = () => {
                 productPreviewMode={productPreviewMode}
                 onProductPreviewModeChange={setProductPreviewMode}
                 productArtworkVariation={productArtworkVariation}
+                productArtworkUrl={productArtworkUrl}
                 onEnhanceProductArtwork={() => {
                   if (productArtworkVariation && productArtworkVariation.id !== variation?.id) {
                     workspace.dispatch({ type: 'select-variation', variationId: productArtworkVariation.id });
                   }
                   setTool('enhance');
+                }}
+                onRemoveProductArtworkBackground={() => {
+                  if (!productArtworkVariation || !productArtworkImageLayer) return;
+                  if (productArtworkVariation.id !== variation?.id) {
+                    workspace.dispatch({ type: 'select-variation', variationId: productArtworkVariation.id });
+                  }
+                  workspace.dispatch({ type: 'select-layer', layerId: productArtworkImageLayer.id });
+                  setTool('remove-background');
                 }}
                 onRetryProduct={() => {
                   productMockup.retry();

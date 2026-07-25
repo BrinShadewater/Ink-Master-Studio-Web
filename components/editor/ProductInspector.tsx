@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { EditorCommand } from '../../editor/history';
 import type { DesignVariation, EditorAsset } from '../../editor/model';
 import {
@@ -12,6 +13,8 @@ import {
   type TShirtProductVariant,
 } from '../../editor/productModel';
 import { getTShirtExportPreset, resolveTShirtExportGeometry } from '../../editor/tshirtExportModel';
+import { analyzeArtwork } from '../../services/artworkAnalysis';
+import type { ArtworkAnalysis } from '../../types';
 import { NumberControl, RangeControl } from './TransformControls';
 
 export interface ProductInspectorProps {
@@ -24,7 +27,9 @@ export interface ProductInspectorProps {
   onPreviewModeChange?: (mode: ProductPreviewMode) => void;
   artworkVariation?: DesignVariation | null;
   assetsById?: Record<string, EditorAsset>;
+  artworkUrl?: string | null;
   onEnhanceResolution?: () => void;
+  onRemoveBackground?: () => void;
   dispatch: (command: EditorCommand) => void;
   onRetry: () => void;
   onReturnToDesign: () => void;
@@ -56,6 +61,7 @@ const rotationBounds = {
 } as const;
 
 const actionClass = 'h-9 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const darkGarmentSlugs = new Set(['black', 'navy', 'charcoal', 'burgundy', 'cardinal', 'forest-green', 'military-green', 'red', 'royal-blue']);
 
 export const getProductReadinessEstimate = (
   variation: DesignVariation | null | undefined,
@@ -84,7 +90,9 @@ export const ProductInspector = ({
   onPreviewModeChange = () => undefined,
   artworkVariation = null,
   assetsById = {},
+  artworkUrl = null,
   onEnhanceResolution = () => undefined,
+  onRemoveBackground = () => undefined,
   dispatch,
   onRetry,
   onReturnToDesign,
@@ -97,6 +105,29 @@ export const ProductInspector = ({
   ) => dispatch({ type: 'set-product-placement', placement, historyGroup });
   const failure = mockupStatus === 'failed' || Boolean(artworkError);
   const readiness = getProductReadinessEstimate(artworkVariation, product, assetsById);
+  const [analysis, setAnalysis] = useState<ArtworkAnalysis | null>(null);
+
+  useEffect(() => {
+    if (!artworkUrl) {
+      setAnalysis(null);
+      return undefined;
+    }
+    let isCurrent = true;
+    void analyzeArtwork(artworkUrl).then(
+      (nextAnalysis) => {
+        if (isCurrent) setAnalysis(nextAnalysis);
+      },
+      () => {
+        if (isCurrent) setAnalysis(null);
+      },
+    );
+    return () => {
+      isCurrent = false;
+    };
+  }, [artworkUrl]);
+  const contrastRisk = darkGarmentSlugs.has(product.mockupSlug)
+    ? analysis?.contrastRisk.darkGarment
+    : analysis?.contrastRisk.lightGarment;
 
   return (
     <>
@@ -180,6 +211,28 @@ export const ProductInspector = ({
           <div className="flex items-center justify-between gap-3"><h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">Full-front print check</h3><span className={`text-[10px] font-semibold uppercase ${readiness.status === 'ready' ? 'text-emerald-300' : readiness.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>{readiness.status === 'ready' ? 'Good' : readiness.status === 'review' ? 'Review' : 'Enhance'}</span></div>
           <p className="text-xs leading-5 text-neutral-400">Largest source edge: {readiness.sourceSide}px. Estimated scale for a 15 in x 18 in full-front PNG: {readiness.scale.toFixed(2)}x.</p>
           {readiness.status === 'enhance' ? <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button> : null}
+        </section> : null}
+
+        {analysis ? <section className="grid gap-3 border border-neutral-800 bg-neutral-950/70 p-3" aria-labelledby="print-lens-title">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 id="print-lens-title" className="text-xs font-medium text-neutral-100">Print Lens</h3>
+              <p className="mt-1 text-xs leading-5 text-neutral-500">Checks the current art against this garment.</p>
+            </div>
+            <span className="text-[10px] font-semibold uppercase text-cyan-300">Live check</span>
+          </div>
+          <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Background</span><span className={analysis.hasTransparency ? 'font-medium text-emerald-300' : analysis.edgeBackground.isUniform ? 'font-medium text-amber-300' : 'font-medium text-neutral-300'}>{analysis.hasTransparency ? 'Transparent' : analysis.edgeBackground.isUniform ? 'Review edge' : 'Mixed edge'}</span></div>
+            {!analysis.hasTransparency && analysis.edgeBackground.isUniform ? <div className="flex items-center justify-between gap-3"><span className="text-neutral-500">Uniform {analysis.edgeBackground.tone} edge detected.</span><button type="button" className="text-xs font-medium text-cyan-300 hover:text-cyan-200" onClick={onRemoveBackground}>Remove background</button></div> : null}
+          </div>
+          <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Garment contrast</span><span className={contrastRisk ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{contrastRisk ? 'May blend in' : 'Visible'}</span></div>
+            <p className="text-neutral-500">{darkGarmentSlugs.has(product.mockupSlug) ? 'Checked against a dark garment.' : 'Checked against a light garment.'}</p>
+          </div>
+          <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Color complexity</span><span className="font-medium text-neutral-200">{analysis.palette.length} sampled colors</span></div>
+            <p className="text-neutral-500">Vector trace: {analysis.vectorSuitability === 'strong' ? 'strong candidate' : analysis.vectorSuitability === 'possible' ? 'possible candidate' : 'best kept raster'}.</p>
+          </div>
         </section> : null}
 
         <section aria-labelledby="product-placement-title" className="grid gap-3">

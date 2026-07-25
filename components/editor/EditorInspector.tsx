@@ -88,7 +88,9 @@ export interface EditorInspectorProps {
   productPreviewMode?: ProductPreviewMode;
   onProductPreviewModeChange?: (mode: ProductPreviewMode) => void;
   productArtworkVariation?: DesignVariation | null;
+  productArtworkUrl?: string | null;
   onEnhanceProductArtwork?: () => void;
+  onRemoveProductArtworkBackground?: () => void;
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
   mode?: 'easy' | 'advanced';
@@ -249,7 +251,9 @@ export const EditorInspector = ({
   productPreviewMode = 'rgb',
   onProductPreviewModeChange = () => undefined,
   productArtworkVariation = null,
+  productArtworkUrl = null,
   onEnhanceProductArtwork = () => undefined,
+  onRemoveProductArtworkBackground = () => undefined,
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
   mode = 'advanced',
@@ -268,7 +272,9 @@ export const EditorInspector = ({
           onPreviewModeChange={onProductPreviewModeChange}
           artworkVariation={productArtworkVariation}
           assetsById={assetsById}
+          artworkUrl={productArtworkUrl}
           onEnhanceResolution={onEnhanceProductArtwork}
+          onRemoveBackground={onRemoveProductArtworkBackground}
           dispatch={dispatch}
           onRetry={onRetryProduct}
           onReturnToDesign={onReturnToDesign}
