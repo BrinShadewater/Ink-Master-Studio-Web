@@ -337,6 +337,9 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
   assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
   assert.match(looksButton, /class="[^"]*h-10 w-10/);
+  for (const group of ['Arrange', 'Prepare artwork', 'Finish and preview']) {
+    assert.match(markup, new RegExp(`role="group"[^>]*aria-label="${group}"`));
+  }
 });
 
 test('toolbar exposes Product only for an open project and constrains conflicting modes', () => {
@@ -393,7 +396,8 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   assert.match(markup, /id="product-position-y"[^>]*min="0"[^>]*max="100"/);
   assert.match(markup, /id="product-scale"[^>]*min="10"[^>]*max="150"/);
   assert.match(markup, /id="product-rotation"[^>]*min="-180"[^>]*max="180"/);
-  assert.match(markup, />Center<\/button>/);
+  assert.match(markup, />Center artwork<\/button>/);
+  assert.match(markup, />Fit print area<\/button>/);
   assert.match(markup, />Reset<\/button>/);
 
   assert.deepEqual(createCenterProductPlacementCommand(product), {
@@ -514,7 +518,9 @@ test('trace inspector exposes bounded controls, palette, retry, and source resto
     dispatch: () => undefined,
   }));
 
-  assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="32"[^>]*step="1"/);
+  assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="64"[^>]*step="1"/);
+  assert.match(markup, /aria-label="Vectorize preset"/);
+  assert.match(markup, />Full color</);
   assert.match(markup, /id="editor-trace-detail"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-smoothing"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-blur"[^>]*min="0"[^>]*max="5"[^>]*step="1"/);
@@ -1116,6 +1122,10 @@ test('text inspector exposes complete editable text and shared transform control
   assert.match(markup, /id="editor-letter-spacing"[^>]*min="-2"[^>]*max="40"/);
   assert.match(markup, /id="editor-outline-width"[^>]*min="0"[^>]*max="20"/);
   assert.match(markup, /id="editor-outline-color"[^>]*type="color"/);
+  assert.match(markup, /id="editor-shadow-color"[^>]*type="color"/);
+  assert.match(markup, /id="editor-shadow-offset-x"[^>]*min="-50"[^>]*max="50"/);
+  assert.match(markup, /id="editor-shadow-offset-y"[^>]*min="-50"[^>]*max="50"/);
+  assert.match(markup, /id="editor-shadow-blur"[^>]*min="0"[^>]*max="50"/);
   for (const id of [
     'editor-opacity',
     'editor-position-x',

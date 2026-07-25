@@ -1077,7 +1077,7 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
 
 test('composes ordered image and text layers with persistence on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
   const canvas = page.getByLabel('Design canvas');
 
   await uploadFixture(page, 1200, 800, 'phase-2a-base.png');
@@ -1221,7 +1221,7 @@ test('composes ordered image and text layers with persistence on desktop', async
 
 test('manages layers on mobile without covering the canvas', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'phase-2a-mobile.png');
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -1354,7 +1354,7 @@ test('manages layers on mobile without covering the canvas', async ({ page }) =>
 
 test('imports, edits, duplicates, autosaves, reloads, and reopens a local project', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
   const canvas = page.getByLabel('Design canvas');
   await expect(canvas).toBeVisible();
 
@@ -1433,7 +1433,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 });
 
 test('keeps undo and redo independent while alternating between variations', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 1200, 800, 'history-scope.png');
   await page.getByLabel('X position').fill('0.7');
   await page.getByLabel('X position').blur();
@@ -1462,7 +1462,7 @@ test('keeps undo and redo independent while alternating between variations', asy
 });
 
 test('renames and deletes variations with deterministic persisted fallback', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 800, 800, 'variation-management.png');
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
@@ -1490,7 +1490,7 @@ test('renames and deletes variations with deterministic persisted fallback', asy
 
 test('normalizes direct drag against landscape and portrait viewport dimensions', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 800 });
-  await page.goto('/');
+  await page.goto('/editor');
 
   for (const fixture of [
     { width: 1600, height: 900, name: 'drag-landscape.png' },
@@ -1519,7 +1519,7 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
 
 test('keeps the editor usable at 390 by 844 and captures the mobile layout', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'mobile.png');
 
   const select = page.getByRole('button', { name: 'Select' });
@@ -1568,7 +1568,7 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
 
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
 
   await page.getByRole('button', { name: 'Layers' }).click();
   await expect(page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]')).toHaveCount(1);
@@ -1608,7 +1608,7 @@ test('releases the mobile layer focus trap when resizing to desktop', async ({ p
 });
 
 test('keeps dedicated file inputs hidden while preserving labeled imports', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/editor');
 
   const primaryInput = page.locator('input[type="file"][aria-label="Import artwork file"]');
   const layerInput = page.locator('input[type="file"][aria-label="Add layer image file"]');
@@ -1628,9 +1628,9 @@ test('keeps dedicated file inputs hidden while preserving labeled imports', asyn
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 });
 
-test('edits text layers and gates image tools across selection fallback paths', async ({ page }) => {
+test('edits text layers and keeps image tools reachable across selection fallback paths', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 640, 480, 'tool-paths.png');
 
   const select = page.getByRole('button', { name: 'Select', exact: true });
@@ -1638,11 +1638,8 @@ test('edits text layers and gates image tools across selection fallback paths', 
   const adjust = page.getByRole('button', { name: 'Adjust', exact: true });
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
-  await expect(crop).toBeDisabled();
-  await expect(adjust).toBeDisabled();
-  await expect(crop).toHaveAccessibleDescription(
-    'Crop, Adjust, and Remove background are available only for image layers.',
-  );
+  await expect(crop).toBeEnabled();
+  await expect(adjust).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Text', exact: true })).toBeVisible();
 
   await page.getByLabel('Content', { exact: true }).fill('First line\nSecond line');
@@ -1691,6 +1688,9 @@ test('edits text layers and gates image tools across selection fallback paths', 
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
+  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
+  await select.click();
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('X position', { exact: true }).fill('0.7');
   await page.getByLabel('X position', { exact: true }).blur();
   await page.getByLabel('Opacity', { exact: true }).fill('40');
@@ -1741,7 +1741,7 @@ test('edits text layers and gates image tools across selection fallback paths', 
 
 test('separates text content sessions when selection unmounts the focused inspector', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 640, 480, 'content-sessions.png');
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
 
@@ -1777,7 +1777,7 @@ test('separates text content sessions when selection unmounts the focused inspec
 
 test('groups text color control changes separately from discrete alignment', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 640, 480, 'color-groups.png');
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
 
@@ -1801,7 +1801,7 @@ test('groups text color control changes separately from discrete alignment', asy
 
 test('keeps save failure status and retry accessible on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'retry-save.png');
   await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.5);
   await page.waitForTimeout(500);
@@ -1838,8 +1838,11 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
 test('does not expose the retired workflow surface and preserves static routes', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveTitle('InkMaster Studio | Canvas-First Merch Editor');
-  await expect(page.getByRole('button', { name: 'Import artwork' }).last()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start designing' }).first()).toBeVisible();
   await expect(page.getByText(/Advanced mode|Production package|Customer proof|AI cleanup/i)).toHaveCount(0);
+
+  await page.goto('/editor');
+  await expect(page.getByRole('button', { name: 'Import artwork' }).last()).toBeVisible();
 
   await page.goto('/privacy');
   await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
@@ -1863,7 +1866,7 @@ test('imports by drop, revokes object URLs, and deletes the local project', asyn
     };
   });
 
-  await page.goto('/');
+  await page.goto('/editor');
   await dropFixture(page, 800, 600, 'drop-art.png');
   await expect(page.getByLabel('Project name')).toHaveValue('drop-art');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
@@ -1893,7 +1896,7 @@ test('imports by drop, revokes object URLs, and deletes the local project', asyn
 test('@task5-review applies the exact seeded thumbnail recipe that was previewed', async ({ page }) => {
   await installLookWorkerHarness(page);
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-seed-apply.png');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
@@ -1923,7 +1926,7 @@ test('@task5-review applies the exact seeded thumbnail recipe that was previewed
 
 test('@task5-review commits complete Look controls and separates native color history', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-control-history.png');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Duotone', exact: true }).click();
@@ -1993,7 +1996,7 @@ test('@task5-review commits complete Look controls and separates native color hi
 test('@task5-review keeps preview failure authority keyed through pending, Retry, and stale work', async ({ page }) => {
   await installLookWorkerHarness(page);
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-failure-authority.png');
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -2050,7 +2053,7 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
 test('@task5-review disposes the browser worker and pending surfaces on navigation', async ({ page }) => {
   await installLookWorkerHarness(page);
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-worker-cleanup.png');
   await enqueueLookWorkerRule(page, {
     action: 'hold',
@@ -2084,7 +2087,7 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
 
 test('@task5-review preserves direct canvas drag geometry with a processed Look', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 800 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 1600, 900, 'look-active-drag.png');
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -2110,7 +2113,7 @@ test('@task5-review preserves direct canvas drag geometry with a processed Look'
 
 test('compares Looks across variations', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'compare-looks.png');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
@@ -2303,7 +2306,7 @@ test('compares Looks across variations', async ({ page }) => {
 
 test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'compare-auto-exit.png');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
@@ -2340,7 +2343,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const distressedSeed = (initialSeed + 5) >>> 0;
   await installDeterministicLookSeeds(page, initialSeed);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
 
   const canvas = page.getByLabel('Design canvas');
   await uploadTransparentFixture(page, 1200, 900, `${projectName}.png`);
@@ -2516,7 +2519,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   const rerolledSeed = (initialSeed + 2) >>> 0;
   await installDeterministicLookSeeds(page, initialSeed);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadTransparentFixture(page, 720, 960, `${projectName}.png`);
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -2717,7 +2720,7 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   const projectName = 'phase-2b-worker-authority';
   await installLookWorkerHarness(page);
   await page.setViewportSize({ width: 1200, height: 844 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadTransparentFixture(page, 960, 720, `${projectName}.png`);
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -2770,7 +2773,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   page.on('pageerror', (error) => browserErrors.push(error.message));
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadPhase2CFixture(page, 320, `${projectName}.png`);
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
@@ -3171,7 +3174,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   page.on('pageerror', (error) => browserErrors.push(error.message));
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadTransparentFixture(page, 640, 640, `${projectName}.png`);
   await expect(page.getByRole('button', { name: 'Product', exact: true })).toBeEnabled();
   await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
@@ -3398,7 +3401,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
 test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the product editor', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/editor');
   await uploadTransparentFixture(page, 640, 640, 'phase-3b-export.png');
   await page.getByRole('button', { name: 'Product', exact: true }).click();
   await page.getByRole('button', { name: 'Export', exact: true }).click();

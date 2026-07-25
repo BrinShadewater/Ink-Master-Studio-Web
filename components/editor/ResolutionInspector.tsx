@@ -1,0 +1,15 @@
+import type { ResolutionWorkflow } from './useResolutionWorkflow';
+
+export const ResolutionInspector = ({ workflow }: { workflow: ResolutionWorkflow }) => (
+  <>
+    <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4"><h2 className="text-sm font-semibold text-neutral-100">Enhance resolution</h2></div>
+    <div className="grid gap-5 p-4">
+      <p className="text-xs leading-5 text-neutral-500">Creates a larger PNG from the selected image while keeping the original in project history. Use it before Vectorize or a large print export; it improves sampling, but cannot invent missing detail.</p>
+      <div className="grid grid-cols-2 gap-2">
+        {([2, 4] as const).map((scale) => <button key={scale} type="button" disabled={workflow.status === 'processing'} onClick={() => { void workflow.enhance(scale); }} className="h-11 border border-neutral-700 bg-neutral-950 text-sm font-semibold text-neutral-200 transition hover:border-emerald-400 hover:text-white disabled:opacity-40">{workflow.status === 'processing' ? 'Enhancing...' : `${scale}x enhance`}</button>)}
+      </div>
+      <p className="text-[11px] leading-4 text-neutral-600">The longest edge is capped at 8192 px to keep browser memory predictable.</p>
+      {workflow.error ? <p role="alert" className="text-xs text-red-300">{workflow.error}</p> : null}
+    </div>
+  </>
+);

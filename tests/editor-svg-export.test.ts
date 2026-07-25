@@ -79,6 +79,10 @@ const textLayer: TextLayer = {
   letterSpacing: 3,
   outlineWidth: 2,
   outlineColor: '#ffffff',
+  shadowColor: '#000000',
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowBlur: 0,
 };
 
 const variation = (

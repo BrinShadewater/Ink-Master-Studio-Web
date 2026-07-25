@@ -52,6 +52,10 @@ const textLayer = (id: string, overrides: Partial<TextLayer> = {}): TextLayer =>
   letterSpacing: 0,
   outlineWidth: 0,
   outlineColor: '#000000',
+  shadowColor: '#000000',
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowBlur: 0,
   ...overrides,
 });
 

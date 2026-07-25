@@ -110,6 +110,36 @@ export const ProductInspector = ({
               );
             })}
           </div>
+          <p className="text-xs leading-5 text-neutral-500">Choose a garment color, then drag the artwork directly on the mockup to place it within the printable area.</p>
+        </section>
+
+        <section aria-labelledby="product-placement-title" className="grid gap-3">
+          <div>
+            <h3 id="product-placement-title" className="text-xs font-medium text-neutral-300">Artwork placement</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Use the canvas for visual placement. These controls are for a precise final adjustment.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                dispatch(createCenterProductPlacementCommand(product));
+                endHistoryGroup();
+              }}
+            >
+              Center artwork
+            </button>
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                dispatch(createResetProductPlacementCommand());
+                endHistoryGroup();
+              }}
+            >
+              Fit print area
+            </button>
+          </div>
         </section>
 
         <div className="grid grid-cols-2 gap-3">
@@ -161,17 +191,6 @@ export const ProductInspector = ({
           )}
           onEnd={endHistoryGroup}
         />
-
-        <button
-          type="button"
-          className={actionClass}
-          onClick={() => {
-            dispatch(createCenterProductPlacementCommand(product));
-            endHistoryGroup();
-          }}
-        >
-          Center
-        </button>
 
         {failure ? (
           <div role="alert" className="grid gap-3 border border-red-900 bg-red-950/40 p-3 text-xs text-red-200">

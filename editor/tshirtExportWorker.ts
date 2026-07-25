@@ -47,7 +47,7 @@ const isSnapshot = (value: unknown): value is TShirtPngExportSnapshot => {
     return typeof id === 'string' && typeof name === 'string' && typeof mimeType === 'string' &&
       typeof width === 'number' && Number.isFinite(width) && width > 0 &&
       typeof height === 'number' && Number.isFinite(height) && height > 0 &&
-      (role === null || role === 'prepared-image' || role === 'cleanup-corrections' || role === 'trace-svg') &&
+      (role === null || role === 'prepared-image' || role === 'cleanup-corrections' || role === 'trace-svg' || role === 'enhanced-image') &&
       bytes instanceof ArrayBuffer && bytes.byteLength > 0;
   });
 };

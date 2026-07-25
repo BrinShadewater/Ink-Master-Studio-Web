@@ -46,6 +46,7 @@ import { ProjectDrawer } from './ProjectDrawer';
 import type { BackgroundBrushMode } from './BackgroundRemovalInspector';
 import { useBackgroundRemovalWorkflow } from './useBackgroundRemovalWorkflow';
 import { useTraceWorkflow } from './useTraceWorkflow';
+import { useResolutionWorkflow } from './useResolutionWorkflow';
 import { ExportMenu } from './ExportMenu';
 import { ProductCanvas } from './ProductCanvas';
 import { useProductMockup } from './useProductMockup';
@@ -219,6 +220,15 @@ export const EditorApp = () => {
     assetsById: workspace.assetsById,
     imagesById,
     coordinator: traceCoordinator,
+    dispatch: workspace.dispatch,
+    commitGeneratedAsset: workspace.commitGeneratedAsset,
+  });
+
+  const resolutionWorkflow = useResolutionWorkflow({
+    project,
+    layer: selectedImageLayer,
+    sourceImage: selectedImageLayer ? imagesById[selectedImageLayer.assetId] ?? null : null,
+    sourceSize: selectedImageLayer ? workspace.assetsById[selectedImageLayer.assetId] ?? null : null,
     dispatch: workspace.dispatch,
     commitGeneratedAsset: workspace.commitGeneratedAsset,
   });
@@ -424,7 +434,7 @@ export const EditorApp = () => {
               setCompareOpen(false);
             }
             const requiresImage = nextTool === 'crop' || nextTool === 'adjust' ||
-              nextTool === 'remove-background' || nextTool === 'trace';
+              nextTool === 'remove-background' || nextTool === 'enhance' || nextTool === 'trace';
             if (requiresImage && selectedLayerType !== 'image' && selectedLayerType !== 'trace') {
               const imageLayer = variation?.layers.find((layer) => layer.type === 'image');
               if (imageLayer) workspace.dispatch({ type: 'select-layer', layerId: imageLayer.id });
@@ -567,6 +577,7 @@ export const EditorApp = () => {
                 onBackgroundBrushSizeChange={setBackgroundBrushSize}
                 onBackgroundDone={() => setBackgroundBrushMode('idle')}
                 traceWorkflow={traceWorkflow}
+                resolutionWorkflow={resolutionWorkflow}
                 product={product}
                 productMockupStatus={productMockup.status}
                 productMockupError={productMockup.error}

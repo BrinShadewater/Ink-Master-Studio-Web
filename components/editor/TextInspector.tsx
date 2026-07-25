@@ -15,6 +15,8 @@ const textControlBounds = {
   fontSize: { min: 8, max: 400, step: 1 },
   letterSpacing: { min: -2, max: 40, step: 0.1 },
   outlineWidth: { min: 0, max: 20, step: 0.5 },
+  shadowOffset: { min: -50, max: 50, step: 1 },
+  shadowBlur: { min: 0, max: 50, step: 1 },
 } as const;
 
 const alignments: Array<{ value: TextLayer['align']; label: string; icon: LucideIcon }> = [
@@ -134,6 +136,10 @@ export const TextInspector = ({ layer, dispatch }: TextInspectorProps) => {
     letterSpacing: layer.letterSpacing,
     outlineWidth: layer.outlineWidth,
     outlineColor: layer.outlineColor,
+    shadowColor: layer.shadowColor,
+    shadowOffsetX: layer.shadowOffsetX,
+    shadowOffsetY: layer.shadowOffsetY,
+    shadowBlur: layer.shadowBlur,
   };
   const updateStyle = (next: Partial<TextLayerStyle>, historyGroup?: string) => dispatch({
     type: 'set-text-style',
@@ -251,6 +257,51 @@ export const TextInspector = ({ layer, dispatch }: TextInspectorProps) => {
         onChange={(value) => updateStyle({ outlineWidth: value }, 'inspector-outline-width')}
         onEnd={endHistoryGroup}
       />
+
+      <details className="border border-neutral-800" open={layer.shadowBlur > 0 || layer.shadowOffsetX !== 0 || layer.shadowOffsetY !== 0}>
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-neutral-300">Shadow</summary>
+        <div className="grid gap-4 border-t border-neutral-800 p-3">
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-neutral-300" htmlFor="editor-shadow-color">
+            Shadow color
+            <input
+              id="editor-shadow-color"
+              className="h-9 w-full min-w-0 cursor-pointer border border-neutral-700 bg-neutral-950 p-1"
+              type="color"
+              value={layer.shadowColor}
+              onChange={(event) => updateStyle({ shadowColor: event.currentTarget.value }, 'inspector-shadow-color')}
+              onPointerUp={endHistoryGroup}
+              onKeyUp={endHistoryGroup}
+              onBlur={endHistoryGroup}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <RangeControl
+              id="editor-shadow-offset-x"
+              label="Horizontal"
+              value={layer.shadowOffsetX}
+              bounds={textControlBounds.shadowOffset}
+              onChange={(value) => updateStyle({ shadowOffsetX: value }, 'inspector-shadow-offset-x')}
+              onEnd={endHistoryGroup}
+            />
+            <RangeControl
+              id="editor-shadow-offset-y"
+              label="Vertical"
+              value={layer.shadowOffsetY}
+              bounds={textControlBounds.shadowOffset}
+              onChange={(value) => updateStyle({ shadowOffsetY: value }, 'inspector-shadow-offset-y')}
+              onEnd={endHistoryGroup}
+            />
+          </div>
+          <RangeControl
+            id="editor-shadow-blur"
+            label="Blur"
+            value={layer.shadowBlur}
+            bounds={textControlBounds.shadowBlur}
+            onChange={(value) => updateStyle({ shadowBlur: value }, 'inspector-shadow-blur')}
+            onEnd={endHistoryGroup}
+          />
+        </div>
+      </details>
 
       <div className="h-px bg-neutral-800" aria-hidden="true" />
       <TransformControls layer={layer} dispatch={dispatch} />

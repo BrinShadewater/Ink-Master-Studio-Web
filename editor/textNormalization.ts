@@ -12,6 +12,10 @@ export interface NormalizedTextStyle {
   letterSpacing: number;
   outlineWidth: number;
   outlineColor: string;
+  shadowColor: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
 }
 
 interface TextStyleInput {
@@ -22,12 +26,19 @@ interface TextStyleInput {
   letterSpacing?: unknown;
   outlineWidth?: unknown;
   outlineColor?: unknown;
+  shadowColor?: unknown;
+  shadowOffsetX?: unknown;
+  shadowOffsetY?: unknown;
+  shadowBlur?: unknown;
 }
 
 interface TextStyleNumericFallbacks {
   fontSize?: number;
   letterSpacing?: number;
   outlineWidth?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowBlur?: number;
 }
 
 const clamp = (value: unknown, minimum: number, maximum: number, fallback: number) =>
@@ -58,4 +69,8 @@ export const normalizeTextStyle = (
   letterSpacing: clamp(style.letterSpacing, -2, 40, fallbacks.letterSpacing ?? -2),
   outlineWidth: clamp(style.outlineWidth, 0, 20, fallbacks.outlineWidth ?? 0),
   outlineColor: normalizeHexColor(style.outlineColor, '#000000'),
+  shadowColor: normalizeHexColor(style.shadowColor, '#000000'),
+  shadowOffsetX: clamp(style.shadowOffsetX, -50, 50, fallbacks.shadowOffsetX ?? 0),
+  shadowOffsetY: clamp(style.shadowOffsetY, -50, 50, fallbacks.shadowOffsetY ?? 0),
+  shadowBlur: clamp(style.shadowBlur, 0, 50, fallbacks.shadowBlur ?? 0),
 });

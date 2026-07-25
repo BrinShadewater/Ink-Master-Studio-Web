@@ -65,6 +65,7 @@ export type EditorCommand =
   | { type: 'set-transform'; layerId: string; transform: LayerTransform; historyGroup?: string }
   | { type: 'set-crop'; layerId: string; crop: CropRect; historyGroup?: string }
   | { type: 'set-adjustments'; layerId: string; adjustments: ImageAdjustments; historyGroup?: string }
+  | { type: 'replace-image-asset'; layerId: string; assetId: string; historyGroup?: string }
   | { type: 'set-background-removal'; layerId: string; settings: BackgroundRemovalSettings; historyGroup?: string }
   | { type: 'publish-background-result'; layerId: string; expectedInputFingerprint: string; preparedAssetId: string }
   | { type: 'set-trace-settings'; layerId: string; settings: TraceSettings; historyGroup?: string }
@@ -189,7 +190,9 @@ const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
   layer.fontFamily === style.fontFamily && layer.fontSize === style.fontSize &&
   layer.color === style.color && layer.align === style.align &&
   layer.letterSpacing === style.letterSpacing && layer.outlineWidth === style.outlineWidth &&
-  layer.outlineColor === style.outlineColor;
+  layer.outlineColor === style.outlineColor && layer.shadowColor === style.shadowColor &&
+  layer.shadowOffsetX === style.shadowOffsetX && layer.shadowOffsetY === style.shadowOffsetY &&
+  layer.shadowBlur === style.shadowBlur;
 
 const sameLook = (left: VariationLook, right: VariationLook) =>
   serializeVariationLook(left) === serializeVariationLook(right);
@@ -562,6 +565,16 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
         history.present,
         command.layerId,
         (layer) => ({ ...layer, adjustments }),
+      );
+      return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
+    }
+    case 'replace-image-asset': {
+      const current = getActiveLayer(history.present, command.layerId);
+      if (!current || !isImageLayer(current) || current.assetId === command.assetId) return history;
+      const next = updateImageLayerAndStaleLinkedTraces(
+        history.present,
+        command.layerId,
+        (layer) => ({ ...layer, assetId: command.assetId, crop: { x: 0, y: 0, width: 1, height: 1 } }),
       );
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }

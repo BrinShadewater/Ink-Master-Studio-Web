@@ -1,6 +1,7 @@
 import {
   Columns2,
   Crop,
+  Maximize2,
   Layers,
   MousePointer2,
   Palette,
@@ -29,14 +30,36 @@ export interface EditorToolbarProps {
   mode?: 'easy' | 'advanced';
 }
 
-const tools: Array<{ id: EditorTool; label: string; icon: LucideIcon }> = [
-  { id: 'select', label: 'Select', icon: MousePointer2 },
-  { id: 'crop', label: 'Crop', icon: Crop },
-  { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
-  { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
-  { id: 'trace', label: 'Trace', icon: ScanLine },
-  { id: 'looks', label: 'Looks', icon: Palette },
-  { id: 'product', label: 'Product', icon: Shirt },
+interface ToolbarTool {
+  id: EditorTool;
+  label: string;
+  icon: LucideIcon;
+}
+
+const toolGroups: Array<{ label: string; tools: ToolbarTool[] }> = [
+  {
+    label: 'Arrange',
+    tools: [
+      { id: 'select', label: 'Select', icon: MousePointer2 },
+      { id: 'crop', label: 'Crop', icon: Crop },
+      { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: 'Prepare artwork',
+    tools: [
+      { id: 'enhance', label: 'Enhance resolution', icon: Maximize2 },
+      { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
+      { id: 'trace', label: 'Trace', icon: ScanLine },
+    ],
+  },
+  {
+    label: 'Finish and preview',
+    tools: [
+      { id: 'looks', label: 'Looks', icon: Palette },
+      { id: 'product', label: 'Product', icon: Shirt },
+    ],
+  },
 ];
 
 const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -75,51 +98,56 @@ export const EditorToolbar = ({
         Product is available after importing artwork.
       </p>
     ) : null}
-    {tools.map(({ id, label, icon: Icon }) => {
-      const selected = tool === id;
-      const productConflict = tool === 'product' &&
-        id !== 'select' &&
-        id !== 'product';
-      const productUnavailable = id === 'product' && !hasProject;
-      const imageToolDisabled = !hasImageLayer &&
-        (id === 'crop' || id === 'adjust' || id === 'remove-background');
-      const traceToolDisabled = id === 'trace' && !hasImageLayer && layerType !== 'trace';
-      const disabled = compareOpen || productConflict || productUnavailable ||
-        imageToolDisabled || traceToolDisabled;
-      const disabledReason = compareOpen
-        ? 'editor-compare-disabled-reason'
-        : productConflict
-          ? 'editor-product-mode-disabled-reason'
-          : productUnavailable
-            ? 'editor-product-disabled-reason'
-        : imageToolDisabled
-          ? undefined
-          : traceToolDisabled ? undefined : undefined;
-      return (
-        <button
-          key={id}
-          ref={selected ? activeToolButtonRef : undefined}
-          type="button"
-          className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
-          aria-label={label}
-          aria-pressed={selected}
-          aria-describedby={disabledReason}
-          title={compareOpen
-            ? `${label} is unavailable while Compare is open`
+    {toolGroups.map(({ label: groupLabel, tools }, groupIndex) => (
+      <div
+        key={groupLabel}
+        className={`flex shrink-0 items-center gap-1 md:flex-col md:gap-2 ${groupIndex > 0 ? 'md:border-t md:border-neutral-800 md:pt-2' : ''}`}
+        role="group"
+        aria-label={groupLabel}
+      >
+        {tools.map(({ id, label, icon: Icon }) => {
+          const selected = tool === id;
+          const productConflict = tool === 'product' &&
+            id !== 'select' &&
+            id !== 'product';
+          const productUnavailable = id === 'product' && !hasProject;
+          const imageToolDisabled = !hasImageLayer &&
+            (id === 'crop' || id === 'adjust' || id === 'enhance' || id === 'remove-background');
+          const traceToolDisabled = id === 'trace' && !hasImageLayer && layerType !== 'trace';
+          const disabled = compareOpen || productConflict || productUnavailable ||
+            imageToolDisabled || traceToolDisabled;
+          const disabledReason = compareOpen
+            ? 'editor-compare-disabled-reason'
             : productConflict
-              ? `${label} is unavailable in Product mode`
+              ? 'editor-product-mode-disabled-reason'
               : productUnavailable
-                ? 'Product is available after importing artwork'
-            : imageToolDisabled || traceToolDisabled
-              ? 'Import an image layer to use this tool'
-              : label}
-          disabled={disabled}
-          onClick={() => onToolChange(id)}
-        >
-          <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
-        </button>
-      );
-    })}
+                ? 'editor-product-disabled-reason'
+                : undefined;
+          return (
+            <button
+              key={id}
+              ref={selected ? activeToolButtonRef : undefined}
+              type="button"
+              className={`${toolButtonClass} ${selected ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-neutral-400`}
+              aria-label={label}
+              aria-pressed={selected}
+              aria-describedby={disabledReason}
+              title={compareOpen
+                ? `${label} is unavailable while Compare is open`
+                : productConflict
+                  ? `${label} is unavailable in Product mode`
+                  : productUnavailable
+                    ? 'Product is available after importing artwork'
+                    : `${groupLabel}: ${label}`}
+              disabled={disabled}
+              onClick={() => onToolChange(id)}
+            >
+              <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
+            </button>
+          );
+        })}
+      </div>
+    ))}
     {mode === 'advanced' ? <button
       ref={compareButtonRef}
       type="button"

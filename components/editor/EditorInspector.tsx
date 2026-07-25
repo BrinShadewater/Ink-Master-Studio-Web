@@ -27,6 +27,8 @@ import {
   TransformControls,
 } from './TransformControls';
 import { ProductInspector } from './ProductInspector';
+import { ResolutionInspector } from './ResolutionInspector';
+import type { ResolutionWorkflow } from './useResolutionWorkflow';
 
 export { controlBounds } from './TransformControls';
 
@@ -77,6 +79,7 @@ export interface EditorInspectorProps {
   onBackgroundBrushSizeChange?: (size: number) => void;
   onBackgroundDone?: () => void;
   traceWorkflow?: TraceWorkflow | null;
+  resolutionWorkflow?: ResolutionWorkflow | null;
   product?: TShirtProductVariant | null;
   productMockupStatus?: ProductMockupLoadStatus;
   productMockupError?: string | null;
@@ -91,6 +94,7 @@ const sectionTitle: Record<EditorTool, string> = {
   select: 'Transform',
   crop: 'Crop',
   adjust: 'Adjustments',
+  enhance: 'Enhance resolution',
   looks: 'Looks',
   'remove-background': 'Remove background',
   trace: 'Trace',
@@ -232,6 +236,7 @@ export const EditorInspector = ({
   onBackgroundBrushSizeChange = () => undefined,
   onBackgroundDone = () => undefined,
   traceWorkflow = null,
+  resolutionWorkflow = null,
   product = null,
   productMockupStatus = 'idle',
   productMockupError = null,
@@ -281,6 +286,10 @@ export const EditorInspector = ({
         <p className="mt-2 text-xs leading-5 text-neutral-500">Import artwork to edit.</p>
       </aside>
     );
+  }
+
+  if (tool === 'enhance' && layer.type === 'image' && resolutionWorkflow) {
+    return <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector"><ResolutionInspector workflow={resolutionWorkflow} /></aside>;
   }
 
   if (

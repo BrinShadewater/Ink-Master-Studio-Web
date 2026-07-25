@@ -33,6 +33,7 @@ export type EditorTool =
   | 'select'
   | 'crop'
   | 'adjust'
+  | 'enhance'
   | 'looks'
   | 'remove-background'
   | 'trace'
@@ -94,6 +95,10 @@ export interface TextLayer {
   letterSpacing: number;
   outlineWidth: number;
   outlineColor: string;
+  shadowColor: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
 }
 
 export interface TextLayerStyle {
@@ -104,6 +109,10 @@ export interface TextLayerStyle {
   letterSpacing: number;
   outlineWidth: number;
   outlineColor: string;
+  shadowColor: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
 }
 
 export interface TraceLayer {
@@ -152,7 +161,7 @@ export interface EditorAsset {
   height: number;
   createdAt: number;
   blob: Blob;
-  role?: 'prepared-image' | 'cleanup-corrections' | 'trace-svg';
+  role?: 'prepared-image' | 'cleanup-corrections' | 'trace-svg' | 'enhanced-image';
 }
 
 export const createEditorId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
@@ -201,6 +210,10 @@ export const createTextLayer = (text = 'Text'): TextLayer => ({
   letterSpacing: 0,
   outlineWidth: 0,
   outlineColor: '#000000',
+  shadowColor: '#000000',
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowBlur: 0,
 });
 
 export const createEditorProject = (name: string, asset: EditorAsset): EditorProject => {

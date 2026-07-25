@@ -13,7 +13,7 @@ export interface TraceInspectorProps {
 }
 
 const traceBounds = {
-  colors: { min: 2, max: 32, step: 1 },
+  colors: { min: 2, max: 64, step: 1 },
   detail: { min: 0, max: 100, step: 1 },
   smoothing: { min: 0, max: 100, step: 1 },
   blur: { min: 0, max: 5, step: 1 },
@@ -65,6 +65,14 @@ export const TraceInspector = ({
 
       <div className="grid gap-5 p-4">
         <p className="text-xs leading-5 text-neutral-500">Vectorize creates editable SVG paths from an image. “Trace” is the technical name for the same process.</p>
+        <div className="grid grid-cols-2 gap-2" aria-label="Vectorize preset">
+          {[
+            ['Logo / 2-color', { colors: 2, detail: 72, smoothing: 62, blur: 0 }],
+            ['Limited palette', { colors: 8, detail: 62, smoothing: 42, blur: 0 }],
+            ['Full color', { colors: 48, detail: 72, smoothing: 24, blur: 0 }],
+            ['Screen print', { colors: 6, detail: 58, smoothing: 55, blur: 1 }],
+          ].map(([label, settings]) => <button key={label as string} type="button" disabled={workflow.status === 'processing'} className="min-h-11 border border-neutral-700 bg-neutral-950 px-2 text-left text-xs font-medium text-neutral-200 transition hover:border-emerald-400 disabled:opacity-40" onClick={() => { workflow.updateSettings({ ...workflow.settings, ...(settings as Partial<TraceSettings>), palette: [] }, 'trace-preset'); workflow.endSettingsEdit(); }}>{label as string}</button>)}
+        </div>
         <RangeControl
           id="editor-trace-colors"
           label="Colors"
@@ -111,7 +119,7 @@ export const TraceInspector = ({
               aria-label="Add palette color"
               title="Add palette color"
               disabled={
-                workflow.settings.palette.length >= 32 ||
+                workflow.settings.palette.length >= 64 ||
                 workflow.status === 'processing'
               }
               onClick={() => updatePalette([

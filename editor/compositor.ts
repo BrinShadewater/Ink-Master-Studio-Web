@@ -40,6 +40,7 @@ interface MeasuredTextLine {
 
 interface MeasuredTextBlock {
   contentHeight: number;
+  designScale: number;
   fontPixels: number;
   height: number;
   lineHeight: number;
@@ -100,6 +101,7 @@ const measureTextLayer = (
 
     return {
       contentHeight,
+      designScale,
       fontPixels,
       height: contentHeight + (hasVisibleGlyph ? outlinePixels : 0),
       lineHeight,
@@ -210,6 +212,10 @@ const renderTextLayer = (
   context.fillStyle = layer.color;
   context.strokeStyle = layer.outlineColor;
   context.lineWidth = measurement.outlinePixels;
+  context.shadowColor = layer.shadowColor;
+  context.shadowOffsetX = layer.shadowOffsetX * measurement.designScale;
+  context.shadowOffsetY = layer.shadowOffsetY * measurement.designScale;
+  context.shadowBlur = layer.shadowBlur * measurement.designScale;
 
   measurement.lines.forEach((line, lineIndex) => {
     const originX = getLineOrigin(layer.align, measurement.width, line);

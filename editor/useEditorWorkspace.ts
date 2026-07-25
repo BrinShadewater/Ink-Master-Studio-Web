@@ -66,6 +66,7 @@ export interface EditorWorkspace {
 export type GeneratedAssetCommand =
   | Extract<EditorCommand, { type: 'set-background-removal' }>
   | Extract<EditorCommand, { type: 'publish-background-result' }>
+  | Extract<EditorCommand, { type: 'replace-image-asset' }>
   | Extract<EditorCommand, { type: 'add-trace-layer' }>
   | Extract<EditorCommand, { type: 'publish-trace-result' }>;
 

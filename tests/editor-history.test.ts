@@ -447,6 +447,10 @@ test('edits text content and style with normalized values and undo support', () 
       letterSpacing: -10,
       outlineWidth: 99,
       outlineColor: 'red',
+      shadowColor: 'red',
+      shadowOffsetX: 99,
+      shadowOffsetY: -99,
+      shadowBlur: 99,
     },
   });
   const transformed = reduceEditorHistory(styled, {
@@ -468,6 +472,10 @@ test('edits text content and style with normalized values and undo support', () 
   assert.equal(layer.letterSpacing, -2);
   assert.equal(layer.outlineWidth, 20);
   assert.equal(layer.outlineColor, '#000000');
+  assert.equal(layer.shadowColor, '#000000');
+  assert.equal(layer.shadowOffsetX, 50);
+  assert.equal(layer.shadowOffsetY, -50);
+  assert.equal(layer.shadowBlur, 50);
   assert.equal(getSelectedTextLayer(opaque.present)?.opacity, 0.25);
   assert.equal(getSelectedTextLayer(undone.present)?.opacity, 1);
   assert.equal(getSelectedTextLayer(transformed.present)?.transform.scale, 1.5);
