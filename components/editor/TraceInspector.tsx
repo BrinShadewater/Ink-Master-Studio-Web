@@ -82,6 +82,19 @@ export const TraceInspector = ({
           onChange={(value) => update('colors', value)}
           onEnd={workflow.endSettingsEdit}
         />
+        <section className="grid gap-2" aria-labelledby="trace-palette-mode-title">
+          <div>
+            <h3 id="trace-palette-mode-title" className="text-xs font-medium text-neutral-300">Color handling</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Automatic preserves traced colors. A print palette remaps the result to deliberate inks.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              ['Automatic', []],
+              ['2-color', ['#111111', '#ffffff']],
+              ['Print palette', ['#111111', '#ffffff', '#e5484d', '#2563eb', '#f59e0b', '#2f855a']],
+            ].map(([label, palette]) => <button key={label as string} type="button" disabled={workflow.status === 'processing'} className={`min-h-10 border px-2 text-left text-xs font-medium transition hover:border-emerald-400 disabled:opacity-40 ${JSON.stringify(workflow.settings.palette) === JSON.stringify(palette) ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200' : 'border-neutral-700 bg-neutral-950 text-neutral-200'}`} onClick={() => { updatePalette(palette as string[]); workflow.endSettingsEdit(); }}>{label as string}</button>)}
+          </div>
+        </section>
         {mode === 'advanced' ? <><RangeControl
           id="editor-trace-detail"
           label="Detail"

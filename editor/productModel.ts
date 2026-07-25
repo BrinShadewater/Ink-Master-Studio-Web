@@ -21,12 +21,15 @@ export interface ProductPlacement {
   rotation: number;
 }
 
+export type ProductPreviewMode = 'rgb' | 'print';
+
 export interface TShirtProductVariant {
   id: string;
   variationId: string;
   type: 'tshirt';
   mockupSlug: TShirtMockupSlug;
   placement: ProductPlacement;
+  colorVariationIds: Partial<Record<TShirtMockupSlug, string>>;
 }
 
 export const PRODUCT_PLACEMENT_BOUNDS = {
@@ -91,7 +94,26 @@ export const createDefaultTShirtProduct = (
   type: 'tshirt',
   mockupSlug: 'black',
   placement: { ...DEFAULT_PRODUCT_PLACEMENT },
+  colorVariationIds: {},
 });
+
+const normalizeColorVariationIds = (
+  value: unknown,
+  variationIds: readonly string[],
+): Partial<Record<TShirtMockupSlug, string>> => {
+  const source = isRecord(value) ? value : {};
+  const knownVariationIds = new Set(variationIds);
+  return TSHIRT_MOCKUP_SLUGS.reduce<Partial<Record<TShirtMockupSlug, string>>>(
+    (result, slug) => {
+      const variationId = source[slug];
+      if (nonEmptyString(variationId) && knownVariationIds.has(variationId)) {
+        result[slug] = variationId;
+      }
+      return result;
+    },
+    {},
+  );
+};
 
 export const duplicateTShirtProduct = (
   source: TShirtProductVariant,
@@ -102,6 +124,7 @@ export const duplicateTShirtProduct = (
   id,
   variationId,
   placement: normalizeProductPlacement(source.placement),
+  colorVariationIds: { ...source.colorVariationIds },
 });
 
 const claimProductId = (
@@ -143,6 +166,7 @@ export const normalizeTShirtProductVariants = (
       type: 'tshirt',
       mockupSlug: normalizeTShirtMockupSlug(candidate.mockupSlug),
       placement: normalizeProductPlacement(candidate.placement),
+      colorVariationIds: normalizeColorVariationIds(candidate.colorVariationIds, variationIds),
     });
     linkedVariationIds.add(candidate.variationId);
   }

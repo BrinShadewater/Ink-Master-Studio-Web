@@ -4,6 +4,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  GripVertical,
   ImagePlus,
   Spline,
   Trash2,
@@ -15,6 +16,8 @@ import {
   useEffect,
   useReducer,
   useRef,
+  useState,
+  type DragEvent,
   type KeyboardEvent,
   type Ref,
   type RefObject,
@@ -178,6 +181,20 @@ export const LayerPanel = ({
 }: LayerPanelProps) => {
   const layers = variation?.layers ?? [];
   const selectedLayerId = variation?.selectedLayerId ?? null;
+  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
+
+  const moveLayerBefore = (layerId: string, targetLayerId: string) => {
+    if (layerId === targetLayerId) return;
+    const sourceIndex = layers.findIndex((layer) => layer.id === layerId);
+    const targetIndex = layers.findIndex((layer) => layer.id === targetLayerId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const desiredIndex = sourceIndex < targetIndex ? targetIndex : targetIndex + 1;
+    const direction = desiredIndex > sourceIndex ? 'up' : 'down';
+    const steps = Math.abs(desiredIndex - sourceIndex);
+    for (let index = 0; index < steps; index += 1) {
+      dispatch({ type: 'move-layer', layerId, direction });
+    }
+  };
 
   return (
     <section
@@ -210,9 +227,31 @@ export const LayerPanel = ({
                 <li
                   key={layer.id}
                   data-layer-id={layer.id}
-                  className={`rounded-md border ${selected ? 'border-emerald-500 bg-neutral-800 shadow-sm' : 'border-transparent hover:border-neutral-700'}`}
+                  className={`rounded-md border ${draggedLayerId === layer.id ? 'opacity-50' : ''} ${selected ? 'border-emerald-500 bg-neutral-800 shadow-sm' : 'border-transparent hover:border-neutral-700'}`}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceLayerId = event.dataTransfer.getData('text/plain');
+                    moveLayerBefore(sourceLayerId, layer.id);
+                    setDraggedLayerId(null);
+                  }}
                 >
-                  <div className="grid grid-cols-[32px_minmax(0,1fr)_32px] items-center">
+                  <div className="grid grid-cols-[24px_32px_minmax(0,1fr)_32px] items-center">
+                    <button
+                      type="button"
+                      draggable
+                      className="grid h-8 w-6 place-items-center cursor-grab text-neutral-500 hover:text-neutral-200 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+                      aria-label={`Drag ${layer.name} to reorder`}
+                      title="Drag to reorder"
+                      onDragStart={(event: DragEvent<HTMLButtonElement>) => {
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', layer.id);
+                        setDraggedLayerId(layer.id);
+                      }}
+                      onDragEnd={() => setDraggedLayerId(null)}
+                    >
+                      <GripVertical aria-hidden="true" size={15} strokeWidth={1.8} />
+                    </button>
                     <button
                       type="button"
                       className={iconButtonClass}

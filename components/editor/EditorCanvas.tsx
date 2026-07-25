@@ -13,6 +13,7 @@ import {
   getLayerDrawRect,
   moveTransformByViewportDelta,
   type Point,
+  type Rect,
   type Size,
 } from '../../editor/geometry';
 import type { CleanupStroke, NormalizedPoint } from '../../editor/imagePrepModel';
@@ -39,6 +40,8 @@ const emptyVariation: DesignVariation = {
 const EDITOR_CANVAS_SURFACE_ID = 'editor-main-preview';
 const MIN_CANVAS_ZOOM = 0.6;
 const MAX_CANVAS_ZOOM = 3;
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.max(minimum, Math.min(maximum, value));
 
 export const resolveCanvasZoom = (current: number, deltaY: number) => {
   const direction = deltaY < 0 ? 1 : -1;
@@ -104,11 +107,43 @@ interface PanState {
   startPan: Point;
 }
 
-interface CropDragState {
+export type CropHandle = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+interface CropPointerState {
   pointerId: number;
+  mode: 'move' | 'resize';
+  handle?: CropHandle;
   startPoint: Point;
   crop: CropRect;
+  sourceRect: Rect;
+  transform: ImageLayer['transform'];
+  displayScale: number;
 }
+
+const cropMinimum = 0.05;
+
+export const resizeCropRect = (
+  crop: CropRect,
+  handle: CropHandle,
+  delta: NormalizedPoint,
+): CropRect => {
+  let left = crop.x;
+  let top = crop.y;
+  let right = crop.x + crop.width;
+  let bottom = crop.y + crop.height;
+
+  if (handle.includes('left')) left = clamp(left + delta.x, 0, right - cropMinimum);
+  if (handle.includes('right')) right = clamp(right + delta.x, left + cropMinimum, 1);
+  if (handle.includes('top')) top = clamp(top + delta.y, 0, bottom - cropMinimum);
+  if (handle.includes('bottom')) bottom = clamp(bottom + delta.y, top + cropMinimum, 1);
+
+  return {
+    x: Number(left.toFixed(6)),
+    y: Number(top.toFixed(6)),
+    width: Number((right - left).toFixed(6)),
+    height: Number((bottom - top).toFixed(6)),
+  };
+};
 
 export const canvasPointToCropPoint = (
   point: Point,
@@ -158,7 +193,7 @@ export const EditorCanvas = ({
   const dragRef = useRef<DragState | null>(null);
   const strokeRef = useRef<StrokeState | null>(null);
   const panRef = useRef<PanState | null>(null);
-  const cropDragRef = useRef<CropDragState | null>(null);
+  const cropPointerRef = useRef<CropPointerState | null>(null);
   const [brushCursor, setBrushCursor] = useState<Point | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -208,23 +243,87 @@ export const EditorCanvas = ({
     );
   };
 
+  const cropFrame = useMemo(() => {
+    if (!selectedImage) return null;
+    const source = assetsById[selectedImage.assetId];
+    if (!source) return null;
+    const sourceRect = getLayerDrawRect(
+      source,
+      CANONICAL_DESIGN_SIZE,
+      selectedImage.transform,
+      { x: 0, y: 0, width: 1, height: 1 },
+    );
+    const localX = (selectedImage.crop.x + selectedImage.crop.width / 2 - 0.5) * sourceRect.width * (selectedImage.transform.flipX ? -1 : 1);
+    const localY = (selectedImage.crop.y + selectedImage.crop.height / 2 - 0.5) * sourceRect.height * (selectedImage.transform.flipY ? -1 : 1);
+    const radians = selectedImage.transform.rotation * Math.PI / 180;
+    const center = {
+      x: sourceRect.x + sourceRect.width / 2 + localX * Math.cos(radians) - localY * Math.sin(radians),
+      y: sourceRect.y + sourceRect.height / 2 + localX * Math.sin(radians) + localY * Math.cos(radians),
+    };
+    return {
+      sourceRect,
+      center: {
+        x: zoomedDesignRect.x + center.x * zoomedDesignRect.scale,
+        y: zoomedDesignRect.y + center.y * zoomedDesignRect.scale,
+      },
+      width: sourceRect.width * selectedImage.crop.width * zoomedDesignRect.scale,
+      height: sourceRect.height * selectedImage.crop.height * zoomedDesignRect.scale,
+    };
+  }, [assetsById, selectedImage, zoomedDesignRect]);
+
+  const toCropDelta = (drag: CropPointerState, point: Point): NormalizedPoint => {
+    const dx = point.x - drag.startPoint.x;
+    const dy = point.y - drag.startPoint.y;
+    const radians = -drag.transform.rotation * Math.PI / 180;
+    let localX = dx * Math.cos(radians) - dy * Math.sin(radians);
+    let localY = dx * Math.sin(radians) + dy * Math.cos(radians);
+    if (drag.transform.flipX) localX *= -1;
+    if (drag.transform.flipY) localY *= -1;
+    return {
+      x: localX / Math.max(1, drag.sourceRect.width * drag.displayScale),
+      y: localY / Math.max(1, drag.sourceRect.height * drag.displayScale),
+    };
+  };
+
+  const beginCropPointer = (
+    event: PointerEvent<HTMLDivElement>,
+    mode: CropPointerState['mode'],
+    handle?: CropHandle,
+  ) => {
+    if (event.button !== 0 || !selectedImage || !cropFrame) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropPointerRef.current = {
+      pointerId: event.pointerId,
+      mode,
+      handle,
+      startPoint: { x: event.clientX, y: event.clientY },
+      crop: { ...selectedImage.crop },
+      sourceRect: cropFrame.sourceRect,
+      transform: { ...selectedImage.transform },
+      displayScale: zoomedDesignRect.scale,
+    };
+  };
+
   const moveCrop = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = cropDragRef.current;
+    const drag = cropPointerRef.current;
     if (!drag || drag.pointerId !== event.pointerId || !selectedImage || !onCropChange) return;
-    const point = { x: event.clientX, y: event.clientY };
-    const maxX = Math.max(0, 1 - drag.crop.width);
-    const maxY = Math.max(0, 1 - drag.crop.height);
-    onCropChange(selectedImage.id, {
-      ...drag.crop,
-      x: Math.max(0, Math.min(maxX, drag.crop.x + (point.x - drag.startPoint.x) / zoomedDesignRect.width)),
-      y: Math.max(0, Math.min(maxY, drag.crop.y + (point.y - drag.startPoint.y) / zoomedDesignRect.height)),
-    }, 'canvas-crop-move');
+    const delta = toCropDelta(drag, { x: event.clientX, y: event.clientY });
+    const nextCrop = drag.mode === 'resize' && drag.handle
+      ? resizeCropRect(drag.crop, drag.handle, delta)
+      : {
+        ...drag.crop,
+        x: clamp(drag.crop.x + delta.x, 0, 1 - drag.crop.width),
+        y: clamp(drag.crop.y + delta.y, 0, 1 - drag.crop.height),
+      };
+    onCropChange(selectedImage.id, nextCrop, drag.mode === 'resize' ? 'canvas-crop-resize' : 'canvas-crop-move');
   };
 
   const finishCrop = (event: PointerEvent<HTMLDivElement>) => {
-    if (!cropDragRef.current || cropDragRef.current.pointerId !== event.pointerId) return;
+    if (!cropPointerRef.current || cropPointerRef.current.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    cropDragRef.current = null;
+    cropPointerRef.current = null;
     onTransformEnd();
   };
 
@@ -433,27 +532,35 @@ export const EditorCanvas = ({
         onPointerCancel={cancelPointer}
         onWheel={handleWheel}
       />
-      {tool === 'crop' && selectedImage ? (
+      {tool === 'crop' && selectedImage && cropFrame ? (
         <div
-          aria-label="Crop frame. Drag to reposition the crop."
+          aria-label="Crop frame. Drag inside to reposition, or drag a corner to resize."
           className="absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)]"
           style={{
-            left: zoomedDesignRect.x + selectedImage.crop.x * zoomedDesignRect.width,
-            top: zoomedDesignRect.y + selectedImage.crop.y * zoomedDesignRect.height,
-            width: selectedImage.crop.width * zoomedDesignRect.width,
-            height: selectedImage.crop.height * zoomedDesignRect.height,
+            left: cropFrame.center.x,
+            top: cropFrame.center.y,
+            width: cropFrame.width,
+            height: cropFrame.height,
+            transform: `translate(-50%, -50%) rotate(${selectedImage.transform.rotation}deg) scale(${selectedImage.transform.flipX ? -1 : 1}, ${selectedImage.transform.flipY ? -1 : 1})`,
             backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%)',
           }}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            cropDragRef.current = { pointerId: event.pointerId, startPoint: { x: event.clientX, y: event.clientY }, crop: { ...selectedImage.crop } };
-          }}
+          onPointerDown={(event) => beginCropPointer(event, 'move')}
           onPointerMove={moveCrop}
           onPointerUp={finishCrop}
           onPointerCancel={finishCrop}
         >
-          <span className="absolute -top-7 left-0 bg-emerald-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">Drag to reposition</span>
+          <span className="absolute -top-7 left-0 bg-emerald-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">Drag or resize</span>
+          {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((handle) => (
+            <div
+              key={handle}
+              aria-label={`Resize crop from ${handle.replace('-', ' ')}`}
+              className={`absolute h-3 w-3 border-2 border-neutral-950 bg-emerald-400 ${handle === 'top-left' ? '-left-2 -top-2 cursor-nwse-resize' : handle === 'top-right' ? '-right-2 -top-2 cursor-nesw-resize' : handle === 'bottom-left' ? '-bottom-2 -left-2 cursor-nesw-resize' : '-bottom-2 -right-2 cursor-nwse-resize'}`}
+              onPointerDown={(event) => beginCropPointer(event, 'resize', handle)}
+              onPointerMove={moveCrop}
+              onPointerUp={finishCrop}
+              onPointerCancel={finishCrop}
+            />
+          ))}
         </div>
       ) : null}
       {brushCursor && (backgroundMode === 'erase' || backgroundMode === 'restore') ? (

@@ -7,6 +7,7 @@ import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
 import {
   DEFAULT_PRODUCT_PLACEMENT,
   PRODUCT_PLACEMENT_BOUNDS,
+  type ProductPreviewMode,
   type TShirtProductVariant,
 } from '../../editor/productModel';
 import { NumberControl, RangeControl } from './TransformControls';
@@ -16,6 +17,9 @@ export interface ProductInspectorProps {
   mockupStatus: ProductMockupLoadStatus;
   mockupError: string | null;
   artworkError: string | null;
+  variations?: Array<{ id: string; name: string }>;
+  previewMode?: ProductPreviewMode;
+  onPreviewModeChange?: (mode: ProductPreviewMode) => void;
   dispatch: (command: EditorCommand) => void;
   onRetry: () => void;
   onReturnToDesign: () => void;
@@ -53,6 +57,9 @@ export const ProductInspector = ({
   mockupStatus,
   mockupError,
   artworkError,
+  variations = [],
+  previewMode = 'rgb',
+  onPreviewModeChange = () => undefined,
   dispatch,
   onRetry,
   onReturnToDesign,
@@ -111,6 +118,36 @@ export const ProductInspector = ({
             })}
           </div>
           <p className="text-xs leading-5 text-neutral-500">Choose a garment color, then drag the artwork directly on the mockup to place it within the printable area.</p>
+        </section>
+
+        <section className="grid gap-3" aria-labelledby="product-artwork-title">
+          <div>
+            <h3 id="product-artwork-title" className="text-xs font-medium text-neutral-300">Artwork for {activeMockup.name}</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Assign a light or dark design to this shirt color without creating another product.</p>
+          </div>
+          <select
+            className="h-9 border border-neutral-700 bg-neutral-950 px-2 text-xs text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label={`Artwork for ${activeMockup.name}`}
+            value={product.colorVariationIds[product.mockupSlug] ?? ''}
+            onChange={(event) => dispatch({
+              type: 'set-product-color-artwork',
+              mockupSlug: product.mockupSlug,
+              variationId: event.currentTarget.value || null,
+            })}
+          >
+            <option value="">Current variant</option>
+            {variations.map((variation) => <option key={variation.id} value={variation.id}>{variation.name}</option>)}
+          </select>
+        </section>
+
+        <section className="grid gap-2" aria-labelledby="product-preview-title">
+          <div>
+            <h3 id="product-preview-title" className="text-xs font-medium text-neutral-300">Mockup color</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">RGB is vivid for storefronts. Print intent is a softer on-garment estimate.</p>
+          </div>
+          <div className="grid grid-cols-2 border border-neutral-700" role="group" aria-label="Mockup color mode">
+            {(['rgb', 'print'] as const).map((mode) => <button key={mode} type="button" className={`h-9 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${previewMode === mode ? 'bg-emerald-500 text-neutral-950' : 'bg-neutral-950 text-neutral-300 hover:bg-neutral-800'}`} aria-pressed={previewMode === mode} onClick={() => onPreviewModeChange(mode)}>{mode === 'rgb' ? 'RGB' : 'Print intent'}</button>)}
+          </div>
         </section>
 
         <section aria-labelledby="product-placement-title" className="grid gap-3">

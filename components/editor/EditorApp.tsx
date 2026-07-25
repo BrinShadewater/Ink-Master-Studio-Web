@@ -35,7 +35,7 @@ import {
   type TextLayer,
 } from '../../editor/model';
 import { getTShirtMockup } from '../../editor/productCatalog';
-import { findTShirtProduct } from '../../editor/productModel';
+import { findTShirtProduct, type ProductPreviewMode } from '../../editor/productModel';
 import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { CompareBoard } from './CompareBoard';
@@ -133,6 +133,7 @@ export const EditorApp = () => {
   const [lookRetryGeneration, setLookRetryGeneration] = useState(0);
   const [productArtworkError, setProductArtworkError] = useState<string | null>(null);
   const [productArtworkRetryGeneration, setProductArtworkRetryGeneration] = useState(0);
+  const [productPreviewMode, setProductPreviewMode] = useState<ProductPreviewMode>('rgb');
   const [compareOpen, setCompareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [compareVariationIds, setCompareVariationIds] = useState<string[]>([]);
@@ -169,6 +170,11 @@ export const EditorApp = () => {
   const requestedProductMockup = product
     ? getTShirtMockup(product.mockupSlug)
     : null;
+  const productArtworkVariation = product && project && variation
+    ? project.variations.find((candidate) =>
+      candidate.id === product.colorVariationIds[product.mockupSlug],
+    ) ?? variation
+    : variation;
   const productMockup = useProductMockup(requestedProductMockup);
 
   useEffect(() => {
@@ -506,11 +512,12 @@ export const EditorApp = () => {
                 onDrop: importDroppedFile,
               })}
             >
-              {tool === 'product' && project && variation && product ? (
+              {tool === 'product' && project && productArtworkVariation && product ? (
                 <ProductCanvas
                   projectId={project.id}
-                  variation={variation}
+                  variation={productArtworkVariation}
                   product={product}
+                  previewMode={productPreviewMode}
                   displayedMockup={productMockup.displayedMockup}
                   mockupStatus={productMockup.status}
                   mockupError={productMockup.error}
@@ -611,6 +618,8 @@ export const EditorApp = () => {
                 productMockupStatus={productMockup.status}
                 productMockupError={productMockup.error}
                 productArtworkError={productArtworkError}
+                productPreviewMode={productPreviewMode}
+                onProductPreviewModeChange={setProductPreviewMode}
                 onRetryProduct={() => {
                   productMockup.retry();
                   setProductArtworkRetryGeneration((current) => current + 1);

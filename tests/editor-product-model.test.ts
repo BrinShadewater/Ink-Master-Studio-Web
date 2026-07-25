@@ -17,6 +17,7 @@ test('normalizes exactly one product for every variation', () => {
       type: 'tshirt',
       mockupSlug: 'navy',
       placement: { x: 0.25, y: 0.75, scale: 1.1, rotation: 15 },
+      colorVariationIds: { navy: 'variation-b', red: 'unknown' },
     },
     {
       id: 'duplicate-link',
@@ -37,6 +38,7 @@ test('normalizes exactly one product for every variation', () => {
   assert.equal(products.length, 2);
   assert.equal(findTShirtProduct(products, 'variation-a').id, 'product-a');
   assert.equal(findTShirtProduct(products, 'variation-a').mockupSlug, 'navy');
+  assert.deepEqual(findTShirtProduct(products, 'variation-a').colorVariationIds, { navy: 'variation-b' });
   assert.equal(findTShirtProduct(products, 'variation-b').mockupSlug, 'black');
   assert.notEqual(products[0].placement, DEFAULT_PRODUCT_PLACEMENT);
 });
@@ -112,4 +114,5 @@ test('duplicates a product under fresh identities without sharing placement', ()
   assert.equal(duplicate.mockupSlug, 'navy');
   assert.equal(source.placement.x, 0.25);
   assert.notEqual(duplicate.placement, source.placement);
+  assert.notEqual(duplicate.colorVariationIds, source.colorVariationIds);
 });

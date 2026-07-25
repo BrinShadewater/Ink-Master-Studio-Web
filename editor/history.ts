@@ -86,6 +86,7 @@ export type EditorCommand =
   | { type: 'reset-look' }
   | { type: 'set-product-placement'; placement: ProductPlacement; historyGroup?: string }
   | { type: 'set-product-mockup'; mockupSlug: TShirtMockupSlug }
+  | { type: 'set-product-color-artwork'; mockupSlug: TShirtMockupSlug; variationId: string | null }
   | { type: 'end-history-group' }
   | { type: 'undo' }
   | { type: 'redo' };
@@ -742,6 +743,22 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       if (product.mockupSlug === mockupSlug) return history;
       const next = cloneProject(history.present);
       findTShirtProduct(next.productVariants, variationId).mockupSlug = mockupSlug;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'set-product-color-artwork': {
+      const variationId = history.present.activeVariationId;
+      const product = findTShirtProduct(history.present.productVariants, variationId);
+      const mockupSlug = normalizeTShirtMockupSlug(command.mockupSlug);
+      const assignedVariationId = command.variationId && history.present.variations.some(
+        (variation) => variation.id === command.variationId,
+      ) ? command.variationId : undefined;
+      if (product.colorVariationIds[mockupSlug] === assignedVariationId) return history;
+      const next = cloneProject(history.present);
+      const target = findTShirtProduct(next.productVariants, variationId);
+      const colorVariationIds = { ...target.colorVariationIds };
+      if (assignedVariationId) colorVariationIds[mockupSlug] = assignedVariationId;
+      else delete colorVariationIds[mockupSlug];
+      target.colorVariationIds = colorVariationIds;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
   }

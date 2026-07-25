@@ -12,6 +12,7 @@ import type {
 } from '../../editor/model';
 import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
 import type { TShirtProductVariant } from '../../editor/productModel';
+import type { ProductPreviewMode } from '../../editor/productModel';
 import { LooksInspector } from './LooksInspector';
 import {
   BackgroundRemovalInspector,
@@ -84,6 +85,8 @@ export interface EditorInspectorProps {
   productMockupStatus?: ProductMockupLoadStatus;
   productMockupError?: string | null;
   productArtworkError?: string | null;
+  productPreviewMode?: ProductPreviewMode;
+  onProductPreviewModeChange?: (mode: ProductPreviewMode) => void;
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
   mode?: 'easy' | 'advanced';
@@ -241,6 +244,8 @@ export const EditorInspector = ({
   productMockupStatus = 'idle',
   productMockupError = null,
   productArtworkError = null,
+  productPreviewMode = 'rgb',
+  onProductPreviewModeChange = () => undefined,
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
   mode = 'advanced',
@@ -254,6 +259,9 @@ export const EditorInspector = ({
           mockupStatus={productMockupStatus}
           mockupError={productMockupError}
           artworkError={productArtworkError}
+          variations={project.variations.map(({ id, name }) => ({ id, name }))}
+          previewMode={productPreviewMode}
+          onPreviewModeChange={onProductPreviewModeChange}
           dispatch={dispatch}
           onRetry={onRetryProduct}
           onReturnToDesign={onReturnToDesign}

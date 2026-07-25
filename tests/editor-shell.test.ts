@@ -60,6 +60,7 @@ import {
 import {
   canvasPointToCropPoint,
   getZoomedDesignRect,
+  resizeCropRect,
   resolveCanvasZoom,
 } from '../components/editor/EditorCanvas';
 import {
@@ -144,6 +145,7 @@ test('layer panel exposes accessible creation, visibility, and selected-layer ac
   for (const label of [
     'Add image',
     'Add text',
+    'Drag Same name to reorder',
     'Show layer',
     'Move layer up',
     'Move layer down',
@@ -380,6 +382,9 @@ test('product inspector exposes the complete shirt catalog and bounded placement
     mockupStatus: 'ready',
     mockupError: null,
     artworkError: null,
+    variations: project.variations.map(({ id, name }) => ({ id, name })),
+    previewMode: 'rgb',
+    onPreviewModeChange: () => undefined,
     dispatch: () => undefined,
     onRetry: () => undefined,
     onReturnToDesign: () => undefined,
@@ -399,6 +404,9 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   assert.match(markup, />Center artwork<\/button>/);
   assert.match(markup, />Fit print area<\/button>/);
   assert.match(markup, />Reset<\/button>/);
+  assert.match(markup, /aria-label="Artwork for Black"/);
+  assert.match(markup, /aria-label="Mockup color mode"/);
+  assert.match(markup, />Print intent<\/button>/);
 
   assert.deepEqual(createCenterProductPlacementCommand(product), {
     type: 'set-product-placement',
@@ -599,6 +607,25 @@ test('background brush points reverse layer rotation and flips into crop-local c
       layer,
     ),
     null,
+  );
+});
+
+test('crop handles resize independently and retain the opposite crop corner', () => {
+  assert.deepEqual(
+    resizeCropRect(
+      { x: 0.2, y: 0.25, width: 0.5, height: 0.4 },
+      'top-left',
+      { x: 0.1, y: 0.1 },
+    ),
+    { x: 0.3, y: 0.35, width: 0.4, height: 0.3 },
+  );
+  assert.deepEqual(
+    resizeCropRect(
+      { x: 0.2, y: 0.25, width: 0.5, height: 0.4 },
+      'bottom-right',
+      { x: 0.8, y: 0.8 },
+    ),
+    { x: 0.2, y: 0.25, width: 0.8, height: 0.75 },
   );
 });
 

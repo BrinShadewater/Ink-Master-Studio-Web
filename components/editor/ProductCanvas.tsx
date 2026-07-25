@@ -26,6 +26,7 @@ import {
 } from '../../editor/productGeometry';
 import type {
   ProductPlacement,
+  ProductPreviewMode,
   TShirtProductVariant,
 } from '../../editor/productModel';
 import type {
@@ -75,6 +76,7 @@ export interface ProductCanvasProps {
   projectId: string;
   variation: DesignVariation;
   product: TShirtProductVariant;
+  previewMode?: ProductPreviewMode;
   displayedMockup: TShirtMockup | null;
   mockupStatus: ProductMockupLoadStatus;
   mockupError: string | null;
@@ -113,6 +115,7 @@ export const ProductCanvas = ({
   projectId,
   variation,
   product,
+  previewMode = 'rgb',
   displayedMockup,
   mockupStatus,
   mockupError,
@@ -236,7 +239,7 @@ export const ProductCanvas = ({
     <section
       ref={stageRef}
       aria-label="T-shirt product preview"
-      className="relative h-full min-h-0 touch-none overflow-hidden bg-[#aeb9b7]"
+      className="relative h-full min-h-0 touch-none overflow-hidden bg-[#718481]"
       onPointerMove={movePointer}
       onPointerUp={finishPointer}
       onPointerCancel={finishPointer}
@@ -254,6 +257,7 @@ export const ProductCanvas = ({
             width: mockupRect.width,
             height: mockupRect.height,
             mixBlendMode: 'multiply',
+            filter: previewMode === 'print' ? 'saturate(.78) contrast(.94) brightness(.94)' : undefined,
           }}
         />
       ) : null}
@@ -300,7 +304,7 @@ export const ProductCanvas = ({
               transform: `translate(-50%, -50%) rotate(${product.placement.rotation}deg) scale(${product.placement.scale})`,
               transformOrigin: 'center',
               mixBlendMode: 'normal',
-              filter: 'saturate(1.02) contrast(1.02) drop-shadow(0 1px 1px rgb(0 0 0 / 0.18))',
+              filter: `${previewMode === 'print' ? 'saturate(.78) contrast(.92) brightness(.94)' : 'saturate(1.02) contrast(1.02)'} drop-shadow(0 1px 1px rgb(0 0 0 / 0.18))`,
             }}
             onPointerDown={(event) => beginPointer(event, 'move')}
           >
