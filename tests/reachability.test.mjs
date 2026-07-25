@@ -41,6 +41,10 @@ const expectedOrphans = [
   'editor/tshirtExportWorker.ts',
   'services/batch.ts',
   'services/designNames.ts',
+  // Reached only from workers/imageProcessing.worker.ts, which is itself a
+  // separate worker entry point rather than a static import from index.tsx.
+  // Live code, not dead code.
+  'services/designPlacement.ts',
   'services/exportHistory.ts',
   'services/geminiService.ts',
   'services/handoffDetails.ts',
