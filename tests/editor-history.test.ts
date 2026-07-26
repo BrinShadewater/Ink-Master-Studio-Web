@@ -869,6 +869,24 @@ test('adds, normalizes, and removes ordered Looks as undoable edits', () => {
   assert.deepEqual(getActiveVariation(history.present).looks.map(({ id }) => id), ['duotone', 'distressed-print']);
 });
 
+test('records print method as one discrete no-op-aware product edit with undo and redo', () => {
+  let history = makeHistory();
+  const variationId = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-product-print-method', printMethod: 'dtf' });
+  const changed = history;
+  history = reduceEditorHistory(history, { type: 'set-product-print-method', printMethod: 'dtf' });
+
+  assert.equal(history, changed);
+  assert.equal(history.variationHistory[variationId].past.length, 1);
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).printMethod, 'dtf');
+
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).printMethod, 'dtg');
+
+  history = reduceEditorHistory(history, { type: 'redo' });
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).printMethod, 'dtf');
+});
+
 test('updates and groups continuous Look strength edits into one undo step', () => {
   let history = makeHistory();
   const variationId = history.present.activeVariationId;

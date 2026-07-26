@@ -494,6 +494,42 @@ test('migrates one legacy Look into a one-item schema seven stack', () => {
   assert.deepEqual(migrated.variations[0].looks, [createDefaultLook('duotone')]);
 });
 
+test('keeps schema seven print methods and defaults missing legacy values without losing product state', () => {
+  const source = createEditorAsset('project_print_method', new Blob(['source']), {
+    name: 'source.png', width: 1200, height: 900,
+  });
+  const current = createEditorProject('Print method', source);
+  const variationId = current.variations[0].id;
+  current.variations[0].looks = [createDefaultLook('duotone')];
+  const image = current.variations[0].layers[0];
+  if (image.type !== 'image') throw new Error('Expected image layer.');
+  image.backgroundRemoval = {
+    ...image.backgroundRemoval,
+    enabled: true,
+    mode: 'picked',
+    picks: [{ color: '#ffffff', point: { x: 0.25, y: 0.75 } }],
+  };
+  const product = current.productVariants[0];
+  product.mockupSlug = 'white';
+  product.placement = { x: 0.4, y: 0.6, scale: 0.85, rotation: 12 };
+  product.colorVariationIds = { white: variationId };
+  product.printMethod = 'dtf';
+
+  const persisted = migrateEditorProject(structuredClone(current), [source]);
+  assert.equal(persisted.productVariants[0].printMethod, 'dtf');
+
+  const legacy = structuredClone(current) as unknown as Record<string, any>;
+  delete legacy.productVariants[0].printMethod;
+  const migrated = migrateEditorProject(legacy, [source]);
+
+  assert.equal(migrated.productVariants[0].printMethod, 'dtg');
+  assert.equal(migrated.productVariants[0].mockupSlug, 'white');
+  assert.deepEqual(migrated.productVariants[0].placement, product.placement);
+  assert.deepEqual(migrated.productVariants[0].colorVariationIds, { white: variationId });
+  assert.deepEqual(migrated.variations[0].layers[0], current.variations[0].layers[0]);
+  assert.deepEqual(migrated.variations[0].looks, current.variations[0].looks);
+});
+
 test('rejects unsupported schemas and records without a valid created timestamp', () => {
   assert.throws(() => migrateEditorProject({ schemaVersion: 8 }, []), /Unsupported editor project schema/);
   const asset = createEditorAsset('project_a', new Blob(['source']), {

@@ -5,6 +5,7 @@ import {
   duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
+  normalizeTShirtPrintMethod,
   normalizeTShirtMockupSlug,
   normalizeTShirtProductVariants,
 } from '../editor/productModel';
@@ -105,6 +106,7 @@ test('throws when a normalized variation has no linked product', () => {
 test('duplicates a product under fresh identities without sharing placement', () => {
   const source = normalizeTShirtProductVariants([], ['variation-a'], () => 'product-a')[0];
   source.mockupSlug = 'navy';
+  source.printMethod = 'dtf';
   source.placement.x = 0.25;
 
   const duplicate = duplicateTShirtProduct(source, 'variation-b', 'product-b');
@@ -113,9 +115,28 @@ test('duplicates a product under fresh identities without sharing placement', ()
   assert.equal(duplicate.id, 'product-b');
   assert.equal(duplicate.variationId, 'variation-b');
   assert.equal(duplicate.mockupSlug, 'navy');
+  assert.equal(duplicate.printMethod, 'dtf');
   assert.equal(source.placement.x, 0.25);
   assert.notEqual(duplicate.placement, source.placement);
   assert.notEqual(duplicate.colorVariationIds, source.colorVariationIds);
+});
+
+test('normalizes supported print methods and defaults legacy values to DTG', () => {
+  assert.equal(normalizeTShirtPrintMethod('dtg'), 'dtg');
+  assert.equal(normalizeTShirtPrintMethod('dtf'), 'dtf');
+  assert.equal(normalizeTShirtPrintMethod('vinyl'), 'vinyl');
+  assert.equal(normalizeTShirtPrintMethod('screen-print'), 'dtg');
+  assert.equal(normalizeTShirtPrintMethod(undefined), 'dtg');
+
+  const [legacyProduct] = normalizeTShirtProductVariants([{
+    id: 'legacy-product',
+    variationId: 'variation-a',
+    type: 'tshirt',
+    mockupSlug: 'white',
+    placement: DEFAULT_PRODUCT_PLACEMENT,
+  }], ['variation-a'], () => 'generated-product');
+
+  assert.equal(legacyProduct.printMethod, 'dtg');
 });
 
 test('normalizes White as a supported shirt color', () => {

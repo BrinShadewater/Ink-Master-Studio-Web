@@ -43,9 +43,11 @@ import {
   duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
+  normalizeTShirtPrintMethod,
   normalizeTShirtMockupSlug,
   type ProductPlacement,
   type TShirtMockupSlug,
+  type TShirtPrintMethod,
   type TShirtProductVariant,
 } from './productModel';
 
@@ -91,6 +93,7 @@ export type EditorCommand =
   | { type: 'reset-looks' }
   | { type: 'set-product-placement'; placement: ProductPlacement; historyGroup?: string }
   | { type: 'set-product-mockup'; mockupSlug: TShirtMockupSlug }
+  | { type: 'set-product-print-method'; printMethod: TShirtPrintMethod }
   | { type: 'set-product-color-artwork'; mockupSlug: TShirtMockupSlug; variationId: string | null }
   | { type: 'end-history-group' }
   | { type: 'undo' }
@@ -781,6 +784,15 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
       if (product.mockupSlug === mockupSlug) return history;
       const next = cloneProject(history.present);
       findTShirtProduct(next.productVariants, variationId).mockupSlug = mockupSlug;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'set-product-print-method': {
+      const variationId = history.present.activeVariationId;
+      const product = findTShirtProduct(history.present.productVariants, variationId);
+      const printMethod = normalizeTShirtPrintMethod(command.printMethod);
+      if (product.printMethod === printMethod) return history;
+      const next = cloneProject(history.present);
+      findTShirtProduct(next.productVariants, variationId).printMethod = printMethod;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
     case 'set-product-color-artwork': {
