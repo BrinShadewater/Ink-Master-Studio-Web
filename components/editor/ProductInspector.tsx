@@ -10,6 +10,7 @@ import {
   DEFAULT_PRODUCT_PLACEMENT,
   PRODUCT_PLACEMENT_BOUNDS,
   type ProductPreviewMode,
+  type TShirtPrintMethod,
   type TShirtProductVariant,
 } from '../../editor/productModel';
 import { getTShirtExportPreset, resolveTShirtExportGeometry } from '../../editor/tshirtExportModel';
@@ -56,6 +57,28 @@ const productPlacementPresets: Record<ProductPlacementPresetId, {
     placement: { x: 0.5, y: 0.52, scale: 1.05, rotation: 0 },
   },
 };
+
+const productPrintMethods: Array<{
+  id: TShirtPrintMethod;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: 'dtg',
+    label: 'DTG',
+    description: 'Detailed, full-color artwork printed directly on the shirt.',
+  },
+  {
+    id: 'dtf',
+    label: 'DTF transfer',
+    description: 'Durable full-color transfer for light and dark shirts.',
+  },
+  {
+    id: 'vinyl',
+    label: 'Cut vinyl',
+    description: 'Best for bold artwork with one or two solid colors.',
+  },
+];
 
 export const createProductPlacementPresetCommand = (
   presetId: ProductPlacementPresetId,
@@ -316,6 +339,38 @@ export const ProductInspector = ({
             ))}
           </div>
         </section>
+
+        {mode === 'advanced' ? (
+          <fieldset aria-label="Print method" className="grid gap-2">
+            <legend className="mb-1 text-xs font-medium text-neutral-300">Print method</legend>
+            {productPrintMethods.map((method) => (
+              <label
+                key={method.id}
+                className={`flex min-h-11 cursor-pointer items-center gap-3 border px-3 py-2 transition focus-within:ring-2 focus-within:ring-emerald-400 ${
+                  product.printMethod === method.id
+                    ? 'border-emerald-500 bg-emerald-950/30'
+                    : 'border-neutral-700 bg-neutral-950 hover:border-neutral-500'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="product-print-method"
+                  aria-label={method.label}
+                  checked={product.printMethod === method.id}
+                  onChange={() => dispatch({
+                    type: 'set-product-print-method',
+                    printMethod: method.id,
+                  })}
+                  className="h-4 w-4 shrink-0 accent-emerald-500"
+                />
+                <span className="grid gap-0.5">
+                  <span className="text-xs font-medium text-neutral-100">{method.label}</span>
+                  <span className="text-xs leading-4 text-neutral-500">{method.description}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
 
         {mode === 'advanced' ? <><div className="grid grid-cols-2 gap-3">
           <NumberControl

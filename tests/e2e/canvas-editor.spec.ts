@@ -60,6 +60,7 @@ interface TShirtProductSnapshot {
     | 'red'
     | 'royal-blue'
     | 'white';
+  printMethod: 'dtg' | 'dtf' | 'vinyl';
   placement: {
     x: number;
     y: number;
@@ -2133,6 +2134,18 @@ test('Product placement presets stay simple in Basic and persist after reload', 
   await expect(page.getByLabel('X position', { exact: true })).toHaveValue('28');
   await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('27');
   await expect(page.getByLabel('Scale', { exact: true })).toHaveValue('32');
+  await page.getByRole('radio', { name: 'DTF transfer', exact: true }).check();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].printMethod;
+  }).toBe('dtf');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'DTF transfer', exact: true })).toBeChecked();
 });
 
 test('Before and after divider stays synchronized across pointer and keyboard controls', async ({ page }) => {

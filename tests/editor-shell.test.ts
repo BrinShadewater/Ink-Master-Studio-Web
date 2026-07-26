@@ -513,6 +513,9 @@ test('Product Basic leads with readiness and keeps precision in Advanced', () =>
   assert.match(basic, />Create print-ready PNG<\/button>/);
   assert.doesNotMatch(basic, /Artwork checks|Artwork for Black|Mockup color mode|product-position-x|product-scale/);
   assert.doesNotMatch(basic, /Largest source edge|Estimated scale|Print Lens/);
+  assert.doesNotMatch(basic, /aria-label="Print method"/);
+  assert.doesNotMatch(basic, /DTF transfer/);
+  assert.doesNotMatch(basic, /Cut vinyl/);
   assert.match(basic, />Standard front<\/button>/);
   assert.match(basic, />Left chest<\/button>/);
   assert.doesNotMatch(basic, />Oversized front<\/button>/);
@@ -528,6 +531,10 @@ test('Product Basic leads with readiness and keeps precision in Advanced', () =>
   assert.match(advanced, />Standard front<\/button>/);
   assert.match(advanced, />Left chest<\/button>/);
   assert.match(advanced, />Oversized front<\/button>/);
+  assert.match(advanced, /aria-label="Print method"/);
+  assert.match(advanced, />DTG</);
+  assert.match(advanced, />DTF transfer</);
+  assert.match(advanced, />Cut vinyl</);
 });
 
 test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {
