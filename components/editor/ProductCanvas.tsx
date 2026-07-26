@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type PointerEvent,
 } from 'react';
 import type { DecodedImageEntry } from '../../editor/decodedImages';
@@ -20,7 +21,9 @@ import {
 import {
   containProductMockup,
   moveProductPlacement,
+  moveProductPlacementWithKeyboard,
   resizeProductPlacementFromPoint,
+  resizeProductPlacementWithKeyboard,
   resolveProductArtworkGeometry,
   resolveProductRegionRect,
 } from '../../editor/productGeometry';
@@ -131,8 +134,10 @@ export const ProductCanvas = ({
 }: ProductCanvasProps) => {
   const stageRef = useRef<HTMLElement>(null);
   const pointerRef = useRef<ProductCanvasPointerState | null>(null);
+  const keyboardEditingRef = useRef(false);
   const placementEndRef = useRef(onPlacementEnd);
   const [viewport, setViewport] = useState<Size>(emptySize);
+  const [keyboardFocus, setKeyboardFocus] = useState<ProductPointerMode | null>(null);
   placementEndRef.current = onPlacementEnd;
   const requestedMockup = getTShirtMockup(product.mockupSlug);
   const mockupRect = useMemo(
@@ -232,6 +237,30 @@ export const ProductCanvas = ({
     onPlacementEnd();
   };
 
+  const updatePlacementFromKeyboard = (
+    event: KeyboardEvent<HTMLElement>,
+    mode: ProductPointerMode,
+  ) => {
+    if (!event.key.startsWith('Arrow')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    keyboardEditingRef.current = true;
+    onPlacementChange(
+      mode === 'move'
+        ? moveProductPlacementWithKeyboard(product.placement, event.key, event.shiftKey)
+        : resizeProductPlacementWithKeyboard(product.placement, event.key, event.shiftKey),
+      mode === 'move' ? 'product-placement-drag' : 'product-placement-resize',
+    );
+  };
+
+  const finishKeyboardPlacement = () => {
+    if (!keyboardEditingRef.current) return;
+    keyboardEditingRef.current = false;
+    onPlacementEnd();
+  };
+
+  const keyboardShortcuts = 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight';
+
   const initialFailure = mockupStatus === 'failed' && !displayedMockup;
   const initialPending = mockupStatus === 'pending' && !displayedMockup;
 
@@ -294,7 +323,12 @@ export const ProductCanvas = ({
           />
           <div
             data-product-artwork="true"
-            className="absolute z-10 cursor-move touch-none ring-1 ring-emerald-500/80"
+            role="button"
+            tabIndex={0}
+            aria-label="Product artwork placement"
+            aria-describedby="product-canvas-keyboard-help"
+            aria-keyshortcuts={keyboardShortcuts}
+            className="absolute z-10 cursor-move touch-none ring-1 ring-emerald-500/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"
             data-product-print="garment-blended"
             style={{
               left: artwork.center.x,
@@ -307,6 +341,15 @@ export const ProductCanvas = ({
               filter: `${previewMode === 'print' ? 'saturate(.78) contrast(.92) brightness(.94)' : 'saturate(1.02) contrast(1.02)'} drop-shadow(0 1px 1px rgb(0 0 0 / 0.18))`,
             }}
             onPointerDown={(event) => beginPointer(event, 'move')}
+            onKeyDown={(event) => updatePlacementFromKeyboard(event, 'move')}
+            onKeyUp={(event) => {
+              if (event.key.startsWith('Arrow')) finishKeyboardPlacement();
+            }}
+            onFocus={() => setKeyboardFocus('move')}
+            onBlur={() => {
+              setKeyboardFocus(null);
+              finishKeyboardPlacement();
+            }}
           >
             <VariationPreviewCanvas
               surfaceId={`editor-product-preview:${projectId}:${variation.id}`}
@@ -324,17 +367,36 @@ export const ProductCanvas = ({
           <button
             type="button"
             aria-label="Resize product artwork"
+            aria-describedby="product-canvas-keyboard-help"
+            aria-keyshortcuts={keyboardShortcuts}
             title="Resize product artwork"
-            className="absolute z-20 grid h-7 w-7 touch-none place-items-center border border-neutral-950 bg-emerald-400 text-neutral-950 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            className="absolute z-20 grid h-11 w-11 touch-none place-items-center border border-neutral-950 bg-emerald-400 text-neutral-950 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-950"
             style={{
               left: resizeHandle.x,
               top: resizeHandle.y,
               transform: 'translate(-50%, -50%)',
             }}
             onPointerDown={(event) => beginPointer(event, 'resize')}
+            onKeyDown={(event) => updatePlacementFromKeyboard(event, 'resize')}
+            onKeyUp={(event) => {
+              if (event.key.startsWith('Arrow')) finishKeyboardPlacement();
+            }}
+            onFocus={() => setKeyboardFocus('resize')}
+            onBlur={() => {
+              setKeyboardFocus(null);
+              finishKeyboardPlacement();
+            }}
           >
             <MoveDiagonal2 aria-hidden="true" size={15} />
           </button>
+          <p
+            id="product-canvas-keyboard-help"
+            className={keyboardFocus
+              ? 'absolute inset-x-3 top-3 z-30 rounded border border-neutral-700 bg-neutral-950/90 px-3 py-2 text-center text-xs text-neutral-100 shadow-lg'
+              : 'sr-only'}
+          >
+            Arrow keys move. Shift moves farther. Focus Resize to change size.
+          </p>
         </>
       ) : null}
 

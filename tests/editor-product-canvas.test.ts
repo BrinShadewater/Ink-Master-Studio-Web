@@ -48,7 +48,11 @@ test('renders a labeled photographic shirt with undarkened transparent artwork a
   assert.match(markup, /aria-label="T-shirt product preview"/);
   assert.match(markup, /alt="Black T-shirt"/);
   assert.match(markup, /aria-label="Product artwork"/);
+  assert.match(markup, /aria-label="Product artwork placement"/);
   assert.match(markup, /aria-label="Resize product artwork"/);
+  assert.match(markup, /aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight/);
+  assert.match(markup, /h-11 w-11/);
+  assert.match(markup, /Arrow keys move\. Shift moves farther\./);
   assert.match(markup, /data-product-artwork="true"/);
   assert.match(markup, /data-product-print="garment-blended"/);
   assert.match(markup, /mix-blend-mode:normal/);

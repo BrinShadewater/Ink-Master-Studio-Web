@@ -1738,6 +1738,36 @@ test('top bar groups stay readable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open local projects' }).getByText('Projects', { exact: true })).toBeVisible();
 });
 
+test('Product canvas supports keyboard placement and resize', async ({ page }) => {
+  const projectName = 'product-keyboard';
+  await page.goto('/editor');
+  await uploadFixture(page, 1000, 1000, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  const placement = page.getByRole('button', { name: 'Product artwork placement', exact: true });
+  const resize = page.getByRole('button', { name: 'Resize product artwork', exact: true });
+  await placement.focus();
+  await expect(page.getByText('Arrow keys move. Shift moves farther. Focus Resize to change size.')).toBeVisible();
+  await placement.press('ArrowRight');
+  await placement.press('Shift+ArrowDown');
+  await resize.focus();
+  await resize.press('ArrowRight');
+
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.51, y: 0.55, scale: 0.73, rotation: 0 });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.51, y: 0.55, scale: 0.73, rotation: 0 });
+});
+
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
