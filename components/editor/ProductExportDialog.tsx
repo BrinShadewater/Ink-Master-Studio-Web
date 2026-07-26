@@ -2,11 +2,38 @@ import { CircleStop, Download, FileImage, RotateCcw, X } from 'lucide-react';
 import { useRef, useState, type RefObject } from 'react';
 import type { DesignVariation, EditorAsset } from '../../editor/model';
 import type { TShirtProductVariant } from '../../editor/productModel';
-import { TSHIRT_EXPORT_PRESETS, createTShirtExportFilename, type TShirtExportPresetId } from '../../editor/tshirtExportModel';
+import { getTShirtMockup } from '../../editor/productCatalog';
+import {
+  TSHIRT_EXPORT_PRESETS,
+  createTShirtExportFilename,
+  getTShirtExportPreset,
+  type TShirtExportPresetId,
+} from '../../editor/tshirtExportModel';
 import { useAccessibleDialog } from '../useAccessibleDialog';
 import { useTShirtPngExport } from './useTShirtPngExport';
 
 const formatFileSize = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+
+const printMethodLabels = {
+  dtg: 'DTG',
+  dtf: 'DTF transfer',
+  vinyl: 'Cut vinyl',
+} as const;
+
+export const getProductExportSummary = (
+  product: TShirtProductVariant,
+  variation: DesignVariation,
+  presetId: TShirtExportPresetId,
+) => {
+  const preset = getTShirtExportPreset(presetId);
+  return {
+    garment: getTShirtMockup(product.mockupSlug).name,
+    method: printMethodLabels[product.printMethod],
+    artwork: variation.name,
+    printSize: `${preset.physicalWidthInches} x ${preset.physicalHeightInches} in`,
+    placement: `${Math.round(product.placement.scale * 100)}% size, ${Math.round(product.placement.x * 100)}% across, ${Math.round(product.placement.y * 100)}% down`,
+  };
+};
 
 export interface ProductExportDialogProps {
   open: boolean; projectName: string; variation: DesignVariation; product: TShirtProductVariant;
@@ -19,6 +46,7 @@ export const ProductExportDialog = ({ open, projectName, variation, product, ass
   const dialogRef = useAccessibleDialog({ open, onClose, initialFocusRef: selectedRef, returnFocusRef });
   const { state, generate, cancel } = useTShirtPngExport({ presetId, variation, placement: product.placement, assetsById });
   if (!open) return null;
+  const summary = getProductExportSummary(product, variation, presetId);
   const busy = state.status === 'capturing' || state.status === 'rendering' || state.status === 'validating';
   const close = () => { cancel(); onClose(); };
   const download = () => {
@@ -29,7 +57,7 @@ export const ProductExportDialog = ({ open, projectName, variation, product, ass
   return <div ref={dialogRef} className="fixed inset-0 z-50 flex items-start justify-end bg-black/65 p-3 md:p-4" role="dialog" aria-modal="true" aria-labelledby="product-export-title" tabIndex={-1} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="max-h-full w-full max-w-sm overflow-y-auto border border-neutral-700 bg-neutral-900 shadow-2xl">
       <header className="flex min-h-12 items-center justify-between border-b border-neutral-800 pl-4 pr-2"><div><h2 id="product-export-title" className="text-sm font-semibold">Print-ready PNG</h2><p className="text-xs text-neutral-400">Recommended download</p></div><button type="button" className="grid h-11 w-11 place-items-center text-neutral-400 hover:bg-neutral-800" aria-label="Close export" title="Close export" onClick={close}><X size={17} /></button></header>
-      <div className="grid gap-3 p-4"><p className="border border-cyan-900/70 bg-cyan-950/35 px-3 py-2 text-xs leading-5 text-cyan-100">Exporting a PNG keeps your cleaned raster artwork and transparency intact. SVG is only for artwork you have traced or created as text.</p><div role="radiogroup" aria-label="PNG preset" className="grid gap-2">{TSHIRT_EXPORT_PRESETS.map((preset) => <label key={preset.id} className="flex cursor-pointer gap-2 border border-neutral-700 p-3 text-xs"><input ref={preset.id === presetId ? selectedRef : undefined} type="radio" name="tshirt-export-preset" value={preset.id} checked={preset.id === presetId} onChange={() => setPresetId(preset.id)} /><span><strong>{preset.name}</strong><br />{preset.width} x {preset.height} px, {preset.dpi} DPI, {preset.physicalWidthInches} x {preset.physicalHeightInches} in<br /><span className={preset.classification === 'proof' ? 'text-amber-300' : 'text-emerald-300'}>{preset.classification === 'proof' ? 'Proof only' : 'Production'}</span></span></label>)}</div>
+      <div className="grid gap-3 p-4"><p className="border border-cyan-900/70 bg-cyan-950/35 px-3 py-2 text-xs leading-5 text-cyan-100">Exporting a PNG keeps your cleaned raster artwork and transparency intact. SVG is only for artwork you have traced or created as text.</p><section aria-labelledby="production-summary-title" className="grid gap-2 border border-neutral-700 bg-neutral-950/60 p-3"><h3 id="production-summary-title" className="text-xs font-semibold text-neutral-100">Production summary</h3><dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-neutral-300"><dt className="text-neutral-500">Garment</dt><dd>{summary.garment}</dd><dt className="text-neutral-500">Method</dt><dd>{summary.method}</dd><dt className="text-neutral-500">Artwork</dt><dd>{summary.artwork}</dd><dt className="text-neutral-500">Print size</dt><dd>{summary.printSize}</dd><dt className="text-neutral-500">Placement</dt><dd>{summary.placement}</dd></dl></section><div role="radiogroup" aria-label="PNG preset" className="grid gap-2">{TSHIRT_EXPORT_PRESETS.map((preset) => <label key={preset.id} className="flex cursor-pointer gap-2 border border-neutral-700 p-3 text-xs"><input ref={preset.id === presetId ? selectedRef : undefined} type="radio" name="tshirt-export-preset" value={preset.id} checked={preset.id === presetId} onChange={() => setPresetId(preset.id)} /><span><strong>{preset.name}</strong><br />{preset.width} x {preset.height} px, {preset.dpi} DPI, {preset.physicalWidthInches} x {preset.physicalHeightInches} in<br /><span className={preset.classification === 'proof' ? 'text-amber-300' : 'text-emerald-300'}>{preset.classification === 'proof' ? 'Proof only' : 'Production'}</span></span></label>)}</div>
       {state.status === 'rendering' ? <p role="status" className="text-xs text-neutral-300">{state.stage === 'preparing-artwork' ? 'Preparing artwork' : state.stage === 'rendering-layers' ? 'Rendering layers' : 'Encoding PNG'}...</p> : null}
       {state.status === 'validating' ? <p role="status" className="text-xs text-neutral-300">Validating file...</p> : null}
       {state.status === 'failed' ? <p role="alert" className="text-xs text-red-300">{state.message}</p> : null}

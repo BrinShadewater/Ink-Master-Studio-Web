@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -1678,4 +1679,15 @@ test('Shift-wheel zoom stays bounded and keeps the design centered', () => {
     height: 800,
     scale: 0.8,
   });
+});
+
+test('Product export uses the garment-assigned artwork variation', () => {
+  const source = readFileSync(
+    new URL('../components/editor/EditorApp.tsx', import.meta.url),
+    'utf8',
+  );
+  const dialogCall = source.match(/<ProductExportDialog[\s\S]*?\/>/)?.[0];
+  assert.ok(dialogCall, 'Expected the Product export dialog call.');
+  assert.match(dialogCall, /variation=\{productArtworkVariation\}/);
+  assert.doesNotMatch(dialogCall, /variation=\{variation\}/);
 });

@@ -750,8 +750,8 @@ export const EditorApp = () => {
       />
 
       <ExportMenu open={exportOpen} projectName={project?.name ?? 'Untitled design'} variation={variation} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
-      {project && variation && product ? (
-        <ProductExportDialog open={productExportOpen} projectName={project.name} variation={variation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setProductExportOpen(false)} />
+      {project && productArtworkVariation && product ? (
+        <ProductExportDialog open={productExportOpen} projectName={project.name} variation={productArtworkVariation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setProductExportOpen(false)} />
       ) : null}
     </main>
   );
