@@ -289,14 +289,14 @@ test('empty Advanced top bar does not report a saved project', () => {
   assert.doesNotMatch(markup, /role="status"/);
 });
 
-test('Basic toolbar keeps the guided workflow visible and specialists behind More', () => {
+test('Basic toolbar keeps the guided workflow visible with Looks available for finishing', () => {
   const easy = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select', mode: 'easy', hasProject: true, hasImageLayer: true,
     onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
   const labels = [...easy.matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(labels.slice(0, 5), ['Select', 'Crop', 'Product', 'Layers', 'More tools']);
-  for (const label of ['Adjust', 'Enhance resolution', 'Remove background', 'Trace', 'Looks']) {
+  assert.deepEqual(labels.slice(0, 6), ['Select', 'Crop', 'Looks', 'Product', 'Layers', 'More tools']);
+  for (const label of ['Adjust', 'Enhance resolution', 'Remove background', 'Trace']) {
     assert.doesNotMatch(easy, new RegExp(`aria-label="${label}"[^>]*data-primary-tool`));
   }
   assert.doesNotMatch(easy, /aria-label="Compare"/);
@@ -478,6 +478,11 @@ test('product inspector exposes the complete shirt catalog and bounded placement
     type: 'set-product-placement',
     placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
     historyGroup: 'product-preset:left-chest',
+  });
+  assert.deepEqual(createProductPlacementPresetCommand('right-chest'), {
+    type: 'set-product-placement',
+    placement: { x: 0.72, y: 0.27, scale: 0.32, rotation: 0 },
+    historyGroup: 'product-preset:right-chest',
   });
   assert.deepEqual(createResetProductPlacementCommand(), {
     type: 'set-product-placement',
@@ -1303,18 +1308,14 @@ test('Basic toolbar omits unavailable image tools until artwork provides context
   assert.match(empty, /aria-label="More tools"/);
 });
 
-test('top bar keeps local save progress visible', () => {
-  for (const [saveStatus, label] of [
-    ['saving', 'Saving in this browser'],
-    ['saved', 'Saved in this browser'],
-  ] as const) {
-    const markup = renderToStaticMarkup(createElement(EditorTopBar, {
-      ...topBarProps,
-      saveStatus,
-    }));
-    assert.match(markup, new RegExp(label));
-    assert.match(markup, /role="status"[^>]*aria-live="polite"/);
+test('top bar keeps routine save state out of the project chrome', () => {
+  for (const saveStatus of ['saving', 'saved'] as const) {
+    const markup = renderToStaticMarkup(createElement(EditorTopBar, { ...topBarProps, saveStatus }));
+    assert.doesNotMatch(markup, /Saved in this browser|Saving in this browser|role="status"/);
   }
+  const failed = renderToStaticMarkup(createElement(EditorTopBar, { ...topBarProps, saveStatus: 'error' }));
+  assert.match(failed, /Save failed/);
+  assert.match(failed, /role="status"[^>]*aria-live="polite"/);
 });
 
 test('top bar disables variation deletion when only one variation remains', () => {

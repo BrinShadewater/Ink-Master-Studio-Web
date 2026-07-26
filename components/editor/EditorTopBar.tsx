@@ -126,12 +126,6 @@ const IconButton = ({
   </button>
 );
 
-const saveStatusText: Record<SaveStatus, string> = {
-  saved: 'Saved in this browser',
-  saving: 'Saving in this browser',
-  error: 'Save failed',
-};
-
 export const EditorTopBar = ({
   projectId,
   projectName,
@@ -226,13 +220,13 @@ export const EditorTopBar = ({
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
           <div className="flex items-center justify-between gap-2 px-1">
             <p className="hidden text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 md:block">Project name</p>
-            {projectId ? (
+            {projectId && saveStatus === 'error' ? (
               <span
-                className={`truncate text-[10px] leading-none ${saveStatus === 'error' ? 'text-red-400' : 'text-neutral-400'}`}
+                className="truncate text-[10px] leading-none text-red-400"
                 role="status"
                 aria-live="polite"
               >
-                {saveStatusText[saveStatus]}
+                Save failed
               </span>
             ) : null}
           </div>

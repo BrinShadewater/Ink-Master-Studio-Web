@@ -38,7 +38,13 @@ export interface ProductInspectorProps {
   onReturnToDesign: () => void;
 }
 
-export type ProductPlacementPresetId = 'standard-front' | 'left-chest' | 'oversized-front';
+export type ProductPlacementPresetId =
+  | 'standard-front'
+  | 'left-chest'
+  | 'right-chest'
+  | 'center-chest'
+  | 'oversized-front'
+  | 'neck-label';
 
 const productPlacementPresets: Record<ProductPlacementPresetId, {
   label: string;
@@ -52,9 +58,21 @@ const productPlacementPresets: Record<ProductPlacementPresetId, {
     label: 'Left chest',
     placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
   },
+  'right-chest': {
+    label: 'Right chest',
+    placement: { x: 0.72, y: 0.27, scale: 0.32, rotation: 0 },
+  },
+  'center-chest': {
+    label: 'Center chest',
+    placement: { x: 0.5, y: 0.35, scale: 0.45, rotation: 0 },
+  },
   'oversized-front': {
     label: 'Oversized front',
     placement: { x: 0.5, y: 0.52, scale: 1.05, rotation: 0 },
+  },
+  'neck-label': {
+    label: 'Neck label',
+    placement: { x: 0.5, y: 0.14, scale: 0.2, rotation: 0 },
   },
 };
 
@@ -193,8 +211,8 @@ export const ProductInspector = ({
         ? 'The export enlarges the artwork enough to soften visible details.'
         : 'Add raster artwork to calculate print readiness.';
   const visiblePlacementPresets: ProductPlacementPresetId[] = mode === 'advanced'
-    ? ['standard-front', 'left-chest', 'oversized-front']
-    : ['standard-front', 'left-chest'];
+    ? ['standard-front', 'left-chest', 'right-chest', 'center-chest', 'oversized-front', 'neck-label']
+    : ['standard-front', 'left-chest', 'right-chest', 'center-chest'];
 
   return (
     <>

@@ -2,8 +2,9 @@ import { CircleStop, Download, FileImage, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { DesignVariation, EditorAsset } from '../../editor/model';
 import { createProductProofMockup, createProofUrlOwner } from '../../editor/productProof';
-import type { TShirtProductVariant } from '../../editor/productModel';
-import { getTShirtMockup } from '../../editor/productCatalog';
+import { createProductMockupScene, type ProductMockupScene } from '../../editor/productProof';
+import type { TShirtMockupSlug, TShirtProductVariant } from '../../editor/productModel';
+import { TSHIRT_MOCKUPS, getTShirtMockup } from '../../editor/productCatalog';
 import {
   TSHIRT_EXPORT_PRESETS,
   createTShirtExportFilename,
@@ -47,12 +48,23 @@ type ProductProofState =
   | { status: 'ready'; blob: Blob }
   | { status: 'failed'; message: string };
 
+type ListingKitState = 'idle' | 'creating' | 'ready' | 'failed';
+
+const sceneOptions: Array<{ id: ProductMockupScene; label: string }> = [
+  { id: 'studio', label: 'Studio' },
+  { id: 'technical', label: 'Technical grid' },
+  { id: 'catalog', label: 'Catalog card' },
+];
+
 export const ProductExportDialog = ({ open, projectName, variation, product, assetsById, returnFocusRef, onClose }: ProductExportDialogProps) => {
   const [presetId, setPresetId] = useState<TShirtExportPresetId>('printify-full-front');
   const selectedRef = useRef<HTMLInputElement>(null);
   const dialogRef = useAccessibleDialog({ open, onClose, initialFocusRef: selectedRef, returnFocusRef });
   const { state, generate, cancel } = useTShirtPngExport({ presetId, variation, placement: product.placement, assetsById });
   const [proofState, setProofState] = useState<ProductProofState>({ status: 'idle' });
+  const [listingColors, setListingColors] = useState<TShirtMockupSlug[]>(['black', 'heather', 'white']);
+  const [listingScene, setListingScene] = useState<ProductMockupScene>('studio');
+  const [listingKitState, setListingKitState] = useState<ListingKitState>('idle');
   const proofGenerationRef = useRef(0);
   const proofOwnerRef = useRef<ReturnType<typeof createProofUrlOwner> | null>(null);
   if (!proofOwnerRef.current) {
@@ -118,6 +130,59 @@ export const ProductExportDialog = ({ open, projectName, variation, product, ass
       .replace(/\.png$/, '-mockup-proof.png');
     anchor.click();
   };
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  };
+  const toggleListingColor = (slug: TShirtMockupSlug) => setListingColors((current) =>
+    current.includes(slug) ? current.filter((candidate) => candidate !== slug) : [...current, slug]);
+  const downloadHandoffSheet = async () => {
+    const { createProductHandoffSheet } = await import('../../editor/listingKit');
+    const colors = listingColors.map((slug) => getTShirtMockup(slug).name);
+    downloadBlob(createProductHandoffSheet({
+      projectName,
+      artworkName: variation.name,
+      product,
+      presetId,
+      colors,
+    }), `${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'inkmaster'}-production-handoff.pdf`);
+  };
+  const downloadListingKit = async () => {
+    if (state.status !== 'ready' || listingColors.length === 0) return;
+    setListingKitState('creating');
+    try {
+      const mockups = [] as Array<{ color: string; scene: string; blob: Blob }>;
+      for (const slug of listingColors) {
+        const proof = await createProductProofMockup({ ...product, mockupSlug: slug }, state.url, presetId);
+        try {
+          mockups.push({
+            color: getTShirtMockup(slug).name,
+            scene: listingScene,
+            blob: await createProductMockupScene(proof.url, listingScene),
+          });
+        } finally {
+          URL.revokeObjectURL(proof.url);
+        }
+      }
+      const { createListingKit } = await import('../../editor/listingKit');
+      const result = await createListingKit({
+        projectName,
+        artworkName: variation.name,
+        product,
+        presetId,
+        printFile: state.blob,
+        mockups,
+      });
+      downloadBlob(result.blob, result.filename);
+      setListingKitState('ready');
+    } catch {
+      setListingKitState('failed');
+    }
+  };
   const proofUrl = proofOwnerRef.current.current();
   return <div ref={dialogRef} className="fixed inset-0 z-50 flex items-start justify-end bg-black/65 p-3 md:p-4" role="dialog" aria-modal="true" aria-labelledby="product-export-title" tabIndex={-1} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="max-h-full w-full max-w-sm overflow-y-auto border border-neutral-700 bg-neutral-900 shadow-2xl">
@@ -131,6 +196,7 @@ export const ProductExportDialog = ({ open, projectName, variation, product, ass
       {proofState.status === 'creating' ? <p role="status" className="text-xs text-neutral-300">Creating mockup proof...</p> : null}
       {proofState.status === 'failed' ? <p role="alert" className="text-xs text-red-300">{proofState.message}</p> : null}
       {proofState.status === 'ready' && proofUrl ? <section className="grid gap-2"><img src={proofUrl} alt={`${summary.garment} mockup proof`} className="w-full border border-neutral-700" /><p className="text-xs leading-5 text-amber-300">Proof only. This mockup estimates placement and garment color. Use the PNG for production.</p><button type="button" className="flex h-11 items-center justify-center gap-2 border border-neutral-700 text-xs font-medium" onClick={downloadProof}><Download size={16} />Download mockup proof</button></section> : null}
+      {state.status === 'ready' ? <section className="grid gap-3 border border-neutral-700 bg-neutral-950/60 p-3" aria-labelledby="listing-kit-title"><div><h3 id="listing-kit-title" className="text-xs font-semibold text-neutral-100">Listing kit</h3><p className="mt-1 text-xs leading-5 text-neutral-500">Bundle the production PNG, selected storefront mockups, and a printer handoff sheet.</p></div><fieldset className="grid gap-2"><legend className="text-xs font-medium text-neutral-300">Garment variants</legend><div className="grid grid-cols-3 gap-2">{TSHIRT_MOCKUPS.map((mockup) => <label key={mockup.slug} className={`flex min-h-10 cursor-pointer items-center gap-2 border px-2 text-xs ${listingColors.includes(mockup.slug) ? 'border-emerald-500 bg-emerald-950/30 text-emerald-100' : 'border-neutral-700 text-neutral-300'}`}><input type="checkbox" checked={listingColors.includes(mockup.slug)} onChange={() => toggleListingColor(mockup.slug)} /><span className="h-3 w-3 border border-neutral-500" style={{ backgroundColor: mockup.swatch }} /><span>{mockup.name}</span></label>)}</div></fieldset><label className="grid gap-1 text-xs text-neutral-300">Mockup presentation<select className="h-10 border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100" value={listingScene} onChange={(event) => setListingScene(event.currentTarget.value as ProductMockupScene)}>{sceneOptions.map((scene) => <option key={scene.id} value={scene.id}>{scene.label}</option>)}</select></label><div className="grid grid-cols-2 gap-2"><button type="button" className="flex h-11 items-center justify-center gap-2 border border-neutral-700 text-xs font-medium" onClick={() => void downloadHandoffSheet()}><Download size={16} />Handoff sheet</button><button type="button" className="flex h-11 items-center justify-center gap-2 bg-emerald-500 text-xs font-semibold text-neutral-950 disabled:opacity-40" disabled={listingColors.length === 0 || listingKitState === 'creating'} onClick={() => void downloadListingKit()}><Download size={16} />{listingKitState === 'creating' ? 'Building kit' : 'Download kit'}</button></div>{listingKitState === 'ready' ? <p className="text-xs text-emerald-300">Listing kit downloaded.</p> : null}{listingKitState === 'failed' ? <p role="alert" className="text-xs text-red-300">Could not build the listing kit.</p> : null}</section> : null}
       <div className="flex gap-2">{busy ? <button type="button" className="flex h-11 flex-1 items-center justify-center gap-2 border border-neutral-700 text-xs" onClick={() => { cancel(); clearProof(); }}><CircleStop size={16} />Cancel</button> : <button type="button" className="flex h-11 flex-1 items-center justify-center gap-2 bg-cyan-400 text-xs font-semibold text-cyan-950 disabled:opacity-40" disabled={!variation} onClick={() => { clearProof(); void generate(); }}><FileImage size={16} />{state.status === 'failed' ? 'Retry PNG' : 'Create PNG'}</button>}{state.status === 'ready' ? <button type="button" className="flex h-11 flex-1 items-center justify-center gap-2 border border-neutral-700 text-xs" onClick={download}><Download size={16} />Download PNG</button> : null}{state.status === 'failed' ? <button type="button" className="grid h-11 w-11 place-items-center border border-neutral-700" title="Reset export" aria-label="Reset export" onClick={() => { cancel(); clearProof(); }}><RotateCcw size={16} /></button> : null}</div></div>
     </section>
   </div>;

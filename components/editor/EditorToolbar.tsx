@@ -73,7 +73,7 @@ const basicSpecialistTools = new Set<EditorTool>([
   'trace',
   'looks',
 ]);
-const moreTools = ['adjust', 'enhance', 'remove-background', 'trace', 'looks'] as const;
+const moreTools = ['adjust', 'enhance', 'remove-background', 'trace'] as const;
 
 const toolButtonClass = 'flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:h-14 md:w-[72px]';
 
@@ -187,6 +187,9 @@ export const EditorToolbar = ({
           {renderToolButton(toolsById.get('select')!, 'Guided workflow', true)}
           {(hasImageLayer || activePreparationTool === 'looks')
             ? renderToolButton(toolsById.get(activePreparationTool)!, 'Guided workflow', true)
+            : null}
+          {hasImageLayer && activePreparationTool !== 'looks'
+            ? renderToolButton(toolsById.get('looks')!, 'Finish artwork', true)
             : null}
           {renderToolButton(toolsById.get('product')!, 'Guided workflow', true)}
           {layersButton(true)}

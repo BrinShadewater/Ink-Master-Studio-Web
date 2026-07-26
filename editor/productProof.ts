@@ -17,6 +17,13 @@ import {
 
 const MAX_PROOF_EDGE = 1800;
 const PROOF_ERROR = 'Could not create the mockup proof.';
+export type ProductMockupScene = 'studio' | 'technical' | 'catalog';
+
+const sceneBackgrounds: Record<ProductMockupScene, string> = {
+  studio: '#17262d',
+  technical: '#111827',
+  catalog: '#303842',
+};
 const round = (value: number) => Number(value.toFixed(6));
 
 const envelopeRect = (
@@ -143,6 +150,46 @@ export const createProductProofMockup = async (
 
     const blob = await encodePng(canvas);
     return { blob, url: URL.createObjectURL(blob) };
+  } catch {
+    throw new Error(PROOF_ERROR);
+  }
+};
+
+export const createProductMockupScene = async (
+  proofUrl: string,
+  scene: ProductMockupScene,
+): Promise<Blob> => {
+  try {
+    const proof = await loadImage(proofUrl);
+    const edge = 1600;
+    const canvas = document.createElement('canvas');
+    canvas.width = edge;
+    canvas.height = edge;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error(PROOF_ERROR);
+    context.fillStyle = sceneBackgrounds[scene];
+    context.fillRect(0, 0, edge, edge);
+    if (scene === 'technical') {
+      context.strokeStyle = '#31505c';
+      context.lineWidth = 1;
+      for (let coordinate = 80; coordinate < edge; coordinate += 80) {
+        context.beginPath();
+        context.moveTo(coordinate, 0);
+        context.lineTo(coordinate, edge);
+        context.moveTo(0, coordinate);
+        context.lineTo(edge, coordinate);
+        context.stroke();
+      }
+    }
+    if (scene === 'catalog') {
+      context.fillStyle = '#b8c4c8';
+      context.fillRect(90, 90, edge - 180, edge - 180);
+    }
+    const scale = Math.min((edge - 220) / proof.naturalWidth, (edge - 220) / proof.naturalHeight);
+    const width = Math.round(proof.naturalWidth * scale);
+    const height = Math.round(proof.naturalHeight * scale);
+    context.drawImage(proof, Math.round((edge - width) / 2), Math.round((edge - height) / 2), width, height);
+    return await encodePng(canvas);
   } catch {
     throw new Error(PROOF_ERROR);
   }
