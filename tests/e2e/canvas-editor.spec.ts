@@ -2108,6 +2108,33 @@ test('Product Basic leads with readiness and White persists', async ({ page }) =
   await expect(readiness).toBeVisible();
 });
 
+test('Product placement presets stay simple in Basic and persist after reload', async ({ page }) => {
+  const projectName = 'product-presets';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: 'Standard front', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Left chest', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Oversized front', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Left chest', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.28, y: 0.27, scale: 0.32, rotation: 0 });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Oversized front', exact: true })).toBeVisible();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('28');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('27');
+  await expect(page.getByLabel('Scale', { exact: true })).toHaveValue('32');
+});
+
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');

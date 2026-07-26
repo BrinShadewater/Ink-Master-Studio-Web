@@ -37,12 +37,32 @@ export interface ProductInspectorProps {
   onReturnToDesign: () => void;
 }
 
-export const createCenterProductPlacementCommand = (
-  product: TShirtProductVariant,
+export type ProductPlacementPresetId = 'standard-front' | 'left-chest' | 'oversized-front';
+
+const productPlacementPresets: Record<ProductPlacementPresetId, {
+  label: string;
+  placement: TShirtProductVariant['placement'];
+}> = {
+  'standard-front': {
+    label: 'Standard front',
+    placement: { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 },
+  },
+  'left-chest': {
+    label: 'Left chest',
+    placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
+  },
+  'oversized-front': {
+    label: 'Oversized front',
+    placement: { x: 0.5, y: 0.52, scale: 1.05, rotation: 0 },
+  },
+};
+
+export const createProductPlacementPresetCommand = (
+  presetId: ProductPlacementPresetId,
 ): EditorCommand => ({
   type: 'set-product-placement',
-  placement: { ...product.placement, x: 0.5, y: 0.5 },
-  historyGroup: 'product-center',
+  placement: productPlacementPresets[presetId].placement,
+  historyGroup: `product-preset:${presetId}`,
 });
 
 export const createResetProductPlacementCommand = (): EditorCommand => ({
@@ -149,6 +169,9 @@ export const ProductInspector = ({
       : readiness
         ? 'The export enlarges the artwork enough to soften visible details.'
         : 'Add raster artwork to calculate print readiness.';
+  const visiblePlacementPresets: ProductPlacementPresetId[] = mode === 'advanced'
+    ? ['standard-front', 'left-chest', 'oversized-front']
+    : ['standard-front', 'left-chest'];
 
   return (
     <>
@@ -275,29 +298,22 @@ export const ProductInspector = ({
         <section aria-labelledby="product-placement-title" className="grid gap-3">
           <div>
             <h3 id="product-placement-title" className="text-xs font-medium text-neutral-300">Artwork placement</h3>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">Use the canvas to move and resize the artwork. Center and Fit provide quick starting points.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Choose a starting position, then adjust the artwork directly on the mockup.</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className={actionClass}
-              onClick={() => {
-                dispatch(createCenterProductPlacementCommand(product));
-                endHistoryGroup();
-              }}
-            >
-              Center artwork
-            </button>
-            <button
-              type="button"
-              className={actionClass}
-              onClick={() => {
-                dispatch(createResetProductPlacementCommand());
-                endHistoryGroup();
-              }}
-            >
-              Fit print area
-            </button>
+            {visiblePlacementPresets.map((presetId) => (
+              <button
+                key={presetId}
+                type="button"
+                className={actionClass}
+                onClick={() => {
+                  dispatch(createProductPlacementPresetCommand(presetId));
+                  endHistoryGroup();
+                }}
+              >
+                {productPlacementPresets[presetId].label}
+              </button>
+            ))}
           </div>
         </section>
 
