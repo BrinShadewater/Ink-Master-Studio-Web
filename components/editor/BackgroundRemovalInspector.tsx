@@ -62,7 +62,7 @@ export const BackgroundRemovalInspector = ({
       </div>
       <div className="grid gap-5 p-4">
         <div className="flex items-center justify-between gap-3">
-          <div><p className="text-xs font-medium text-neutral-200">Background removal</p><p className="mt-1 text-[11px] leading-4 text-neutral-500">Makes the selected image transparent for clean garment previews.</p></div>
+          <div><p className="text-xs font-medium text-neutral-200">Background removal</p><p className="mt-1 text-xs leading-4 text-neutral-500">Makes the selected image transparent for clean garment previews.</p></div>
           <button type="button" role="switch" aria-checked={settings.enabled} disabled={processing} onClick={() => update({ ...settings, enabled: !settings.enabled })} className={`relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-40 ${settings.enabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${settings.enabled ? 'left-6' : 'left-1'}`} /></button>
         </div>
 

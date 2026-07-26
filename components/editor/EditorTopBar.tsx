@@ -216,7 +216,7 @@ export const EditorTopBar = ({
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
           <div className="flex items-center justify-between gap-2 px-1">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500">Project name</p>
+            <p className="hidden text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 md:block">Project name</p>
             {projectId ? (
               <span
                 className={`truncate text-[10px] leading-none ${saveStatus === 'error' ? 'text-red-400' : 'text-neutral-400'}`}
@@ -301,8 +301,8 @@ export const EditorTopBar = ({
 
       <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands">
         <div className="flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
-          <button type="button" role="radio" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
-          <button type="button" role="radio" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}>Advanced</button>
+          <button type="button" role="radio" aria-label="Basic" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
+          <button type="button" role="radio" aria-label="Advanced" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}><span className="md:hidden">Adv</span><span className="hidden md:inline">Advanced</span></button>
         </div>
         <div className="hidden md:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} /></div>

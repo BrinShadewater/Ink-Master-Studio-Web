@@ -404,7 +404,7 @@ export const LooksInspector = ({
         <div className="grid gap-2">
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="text-xs font-semibold text-neutral-200">Finish presets</h3>
-            <p className="text-[11px] text-neutral-500">Choose a print direction, then fine-tune it.</p>
+            <p className="text-xs text-neutral-500">Choose a print direction, then fine-tune it.</p>
           </div>
         <div className="grid grid-cols-2 gap-2" aria-label="Look previews">
           {LOOK_IDS.map((lookId) => {

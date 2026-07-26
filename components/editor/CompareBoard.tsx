@@ -36,9 +36,9 @@ const BACKGROUNDS: Array<{
   label: string;
   color: PreviewBackground;
 }> = [
-  { id: 'neutral', label: 'Neutral', color: '#1f1f1f' },
+  { id: 'neutral', label: 'Neutral', color: '#1d2430' },
   { id: 'light', label: 'Light', color: '#f5f5f3' },
-  { id: 'dark', label: 'Dark', color: '#161616' },
+  { id: 'dark', label: 'Dark', color: '#151a22' },
 ];
 
 const controlButtonClass = 'h-8 px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
@@ -63,7 +63,7 @@ export const CompareBoard = ({
     .filter(({ id }) => selectedSet.has(id))
     .slice(0, COMPARE_MAX_SELECTION);
   const normalizedZoom = normalizeCompareZoom(zoom);
-  const previewBackground = BACKGROUNDS.find(({ id }) => id === background)?.color ?? '#1f1f1f';
+  const previewBackground = BACKGROUNDS.find(({ id }) => id === background)?.color ?? '#1d2430';
   const disableSelected = selectedVariations.length <= COMPARE_MIN_SELECTION;
   const disableUnselected = selectedVariations.length >= COMPARE_MAX_SELECTION;
 

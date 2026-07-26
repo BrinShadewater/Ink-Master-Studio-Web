@@ -254,7 +254,7 @@ test('top bar defaults to Basic and exposes Advanced editor mode', () => {
   const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.match(markup, /aria-label="Editor mode"/);
   assert.match(markup, /aria-checked="true"[^>]*>Basic/);
-  assert.match(markup, /aria-checked="false"[^>]*>Advanced/);
+  assert.match(markup, /aria-label="Advanced"[^>]*aria-checked="false"/);
 });
 
 test('empty Basic top bar keeps only project-start commands', () => {

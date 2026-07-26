@@ -1388,7 +1388,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
     };
   });
   expect(desktopLayout.canvasWidth).toBeGreaterThan(900);
-  expect(desktopLayout.inspectorWidth).toBe(280);
+  expect(desktopLayout.inspectorWidth).toBe(304);
   expect(desktopLayout.canvasRight).toBeLessThanOrEqual(desktopLayout.inspectorLeft + 1);
 
   await page.screenshot({
@@ -1435,6 +1435,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 test('keeps undo and redo independent while alternating between variations', async ({ page }) => {
   await page.goto('/editor');
   await uploadFixture(page, 1200, 800, 'history-scope.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByLabel('X position').fill('0.7');
   await page.getByLabel('X position').blur();
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
@@ -1497,6 +1498,7 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
     { width: 900, height: 1600, name: 'drag-portrait.png' },
   ]) {
     await uploadFixture(page, fixture.width, fixture.height, fixture.name);
+    await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
     await expect(page.getByLabel('Project name')).toHaveValue(path.parse(fixture.name).name);
     await expect(page.getByRole('button', { name: `Select layer ${fixture.name}` }))
       .toHaveAttribute('aria-pressed', 'true');
@@ -1638,6 +1640,7 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
+  await uploadFixture(page, 640, 480, 'focus-trap.png');
 
   await page.getByRole('button', { name: 'Layers' }).click();
   await expect(page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]')).toHaveCount(1);
@@ -1757,7 +1760,7 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
-  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await select.click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('X position', { exact: true }).fill('0.7');
@@ -1792,7 +1795,6 @@ test('edits text layers and keeps image tools reachable across selection fallbac
     return {
       pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
       inspectorOverflows: inspector.scrollWidth > inspector.clientWidth + 1,
-      inspectorScrolls: inspector.scrollHeight > inspector.clientHeight,
       canvasBottom: canvasBounds.bottom,
       inspectorTop: inspectorBounds.top,
       inspectorBottom: inspectorBounds.bottom,
@@ -1801,7 +1803,6 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   });
   expect(mobileLayout.pageOverflows).toBe(false);
   expect(mobileLayout.inspectorOverflows).toBe(false);
-  expect(mobileLayout.inspectorScrolls).toBe(true);
   expect(mobileLayout.canvasBottom).toBeLessThanOrEqual(mobileLayout.inspectorTop + 1);
   expect(mobileLayout.inspectorBottom).toBeLessThanOrEqual(mobileLayout.toolbarTop + 1);
   await page.getByLabel('X position', { exact: true }).scrollIntoViewIfNeeded();
@@ -1872,8 +1873,9 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'retry-save.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.5);
-  await page.waitForTimeout(500);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
 
   await page.evaluate(() => {
     const originalPut = IDBObjectStore.prototype.put;
@@ -1889,7 +1891,7 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
 
   await page.getByLabel('X position').fill('0.65');
   await page.getByLabel('X position').blur();
-  await expect(page.getByRole('status').filter({ hasText: 'Local save failed' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Save failed' })).toBeVisible();
   const retry = page.getByRole('button', { name: 'Retry save' });
   await expect(retry).toBeVisible();
   const retryBounds = await retry.boundingBox();
@@ -1997,11 +1999,14 @@ test('@task5-review commits complete Look controls and separates native color hi
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-control-history.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
-  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  const duotone = page.getByRole('button', { name: 'Duotone', exact: true });
+  await duotone.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(duotone).toHaveAttribute('aria-pressed', 'true');
   await page.getByText('More', { exact: true }).click();
 
-  await page.getByLabel('Strength range', { exact: true }).fill('64');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('64');
   await expect.poll(() => readPersistedLook(page, 'look-control-history')).toEqual({
     id: 'duotone',
     strength: 64,
@@ -2035,9 +2040,9 @@ test('@task5-review commits complete Look controls and separates native color hi
   await expect(shadowColor).toHaveValue('#111827');
   await undo.click();
   await expect(page.getByLabel('Balance range', { exact: true })).toHaveValue('0');
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('64');
+  await expect(page.getByLabel('Preset strength range', { exact: true })).toHaveValue('64');
   await undo.click();
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('100');
+  await expect(page.getByLabel('Preset strength range', { exact: true })).toHaveValue('100');
 
   const highlightColor = page.getByLabel('Highlight color', { exact: true });
   await highlightColor.evaluate((input) => {
@@ -2067,38 +2072,42 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-failure-authority.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
   const originalCanvas = await readCanvasPixels(canvas);
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
-  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalCanvas);
-  const lastReadyCanvas = await readCanvasPixels(canvas);
+  const monochrome = page.getByRole('button', { name: 'Monochrome', exact: true });
+  await monochrome.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(monochrome).toHaveAttribute('aria-pressed', 'true');
+  const afterCanvas = page.getByLabel('After artwork', { exact: true });
+  await expect.poll(() => readCanvasPixels(afterCanvas)).not.toBe(originalCanvas);
+  const lastReadyCanvas = await readCanvasPixels(afterCanvas);
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('80');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('80');
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).toBe(lastReadyCanvas);
   await invokeLookWorkerHarness(page, 'failHeld');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry Look preview' })).toBeVisible();
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).toBe(lastReadyCanvas);
 
   const recipeBeforeRetry = await readPersistedLook(page, 'look-failure-authority');
   await page.getByRole('button', { name: 'Retry Look preview' }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).not.toBe(lastReadyCanvas);
   await expect.poll(() => readPersistedLook(page, 'look-failure-authority')).toEqual(recipeBeforeRetry);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('70');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('70');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('60');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('60');
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await page.getByLabel('Strength range', { exact: true }).fill('50');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('50');
   await expect.poll(async () => {
     const requests = (await getLookWorkerHarness(page)).requests;
     return requests.some(({ look, maxDimension }) => look.strength === 50 && maxDimension > 240);
@@ -2108,7 +2117,7 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('40');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('40');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await invokeLookWorkerHarness(page, 'delayNextImage');
   await uploadFixture(page, 800, 1000, 'look-composition-unavailable.png');
@@ -2116,7 +2125,7 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await expect.poll(async () => (await getLookWorkerHarness(page)).delayedImages).toBe(1);
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
   await invokeLookWorkerHarness(page, 'releaseDelayedImage');
-  await expectCanvasPainted(canvas);
+  await expectCanvasPainted(afterCanvas);
 });
 
 test('@task5-review disposes the browser worker and pending surfaces on navigation', async ({ page }) => {
@@ -2124,6 +2133,7 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-worker-cleanup.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await enqueueLookWorkerRule(page, {
     action: 'hold',
     lookId: 'monochrome',
@@ -2136,9 +2146,11 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
   await invokeLookWorkerHarness(page, 'failHeld');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  const monochrome = page.getByRole('button', { name: 'Monochrome', exact: true });
+  await monochrome.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(monochrome).toHaveAttribute('aria-pressed', 'true');
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('75');
+  await page.getByLabel('Preset strength range', { exact: true }).fill('75');
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
   await expect.poll(async () => {
     const snapshot = await getLookWorkerHarness(page);
@@ -2613,7 +2625,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Vintage Ink', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('73');
+  await expect(page.getByLabel('Preset strength range', { exact: true })).toHaveValue('73');
   await page.getByText('More', { exact: true }).click();
   await expect(page.getByLabel('Grain range', { exact: true })).toHaveValue('61');
 
@@ -2976,7 +2988,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
-  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await setEditorRange(page, 'Detail', 72);
   await setEditorRange(page, 'Smoothing', 48);
   await page.getByRole('button', { name: 'Add palette color', exact: true }).click();

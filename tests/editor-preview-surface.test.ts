@@ -219,7 +219,7 @@ test('clears transparent previews without filling and preserves solid background
     solid as unknown as CanvasRenderingContext2D,
     40,
     30,
-    '#161616',
+    '#151a22',
   );
   assert.equal(solid.clearCount, 1);
   assert.equal(solid.fillCount, 1);

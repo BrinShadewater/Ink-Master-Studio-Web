@@ -662,7 +662,7 @@ export const EditorCanvas = ({
             width: cropFrame.width,
             height: cropFrame.height,
             transform: `translate(-50%, -50%) rotate(${selectedImage.transform.rotation}deg) scale(${selectedImage.transform.flipX ? -1 : 1}, ${selectedImage.transform.flipY ? -1 : 1})`,
-            backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%)',
+            backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(114,217,213,.8) 33.2%, rgba(114,217,213,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(114,217,213,.8) 66.2%, rgba(114,217,213,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(114,217,213,.8) 33.2%, rgba(114,217,213,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(114,217,213,.8) 66.2%, rgba(114,217,213,.8) 66.8%, transparent 66.8%)',
           }}
           onPointerDown={(event) => beginCropPointer(event, 'move')}
           onPointerMove={moveCrop}
