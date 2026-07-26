@@ -31,38 +31,62 @@ export interface ProductInspectorProps {
   artworkUrl?: string | null;
   onEnhanceResolution?: () => void;
   onRemoveBackground?: () => void;
+  onExport?: () => void;
+  mode?: 'easy' | 'advanced';
   dispatch: (command: EditorCommand) => void;
   onRetry: () => void;
   onReturnToDesign: () => void;
 }
 
-export const createCenterProductPlacementCommand = (
-  product: TShirtProductVariant,
-): EditorCommand => ({
-  type: 'set-product-placement',
-  placement: { ...product.placement, x: 0.5, y: 0.5 },
-  historyGroup: 'product-center',
-});
+export type ProductPlacementPresetId = 'standard-front' | 'left-chest' | 'oversized-front';
 
-const productPlacementPresets = [
-  { id: 'standard-front', label: 'Standard front', placement: { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 } },
-  { id: 'left-chest', label: 'Left chest', placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 } },
-  { id: 'oversized-front', label: 'Oversized front', placement: { x: 0.5, y: 0.52, scale: 1.05, rotation: 0 } },
-] as const;
+const productPlacementPresets: Record<ProductPlacementPresetId, {
+  label: string;
+  placement: TShirtProductVariant['placement'];
+}> = {
+  'standard-front': {
+    label: 'Standard front',
+    placement: { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 },
+  },
+  'left-chest': {
+    label: 'Left chest',
+    placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
+  },
+  'oversized-front': {
+    label: 'Oversized front',
+    placement: { x: 0.5, y: 0.52, scale: 1.05, rotation: 0 },
+  },
+};
 
-export type ProductPlacementPresetId = typeof productPlacementPresets[number]['id'];
+const productPrintMethods: Array<{
+  id: TShirtPrintMethod;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: 'dtg',
+    label: 'DTG',
+    description: 'Detailed, full-color artwork printed directly on the shirt.',
+  },
+  {
+    id: 'dtf',
+    label: 'DTF transfer',
+    description: 'Durable full-color transfer for light and dark shirts.',
+  },
+  {
+    id: 'vinyl',
+    label: 'Cut vinyl',
+    description: 'Best for bold artwork with one or two solid colors.',
+  },
+];
 
 export const createProductPlacementPresetCommand = (
   presetId: ProductPlacementPresetId,
-): EditorCommand => {
-  const preset = productPlacementPresets.find((candidate) => candidate.id === presetId);
-  if (!preset) throw new Error('Unknown product placement preset.');
-  return {
-    type: 'set-product-placement',
-    placement: { ...preset.placement },
-    historyGroup: `product-preset:${preset.id}`,
-  };
-};
+): EditorCommand => ({
+  type: 'set-product-placement',
+  placement: productPlacementPresets[presetId].placement,
+  historyGroup: `product-preset:${presetId}`,
+});
 
 export const createResetProductPlacementCommand = (): EditorCommand => ({
   type: 'set-product-placement',
@@ -81,13 +105,8 @@ const rotationBounds = {
   step: 1,
 } as const;
 
-const actionClass = 'h-9 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const actionClass = 'h-11 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 const darkGarmentSlugs = new Set(['black', 'navy', 'charcoal', 'burgundy', 'cardinal', 'forest-green', 'military-green', 'red', 'royal-blue']);
-const printMethodOptions: Array<{ id: TShirtPrintMethod; name: string; description: string }> = [
-  { id: 'dtg', name: 'DTG', description: 'Detailed, full-color artwork printed directly on the garment.' },
-  { id: 'dtf', name: 'DTF transfer', description: 'Durable full-color transfer for light and dark garments.' },
-  { id: 'vinyl', name: 'Cut vinyl', description: 'Best for bold, solid-color artwork with simple shapes.' },
-];
 
 export const getProductReadinessEstimate = (
   variation: DesignVariation | null | undefined,
@@ -99,84 +118,11 @@ export const getProductReadinessEstimate = (
     .map((layer) => assetsById?.[layer.assetId])
     .filter((asset): asset is EditorAsset => Boolean(asset)) ?? [];
   if (imageAssets.length === 0) return null;
-  const sourceSide = Math.min(...imageAssets.map((asset) => Math.min(asset.width, asset.height)));
+  const smallestSourceEdge = Math.min(...imageAssets.map((asset) => Math.min(asset.width, asset.height)));
   const preset = getTShirtExportPreset('printify-full-front');
   const renderedSide = resolveTShirtExportGeometry(preset, product.placement).renderedSide;
-  const scale = renderedSide / Math.max(1, sourceSide);
-  return { sourceSide, scale, status: scale <= 1 ? 'ready' as const : scale <= 2 ? 'review' as const : 'enhance' as const };
-};
-
-export const getPrintMethodGuidance = (
-  method: TShirtPrintMethod,
-  paletteSize: number,
-) => {
-  if (method === 'vinyl') {
-    return paletteSize <= 2
-      ? { status: 'ready' as const, label: 'Good fit', detail: 'This palette is suitable for a simple cut-vinyl treatment.' }
-      : { status: 'review' as const, label: 'Simplify colors', detail: 'Cut vinyl works best with one or two solid colors. Trace or reduce colors before production.' };
-  }
-  if (method === 'dtf') {
-    return { status: 'ready' as const, label: 'Full color supported', detail: 'DTF works well for detailed, full-color artwork on light and dark garments.' };
-  }
-  return { status: 'ready' as const, label: 'Full color supported', detail: 'DTG suits detailed, full-color art. Use Print intent for a softer on-garment estimate.' };
-};
-
-export interface PrintLensFinding {
-  id: 'resolution' | 'background' | 'contrast' | 'alpha-edge' | 'transparent-fade' | 'method';
-  severity: 'review' | 'fix';
-  title: string;
-  detail: string;
-}
-
-export const getPrintLensFindings = (
-  readiness: ReturnType<typeof getProductReadinessEstimate>,
-  analysis: ArtworkAnalysis,
-  contrastRisk: boolean,
-  methodGuidance: ReturnType<typeof getPrintMethodGuidance>,
-  method: TShirtPrintMethod,
-  darkGarment: boolean,
-): PrintLensFinding[] => {
-  const findings: PrintLensFinding[] = [];
-  if (readiness?.status === 'enhance') {
-    findings.push({ id: 'resolution', severity: 'fix', title: 'Enhance resolution', detail: `The artwork needs about ${readiness.scale.toFixed(1)}x enlargement for this full-front print.` });
-  } else if (readiness?.status === 'review') {
-    findings.push({ id: 'resolution', severity: 'review', title: 'Review print size', detail: `The artwork will be enlarged about ${readiness.scale.toFixed(1)}x for this print.` });
-  }
-  if (!analysis.hasTransparency && analysis.edgeBackground.isUniform) {
-    findings.push({ id: 'background', severity: 'review', title: 'Review background', detail: 'A uniform edge background may print with the artwork.' });
-  }
-  if (contrastRisk) {
-    findings.push({ id: 'contrast', severity: 'review', title: 'Review garment contrast', detail: 'The artwork may blend into this shirt color.' });
-  }
-  if (analysis.hasTransparency && analysis.transparencyCoverage < 0.02) {
-    findings.push({ id: 'alpha-edge', severity: 'review', title: 'Inspect edge transparency', detail: 'Only a thin transparent edge was found. Check for light or dark halos.' });
-  }
-  if (method === 'dtg' && darkGarment && (analysis.partialTransparencyCoverage ?? 0) >= 0.02) {
-    findings.push({ id: 'transparent-fade', severity: 'review', title: 'Review transparent fade', detail: 'A broad semi-transparent area may print unevenly over a dark-garment underbase. Consider an opaque halftone fade.' });
-  }
-  if (methodGuidance.status === 'review') {
-    findings.push({ id: 'method', severity: 'review', title: methodGuidance.label, detail: methodGuidance.detail });
-  }
-  return findings;
-};
-
-export const getGarmentContrastCoverage = (analysis: ArtworkAnalysis) => {
-  const atRisk = TSHIRT_MOCKUPS.filter((mockup) => (
-    darkGarmentSlugs.has(mockup.slug)
-      ? analysis.contrastRisk.darkGarment
-      : analysis.contrastRisk.lightGarment
-  ));
-  return {
-    suitableCount: TSHIRT_MOCKUPS.length - atRisk.length,
-    atRisk: atRisk.map((mockup) => mockup.name),
-    recommendation: analysis.contrastRisk.darkGarment && !analysis.contrastRisk.lightGarment
-      ? 'Best on lighter garment colors.'
-      : analysis.contrastRisk.lightGarment && !analysis.contrastRisk.darkGarment
-        ? 'Best on darker garment colors.'
-        : atRisk.length === 0
-          ? 'Suitable across the available garment colors.'
-          : 'Review each garment color before listing variants.',
-  };
+  const scale = renderedSide / Math.max(1, smallestSourceEdge);
+  return { smallestSourceEdge, scale, status: scale <= 1 ? 'ready' as const : scale <= 2 ? 'review' as const : 'enhance' as const };
 };
 
 export const ProductInspector = ({
@@ -192,6 +138,8 @@ export const ProductInspector = ({
   artworkUrl = null,
   onEnhanceResolution = () => undefined,
   onRemoveBackground = () => undefined,
+  onExport = () => undefined,
+  mode = 'advanced',
   dispatch,
   onRetry,
   onReturnToDesign,
@@ -227,22 +175,26 @@ export const ProductInspector = ({
   const contrastRisk = darkGarmentSlugs.has(product.mockupSlug)
     ? analysis?.contrastRisk.darkGarment
     : analysis?.contrastRisk.lightGarment;
-  const methodGuidance = analysis
-    ? getPrintMethodGuidance(product.printMethod, analysis.palette.length)
-    : null;
-  const printLensFindings = analysis && methodGuidance
-    ? getPrintLensFindings(
-      readiness,
-      analysis,
-      Boolean(contrastRisk),
-      methodGuidance,
-      product.printMethod,
-      darkGarmentSlugs.has(product.mockupSlug),
-    )
-    : [];
-  const printLensFixes = printLensFindings.filter((finding) => finding.severity === 'fix');
-  const printLensReviews = printLensFindings.filter((finding) => finding.severity === 'review');
-  const garmentCoverage = analysis ? getGarmentContrastCoverage(analysis) : null;
+  const needsBackgroundRemoval = Boolean(
+    analysis && !analysis.hasTransparency && analysis.edgeBackground.isUniform,
+  );
+  const readinessTitle = readiness?.status === 'ready'
+    ? 'Ready at this size'
+    : readiness?.status === 'review'
+      ? 'Check sharpness at this size'
+      : readiness
+        ? 'Artwork needs more resolution'
+        : 'Readiness unavailable';
+  const readinessDescription = readiness?.status === 'ready'
+    ? 'The export uses less than the available artwork resolution.'
+    : readiness?.status === 'review'
+      ? 'The export enlarges the artwork. Check small details before production.'
+      : readiness
+        ? 'The export enlarges the artwork enough to soften visible details.'
+        : 'Add raster artwork to calculate print readiness.';
+  const visiblePlacementPresets: ProductPlacementPresetId[] = mode === 'advanced'
+    ? ['standard-front', 'left-chest', 'oversized-front']
+    : ['standard-front', 'left-chest'];
 
   return (
     <>
@@ -261,12 +213,34 @@ export const ProductInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
+        <section className={`grid gap-3 border p-3 ${readiness?.status === 'ready' ? 'border-emerald-900/70 bg-emerald-950/20' : readiness?.status === 'review' ? 'border-amber-900/70 bg-amber-950/20' : 'border-red-900/70 bg-red-950/20'}`} aria-labelledby="product-readiness-title">
+          <div className="flex items-center justify-between gap-3">
+            <h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">{readinessTitle}</h3>
+            <span className={`text-[10px] font-semibold uppercase ${readiness?.status === 'ready' ? 'text-emerald-300' : readiness?.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>
+              {readiness?.status === 'ready' ? 'Ready' : readiness?.status === 'review' ? 'Review' : 'Improve'}
+            </span>
+          </div>
+          <p className="text-xs leading-5 text-neutral-300">{readinessDescription}</p>
+          {mode === 'advanced' && readiness ? (
+            <p className="text-xs leading-5 text-neutral-500">
+              Smallest source edge: {readiness.smallestSourceEdge}px. The production PNG uses {readiness.scale.toFixed(2)}x of that available detail.
+            </p>
+          ) : null}
+          {needsBackgroundRemoval ? (
+            <button type="button" className={`${actionClass} justify-self-start`} onClick={onRemoveBackground}>Remove background</button>
+          ) : readiness?.status === 'ready' ? (
+            <button type="button" className={`${actionClass} justify-self-start border-emerald-500 bg-emerald-500 text-neutral-950 hover:border-emerald-300 hover:text-neutral-950`} onClick={onExport}>Create print-ready PNG</button>
+          ) : (
+            <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button>
+          )}
+        </section>
+
         <section aria-labelledby="product-color-title" className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
             <h3 id="product-color-title" className="text-xs font-medium text-neutral-300">Shirt color</h3>
             <span className="text-xs text-neutral-400">{activeMockup.name}</span>
           </div>
-          <div className="grid grid-cols-6 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {TSHIRT_MOCKUPS.map((mockup) => {
               const selected = mockup.slug === product.mockupSlug;
               return (
@@ -292,7 +266,7 @@ export const ProductInspector = ({
           <p className="text-xs leading-5 text-neutral-500">Choose a garment color, then drag the artwork directly on the mockup to place it within the printable area.</p>
         </section>
 
-        <section className="grid gap-3" aria-labelledby="product-artwork-title">
+        {mode === 'advanced' ? <><section className="grid gap-3" aria-labelledby="product-artwork-title">
           <div>
             <h3 id="product-artwork-title" className="text-xs font-medium text-neutral-300">Artwork for {activeMockup.name}</h3>
             <p className="mt-1 text-xs leading-5 text-neutral-500">Assign a light or dark design to this shirt color without creating another product.</p>
@@ -320,88 +294,85 @@ export const ProductInspector = ({
           <div className="grid grid-cols-2 border border-neutral-700" role="group" aria-label="Mockup color mode">
             {(['rgb', 'print'] as const).map((mode) => <button key={mode} type="button" className={`h-9 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${previewMode === mode ? 'bg-emerald-500 text-neutral-950' : 'bg-neutral-950 text-neutral-300 hover:bg-neutral-800'}`} aria-pressed={previewMode === mode} onClick={() => onPreviewModeChange(mode)}>{mode === 'rgb' ? 'RGB' : 'Print intent'}</button>)}
           </div>
-        </section>
+        </section></> : null}
 
-        <section className="grid gap-2" aria-labelledby="product-print-method-title">
-          <div>
-            <h3 id="product-print-method-title" className="text-xs font-medium text-neutral-300">Print method</h3>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">Print Lens adapts its guidance to this production method.</p>
-          </div>
-          <select
-            className="h-9 border border-neutral-700 bg-neutral-950 px-2 text-xs text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-            aria-label="Print method"
-            value={product.printMethod}
-            onChange={(event) => dispatch({ type: 'set-product-print-method', printMethod: event.currentTarget.value as TShirtPrintMethod })}
-          >
-            {printMethodOptions.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
-          </select>
-          <p className="text-xs leading-5 text-neutral-500">{printMethodOptions.find((method) => method.id === product.printMethod)?.description}</p>
-        </section>
-
-        {readiness ? <section className={`grid gap-2 border p-3 ${readiness.status === 'ready' ? 'border-emerald-900/70 bg-emerald-950/20' : readiness.status === 'review' ? 'border-amber-900/70 bg-amber-950/20' : 'border-red-900/70 bg-red-950/20'}`} aria-labelledby="product-readiness-title">
-          <div className="flex items-center justify-between gap-3"><h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">Full-front print check</h3><span className={`text-[10px] font-semibold uppercase ${readiness.status === 'ready' ? 'text-emerald-300' : readiness.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>{readiness.status === 'ready' ? 'Good' : readiness.status === 'review' ? 'Review' : 'Enhance'}</span></div>
-          <p className="text-xs leading-5 text-neutral-400">Largest source edge: {readiness.sourceSide}px. Estimated scale for a 15 in x 18 in full-front PNG: {readiness.scale.toFixed(2)}x.</p>
-          {readiness.status === 'enhance' ? <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button> : null}
-        </section> : null}
-
-        {analysis ? <section className="grid gap-3 border border-neutral-800 bg-neutral-950/70 p-3" aria-labelledby="print-lens-title">
+        {mode === 'advanced' ? <section className="grid gap-3 border border-neutral-800 bg-neutral-950/70 p-3" aria-labelledby="artwork-checks-title">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 id="print-lens-title" className="text-xs font-medium text-neutral-100">Print Lens</h3>
-              <p className="mt-1 text-xs leading-5 text-neutral-500">Checks the current art against this garment and production method.</p>
+              <h3 id="artwork-checks-title" className="text-xs font-medium text-neutral-100">Artwork checks</h3>
+              <p className="mt-1 text-xs leading-5 text-neutral-500">Check the background, shirt contrast, and print color count.</p>
             </div>
-            <span className={`text-[10px] font-semibold uppercase ${printLensFixes.length ? 'text-red-300' : printLensReviews.length ? 'text-amber-300' : 'text-emerald-300'}`}>{printLensFixes.length ? 'Fix before export' : printLensReviews.length ? 'Review recommended' : 'Ready'}</span>
+            <span className="text-[10px] font-semibold uppercase text-cyan-300">Live check</span>
           </div>
-          {printLensFindings.length ? <div className="grid gap-2 border border-neutral-800 bg-neutral-900/70 p-2.5" aria-label="Print Lens findings">
-            {printLensFindings.map((finding) => <div key={finding.id} className="grid gap-0.5 text-xs">
-              <div className="flex items-center justify-between gap-3"><span className="font-medium text-neutral-200">{finding.title}</span><span className={`text-[10px] font-semibold uppercase ${finding.severity === 'fix' ? 'text-red-300' : 'text-amber-300'}`}>{finding.severity}</span></div>
-              <p className="leading-5 text-neutral-500">{finding.detail}</p>
-            </div>)}
-          </div> : <p className="border border-emerald-900/60 bg-emerald-950/20 px-2.5 py-2 text-xs leading-5 text-emerald-100">No issues need attention for this artwork, garment, and print method.</p>}
-          <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
+          {analysis ? <><div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
             <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Background</span><span className={analysis.hasTransparency ? 'font-medium text-emerald-300' : analysis.edgeBackground.isUniform ? 'font-medium text-amber-300' : 'font-medium text-neutral-300'}>{analysis.hasTransparency ? 'Transparent' : analysis.edgeBackground.isUniform ? 'Review edge' : 'Mixed edge'}</span></div>
             {!analysis.hasTransparency && analysis.edgeBackground.isUniform ? <div className="flex items-center justify-between gap-3"><span className="text-neutral-500">Uniform {analysis.edgeBackground.tone} edge detected.</span><button type="button" className="text-xs font-medium text-cyan-300 hover:text-cyan-200" onClick={onRemoveBackground}>Remove background</button></div> : null}
           </div>
           <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Garment contrast</span><span className={contrastRisk ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{contrastRisk ? 'May blend in' : 'Visible'}</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Contrast on this shirt</span><span className={contrastRisk ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{contrastRisk ? 'May blend in' : 'Visible'}</span></div>
             <p className="text-neutral-500">{darkGarmentSlugs.has(product.mockupSlug) ? 'Checked against a dark garment.' : 'Checked against a light garment.'}</p>
           </div>
-          {garmentCoverage ? <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Variant coverage</span><span className={garmentCoverage.atRisk.length ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{garmentCoverage.suitableCount} / {TSHIRT_MOCKUPS.length} colors</span></div>
-            <p className="text-neutral-500">{garmentCoverage.recommendation}</p>
-            {garmentCoverage.atRisk.length ? <p className="text-neutral-500">Review: {garmentCoverage.atRisk.join(', ')}.</p> : null}
-          </div> : null}
           <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Color complexity</span><span className="font-medium text-neutral-200">{analysis.palette.length} sampled colors</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Print color count</span><span className="font-medium text-neutral-200">{analysis.palette.length} sampled colors</span></div>
             <p className="text-neutral-500">Vector trace: {analysis.vectorSuitability === 'strong' ? 'strong candidate' : analysis.vectorSuitability === 'possible' ? 'possible candidate' : 'best kept raster'}.</p>
-          </div>
-          {methodGuidance ? <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">{printMethodOptions.find((method) => method.id === product.printMethod)?.name}</span><span className={methodGuidance.status === 'review' ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{methodGuidance.label}</span></div>
-            <p className="text-neutral-500">{methodGuidance.detail}</p>
-          </div> : null}
+          </div></> : <p role="status" className="border-t border-neutral-800 pt-3 text-xs text-neutral-500">Analyzing artwork checks...</p>}
         </section> : null}
 
         <section aria-labelledby="product-placement-title" className="grid gap-3">
           <div>
             <h3 id="product-placement-title" className="text-xs font-medium text-neutral-300">Artwork placement</h3>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">Start with a standard placement, then drag on the mockup for the final position.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Choose a starting position, then adjust the artwork directly on the mockup.</p>
           </div>
-          <div className="grid gap-2">
-            {productPlacementPresets.map((preset) => <button
-              key={preset.id}
-              type="button"
-              className={actionClass}
-              onClick={() => {
-                dispatch(createProductPlacementPresetCommand(preset.id));
-                endHistoryGroup();
-              }}
-            >
-              {preset.label}
-            </button>)}
+          <div className="grid grid-cols-2 gap-2">
+            {visiblePlacementPresets.map((presetId) => (
+              <button
+                key={presetId}
+                type="button"
+                className={actionClass}
+                onClick={() => {
+                  dispatch(createProductPlacementPresetCommand(presetId));
+                  endHistoryGroup();
+                }}
+              >
+                {productPlacementPresets[presetId].label}
+              </button>
+            ))}
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-3">
+        {mode === 'advanced' ? (
+          <fieldset aria-label="Print method" className="grid gap-2">
+            <legend className="mb-1 text-xs font-medium text-neutral-300">Print method</legend>
+            {productPrintMethods.map((method) => (
+              <label
+                key={method.id}
+                className={`flex min-h-11 cursor-pointer items-center gap-3 border px-3 py-2 transition focus-within:ring-2 focus-within:ring-emerald-400 ${
+                  product.printMethod === method.id
+                    ? 'border-emerald-500 bg-emerald-950/30'
+                    : 'border-neutral-700 bg-neutral-950 hover:border-neutral-500'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="product-print-method"
+                  aria-label={method.label}
+                  checked={product.printMethod === method.id}
+                  onChange={() => dispatch({
+                    type: 'set-product-print-method',
+                    printMethod: method.id,
+                  })}
+                  className="h-4 w-4 shrink-0 accent-emerald-500"
+                />
+                <span className="grid gap-0.5">
+                  <span className="text-xs font-medium text-neutral-100">{method.label}</span>
+                  <span className="text-xs leading-4 text-neutral-500">{method.description}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+
+        {mode === 'advanced' ? <><div className="grid grid-cols-2 gap-3">
           <NumberControl
             id="product-position-x"
             label="X position"
@@ -449,7 +420,7 @@ export const ProductInspector = ({
             'product-rotation',
           )}
           onEnd={endHistoryGroup}
-        />
+        /></> : null}
 
         {failure ? (
           <div role="alert" className="grid gap-3 border border-red-900 bg-red-950/40 p-3 text-xs text-red-200">

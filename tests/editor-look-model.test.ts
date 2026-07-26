@@ -6,9 +6,26 @@ import {
   createLookSeed,
   isSeededLook,
   normalizeVariationLook,
+  normalizeVariationLooks,
   replaceLookSeed,
   serializeVariationLook,
+  serializeVariationLooks,
 } from '../editor/lookModel';
+
+test('normalizes one ordered instance of each non-Original Look', () => {
+  assert.deepEqual(normalizeVariationLooks([
+    createDefaultLook('duotone'),
+    createDefaultLook('distressed-print', 7),
+    { ...createDefaultLook('duotone'), strength: 40 },
+    createDefaultLook('original'),
+  ]), [
+    createDefaultLook('duotone'),
+    createDefaultLook('distressed-print', 7),
+  ]);
+  assert.equal(normalizeVariationLooks(LOOK_IDS.slice(1).map((id) => createDefaultLook(id))).length, 8);
+  assert.equal(serializeVariationLooks([createDefaultLook('duotone')]),
+    '[{"id":"duotone","strength":100,"shadowColor":"#111827","highlightColor":"#f59e0b","balance":0}]');
+});
 
 const defaultLooks = {
   original: { id: 'original', strength: 100 },

@@ -49,6 +49,7 @@ export const analyzePixelData = (
         transparentPixels += 1;
         continue;
       }
+
       if (a < 223) partiallyTransparentPixels += 1;
 
       opaquePixels += 1;

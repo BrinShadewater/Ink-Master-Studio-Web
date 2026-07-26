@@ -69,7 +69,7 @@ const variation = (
   name: 'Preview',
   layers,
   selectedLayerId: layers[0]?.id ?? '',
-  look: createDefaultLook('original'),
+  looks: [],
   ...overrides,
 });
 
@@ -219,7 +219,7 @@ test('clears transparent previews without filling and preserves solid background
     solid as unknown as CanvasRenderingContext2D,
     40,
     30,
-    '#161616',
+    '#151a22',
   );
   assert.equal(solid.clearCount, 1);
   assert.equal(solid.fillCount, 1);
@@ -328,7 +328,17 @@ test('render keys use stable design identity and exclude replacement object URLs
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;
   const changedLook = compose(variation([baseLayer], {
-    look: createDefaultLook('monochrome'),
+    looks: [createDefaultLook('monochrome')],
+  }), assetsById, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+  }).result!;
+  const orderedLooks = compose(variation([baseLayer], {
+    looks: [createDefaultLook('monochrome'), createDefaultLook('duotone')],
+  }), assetsById, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+  }).result!;
+  const reorderedLooks = compose(variation([baseLayer], {
+    looks: [createDefaultLook('duotone'), createDefaultLook('monochrome')],
   }), assetsById, {
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;
@@ -363,6 +373,7 @@ test('render keys use stable design identity and exclude replacement object URLs
     assert.notEqual(changed.renderKey, first.renderKey);
   }
   assert.doesNotMatch(first.renderKey, /blob:/);
+  assert.notEqual(orderedLooks.renderKey, reorderedLooks.renderKey);
 });
 
 const frame = (value: number): RgbaFrame => ({

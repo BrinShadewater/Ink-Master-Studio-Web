@@ -7,7 +7,7 @@ const snapshot = (): TShirtPngExportSnapshot => ({
   requestId: 7,
   fingerprint: 'fingerprint',
   presetId: 'draft-proof',
-  variation: { id: 'variation', name: 'Original', layers: [], selectedLayerId: '', look: { id: 'original', strength: 100 } },
+  variation: { id: 'variation', name: 'Original', layers: [], selectedLayerId: '', looks: [] },
   placement: { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 },
   assets: [],
 });

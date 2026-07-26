@@ -10,9 +10,14 @@ export const TSHIRT_MOCKUP_SLUGS = [
   'orange',
   'red',
   'royal-blue',
+  'white',
 ] as const;
 
 export type TShirtMockupSlug = typeof TSHIRT_MOCKUP_SLUGS[number];
+
+export const TSHIRT_PRINT_METHODS = ['dtg', 'dtf', 'vinyl'] as const;
+
+export type TShirtPrintMethod = typeof TSHIRT_PRINT_METHODS[number];
 
 export interface ProductPlacement {
   x: number;
@@ -22,8 +27,6 @@ export interface ProductPlacement {
 }
 
 export type ProductPreviewMode = 'rgb' | 'print';
-export const TSHIRT_PRINT_METHODS = ['dtg', 'dtf', 'vinyl'] as const;
-export type TShirtPrintMethod = typeof TSHIRT_PRINT_METHODS[number];
 
 export interface TShirtProductVariant {
   id: string;

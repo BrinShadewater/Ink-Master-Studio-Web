@@ -71,7 +71,7 @@ test('retries only the current failed request and retains its prior shirt', () =
 
   controller.retry();
   assert.equal(images.length, 3);
-  assert.equal(images[2].src, '/mockups/mockup-heather.png');
+  assert.equal(images[2].src, '/mockups/mockup-heather.webp');
   assert.equal(states.at(-1)?.status, 'pending');
   assert.equal(states.at(-1)?.displayedMockup?.slug, 'black');
   images[2].onload?.();

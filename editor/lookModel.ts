@@ -33,6 +33,10 @@ export type VariationLook =
 
 export type LookById<T extends LookId> = Extract<VariationLook, { id: T }>;
 
+export type VariationLookStack = VariationLook[];
+
+export const MAX_VARIATION_LOOKS = 8;
+
 type RecordValue = Record<string, unknown>;
 type SeededVariationLook = LookById<'vintage-ink'> | LookById<'distressed-print'>;
 
@@ -147,7 +151,24 @@ export const normalizeVariationLook = (value: unknown): VariationLook => {
   }
 };
 
+export const normalizeVariationLooks = (value: unknown): VariationLookStack => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<LookId>();
+  const looks: VariationLookStack = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate) || !LOOK_IDS.includes(candidate.id as LookId)) continue;
+    const look = normalizeVariationLook(candidate);
+    if (look.id === 'original' || seen.has(look.id)) continue;
+    seen.add(look.id);
+    looks.push(look);
+    if (looks.length === MAX_VARIATION_LOOKS) break;
+  }
+  return looks;
+};
+
 export const serializeVariationLook = (value: unknown) => JSON.stringify(normalizeVariationLook(value));
+
+export const serializeVariationLooks = (value: unknown) => JSON.stringify(normalizeVariationLooks(value));
 
 export const createLookSeed = (getRandomUint32?: () => number) => {
   if (getRandomUint32) return getRandomUint32() >>> 0;

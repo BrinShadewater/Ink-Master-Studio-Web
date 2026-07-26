@@ -3,9 +3,16 @@
 ## Local Setup
 
 ```shell
-npm install
+npm ci
 npm run dev
 ```
+
+Use `npm ci`, not `npm install`. npm prunes optional dependencies to the host
+platform when it writes a lockfile, so running `npm install` on Windows rewrites
+`package-lock.json` into a form that fails `npm ci` on the Linux CI runner.
+`npm ci` installs from the lockfile without rewriting it and works on every
+platform. Only run `npm install` when you are deliberately changing a
+dependency, and check the resulting lockfile diff before committing it.
 
 Before opening a pull request:
 

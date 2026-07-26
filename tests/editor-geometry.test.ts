@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   buildCanvasFilter,
   fitSourceInViewport,
+  fitCropToAspectRatio,
   getCroppedSourceRect,
   getLayerDrawRect,
   getTraceLayerDrawRect,
@@ -28,6 +29,20 @@ test('converts normalized crop values to source pixels', () => {
   assert.deepEqual(getCroppedSourceRect({ width: 1000, height: 800 }, { x: 0.1, y: 0.2, width: 0.7, height: 0.5 }), {
     x: 100, y: 160, width: 700, height: 400,
   });
+});
+
+test('fits crop ratios around the current crop center without stretching source pixels', () => {
+  const source = { width: 1200, height: 800 };
+  const crop = { x: 0.1, y: 0.2, width: 0.7, height: 0.6 };
+  const square = fitCropToAspectRatio(crop, source, 1);
+  assert.ok(Math.abs((square.width * source.width) / (square.height * source.height) - 1) < 1e-6);
+  assert.ok(square.x >= 0 && square.y >= 0);
+  assert.ok(square.x + square.width <= 1 && square.y + square.height <= 1);
+  assert.equal(Number((square.x + square.width / 2).toFixed(6)), 0.45);
+  assert.equal(Number((square.y + square.height / 2).toFixed(6)), 0.5);
+
+  const portrait = fitCropToAspectRatio(crop, source, 4 / 5);
+  assert.ok(Math.abs((portrait.width * source.width) / (portrait.height * source.height) - 4 / 5) < 1e-6);
 });
 
 test('maps pointer movement against viewport dimensions', () => {

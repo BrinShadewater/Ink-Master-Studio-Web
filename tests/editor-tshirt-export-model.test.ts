@@ -8,6 +8,7 @@ import {
   resolveTShirtExportGeometry,
 } from '../editor/tshirtExportModel';
 import { createEditorAsset, createEditorProject } from '../editor/model';
+import { createDefaultLook } from '../editor/lookModel';
 import { findTShirtProduct } from '../editor/productModel';
 
 const createInput = () => {
@@ -115,7 +116,17 @@ test('fingerprint changes for preset, placement, layer, Look, and asset identity
   assert.notEqual(createTShirtExportFingerprint({ ...input, presetId: 'standard-tee' }), fingerprint);
   assert.notEqual(createTShirtExportFingerprint({ ...input, placement: { ...input.placement, x: 0.6 } }), fingerprint);
   assert.notEqual(createTShirtExportFingerprint({ ...input, variation: { ...variation, layers: variation.layers.map((layer) => ({ ...layer, opacity: 0.5 })) } }), fingerprint);
-  assert.notEqual(createTShirtExportFingerprint({ ...input, variation: { ...variation, look: { ...variation.look, id: 'vintage-ink' } as typeof variation.look } }), fingerprint);
+  assert.notEqual(createTShirtExportFingerprint({
+    ...input,
+    variation: { ...variation, looks: [createDefaultLook('vintage-ink')] },
+  }), fingerprint);
+  const orderedLooks = [createDefaultLook('monochrome'), createDefaultLook('duotone')];
+  const orderedFingerprint = createTShirtExportFingerprint({
+    ...input, variation: { ...variation, looks: orderedLooks },
+  });
+  assert.notEqual(createTShirtExportFingerprint({
+    ...input, variation: { ...variation, looks: [...orderedLooks].reverse() },
+  }), orderedFingerprint);
   const replacement = createEditorAsset('project-a', new Blob(['pixels']), {
     name: 'replacement.png', width: asset.width, height: asset.height,
   });

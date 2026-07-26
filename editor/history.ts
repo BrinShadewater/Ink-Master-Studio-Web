@@ -23,12 +23,14 @@ import {
   type BackgroundRemovalSettings,
 } from './imagePrepModel';
 import {
-  createDefaultLook,
   isSeededLook,
   normalizeVariationLook,
+  normalizeVariationLooks,
   replaceLookSeed,
-  serializeVariationLook,
+  serializeVariationLooks,
+  type LookId,
   type VariationLook,
+  type VariationLookStack,
 } from './lookModel';
 import { normalizeTextContent, normalizeTextStyle } from './textNormalization';
 import {
@@ -41,10 +43,11 @@ import {
   duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
+  normalizeTShirtPrintMethod,
   normalizeTShirtMockupSlug,
   type ProductPlacement,
-  type TShirtPrintMethod,
   type TShirtMockupSlug,
+  type TShirtPrintMethod,
   type TShirtProductVariant,
 } from './productModel';
 
@@ -82,9 +85,12 @@ export type EditorCommand =
   | { type: 'set-opacity'; layerId: string; opacity: number; historyGroup?: string }
   | { type: 'set-text-content'; layerId: string; text: string; historyGroup?: string }
   | { type: 'set-text-style'; layerId: string; style: TextLayerStyle; historyGroup?: string }
-  | { type: 'set-look'; look: VariationLook; historyGroup?: string }
-  | { type: 'reroll-look-seed'; seed: number }
-  | { type: 'reset-look' }
+  | { type: 'add-look'; look: VariationLook }
+  | { type: 'update-look'; lookId: LookId; look: VariationLook; historyGroup?: string }
+  | { type: 'remove-look'; lookId: LookId }
+  | { type: 'move-look'; lookId: LookId; direction: 'earlier' | 'later' }
+  | { type: 'reroll-look-seed'; lookId: LookId; seed: number }
+  | { type: 'reset-looks' }
   | { type: 'set-product-placement'; placement: ProductPlacement; historyGroup?: string }
   | { type: 'set-product-mockup'; mockupSlug: TShirtMockupSlug }
   | { type: 'set-product-print-method'; printMethod: TShirtPrintMethod }
@@ -95,7 +101,7 @@ export type EditorCommand =
 
 export interface VariationEditState {
   layers: DesignLayer[];
-  look: VariationLook;
+  looks: VariationLookStack;
   product: TShirtProductVariant;
 }
 
@@ -126,7 +132,7 @@ const getEditState = (
   if (!variation) throw new Error('Active editor variation not found.');
   return {
     layers: structuredClone(variation.layers),
-    look: structuredClone(variation.look),
+    looks: structuredClone(variation.looks),
     product: structuredClone(findTShirtProduct(project.productVariants, variationId)),
   };
 };
@@ -197,8 +203,8 @@ const sameTextStyle = (layer: TextLayer, style: TextLayerStyle) =>
   layer.shadowOffsetX === style.shadowOffsetX && layer.shadowOffsetY === style.shadowOffsetY &&
   layer.shadowBlur === style.shadowBlur;
 
-const sameLook = (left: VariationLook, right: VariationLook) =>
-  serializeVariationLook(left) === serializeVariationLook(right);
+const sameLooks = (left: VariationLookStack, right: VariationLookStack) =>
+  serializeVariationLooks(left) === serializeVariationLooks(right);
 
 const getActiveLayer = (project: EditorProject, layerId: string): DesignLayer | undefined => {
   const variation = project.variations.find(({ id }) => id === project.activeVariationId);
@@ -252,7 +258,7 @@ const replaceVariationEditState = (
   const variation = next.variations.find(({ id }) => id === variationId);
   if (!variation) return next;
   variation.layers = structuredClone(state.layers);
-  variation.look = structuredClone(state.look);
+  variation.looks = structuredClone(state.looks);
   variation.selectedLayerId = variation.layers.some(({ id }) => id === variation.selectedLayerId)
     ? variation.selectedLayerId : variation.layers[variation.layers.length - 1].id;
   const productIndex = next.productVariants.findIndex((product) =>
@@ -693,29 +699,62 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
         isTextLayer(layer) ? { ...layer, ...style } : layer);
       return next ? recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup) : history;
     }
-    case 'set-look': {
-      const look = normalizeVariationLook(command.look);
+    case 'add-look': {
       const current = getActiveVariation(history.present);
-      if (sameLook(current.look, look)) return history;
+      const look = normalizeVariationLook(command.look);
+      const looks = normalizeVariationLooks([...current.looks, look]);
+      if (sameLooks(current.looks, looks)) return history;
       const next = cloneProject(history.present);
-      getActiveVariation(next).look = look;
+      getActiveVariation(next).looks = looks;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'update-look': {
+      const current = getActiveVariation(history.present);
+      const index = current.looks.findIndex(({ id }) => id === command.lookId);
+      if (index < 0 || command.look.id !== command.lookId) return history;
+      const looks = normalizeVariationLooks(current.looks.map((look, lookIndex) =>
+        lookIndex === index ? command.look : look));
+      if (sameLooks(current.looks, looks)) return history;
+      const next = cloneProject(history.present);
+      getActiveVariation(next).looks = looks;
       return recordVariationEdit(history, withUpdatedAt(next, history.present), command.historyGroup);
+    }
+    case 'remove-look': {
+      const current = getActiveVariation(history.present);
+      const looks = current.looks.filter(({ id }) => id !== command.lookId);
+      if (sameLooks(current.looks, looks)) return history;
+      const next = cloneProject(history.present);
+      getActiveVariation(next).looks = looks;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
+    }
+    case 'move-look': {
+      const current = getActiveVariation(history.present);
+      const index = current.looks.findIndex(({ id }) => id === command.lookId);
+      const targetIndex = command.direction === 'earlier' ? index - 1 : index + 1;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.looks.length) return history;
+      const looks = structuredClone(current.looks);
+      [looks[index], looks[targetIndex]] = [looks[targetIndex], looks[index]];
+      const next = cloneProject(history.present);
+      getActiveVariation(next).looks = looks;
+      return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
     case 'reroll-look-seed': {
       const current = getActiveVariation(history.present);
-      if (!isSeededLook(current.look)) return history;
-      const look = normalizeVariationLook(replaceLookSeed(current.look, command.seed));
-      if (sameLook(current.look, look)) return history;
+      const index = current.looks.findIndex(({ id }) => id === command.lookId);
+      const currentLook = current.looks[index];
+      if (!currentLook || !isSeededLook(currentLook)) return history;
+      const looks = structuredClone(current.looks);
+      looks[index] = normalizeVariationLook(replaceLookSeed(currentLook, command.seed));
+      if (sameLooks(current.looks, looks)) return history;
       const next = cloneProject(history.present);
-      getActiveVariation(next).look = look;
+      getActiveVariation(next).looks = looks;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
-    case 'reset-look': {
+    case 'reset-looks': {
       const current = getActiveVariation(history.present);
-      const look = createDefaultLook('original');
-      if (sameLook(current.look, look)) return history;
+      if (current.looks.length === 0) return history;
       const next = cloneProject(history.present);
-      getActiveVariation(next).look = look;
+      getActiveVariation(next).looks = [];
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
     case 'set-product-placement': {
@@ -750,9 +789,10 @@ export const reduceEditorHistory = (history: EditorHistory, command: EditorComma
     case 'set-product-print-method': {
       const variationId = history.present.activeVariationId;
       const product = findTShirtProduct(history.present.productVariants, variationId);
-      if (product.printMethod === command.printMethod) return history;
+      const printMethod = normalizeTShirtPrintMethod(command.printMethod);
+      if (product.printMethod === printMethod) return history;
       const next = cloneProject(history.present);
-      findTShirtProduct(next.productVariants, variationId).printMethod = command.printMethod;
+      findTShirtProduct(next.productVariants, variationId).printMethod = printMethod;
       return recordVariationEdit(history, withUpdatedAt(next, history.present));
     }
     case 'set-product-color-artwork': {

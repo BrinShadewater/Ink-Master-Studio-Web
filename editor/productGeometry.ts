@@ -95,3 +95,37 @@ export const resizeProductPlacementFromPoint = (
     scale: round(requestedEdge / baseEdge),
   });
 };
+
+const keyboardStep = (largeStep: boolean) => largeStep ? 0.05 : 0.01;
+
+export const moveProductPlacementWithKeyboard = (
+  placementValue: ProductPlacement,
+  key: string,
+  largeStep: boolean,
+): ProductPlacement => {
+  const placement = normalizeProductPlacement(placementValue);
+  const step = keyboardStep(largeStep);
+  if (key === 'ArrowLeft') return normalizeProductPlacement({ ...placement, x: round(placement.x - step) });
+  if (key === 'ArrowRight') return normalizeProductPlacement({ ...placement, x: round(placement.x + step) });
+  if (key === 'ArrowUp') return normalizeProductPlacement({ ...placement, y: round(placement.y - step) });
+  if (key === 'ArrowDown') return normalizeProductPlacement({ ...placement, y: round(placement.y + step) });
+  return placement;
+};
+
+export const resizeProductPlacementWithKeyboard = (
+  placementValue: ProductPlacement,
+  key: string,
+  largeStep: boolean,
+): ProductPlacement => {
+  const placement = normalizeProductPlacement(placementValue);
+  const direction = key === 'ArrowUp' || key === 'ArrowRight'
+    ? 1
+    : key === 'ArrowDown' || key === 'ArrowLeft'
+      ? -1
+      : 0;
+  if (direction === 0) return placement;
+  return normalizeProductPlacement({
+    ...placement,
+    scale: round(placement.scale + keyboardStep(largeStep) * direction),
+  });
+};
