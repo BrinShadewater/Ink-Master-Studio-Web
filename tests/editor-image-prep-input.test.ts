@@ -8,6 +8,8 @@ import {
 import {
   createDefaultBackgroundRemoval,
   createImagePrepFingerprint,
+  convertCleanupCorrectionsToSource,
+  normalizeCleanupCorrectionDocument,
 } from '../editor/imagePrepModel';
 import type { ImageLayer } from '../editor/model';
 
@@ -95,8 +97,8 @@ test('resolves contain dimensions through the 2048-pixel processing bound', () =
   assert.throws(() => resolveImagePrepSize({ width: 0, height: 10 }), /Invalid image preparation size/);
 });
 
-test('composes the exact crop with adjustments before returning straight-alpha pixels', () => {
-  const pixels = new Uint8ClampedArray(500 * 400 * 4);
+test('composes the full source with adjustments before returning straight-alpha pixels', () => {
+  const pixels = new Uint8ClampedArray(1000 * 800 * 4);
   pixels.set([10, 20, 30, 0]);
   pixels.set([40, 50, 60, 255], 4);
   const context = new FakeCanvasContext(pixels);
@@ -112,20 +114,20 @@ test('composes the exact crop with adjustments before returning straight-alpha p
     'asset_corrections',
   );
 
-  assert.equal(canvas.width, 500);
-  assert.equal(canvas.height, 400);
-  assert.deepEqual(context.clearCalls, [[0, 0, 500, 400]]);
+  assert.equal(canvas.width, 1000);
+  assert.equal(canvas.height, 800);
+  assert.deepEqual(context.clearCalls, [[0, 0, 1000, 800]]);
   assert.equal(context.filter, 'brightness(110%) contrast(80%) saturate(130%)');
   assert.deepEqual(context.drawCalls, [[
     image,
-    100,
-    200,
-    500,
-    400,
     0,
     0,
-    500,
-    400,
+    1000,
+    800,
+    0,
+    0,
+    1000,
+    800,
   ]]);
   assert.deepEqual([...result.frame.pixels.slice(0, 8)], [10, 20, 30, 0, 40, 50, 60, 255]);
   assert.notStrictEqual(result.frame.pixels, pixels);
@@ -141,11 +143,11 @@ test('composes the exact crop with adjustments before returning straight-alpha p
   assert.equal(result.inputFingerprint, createImagePrepFingerprint(layer));
 });
 
-test('bounds the cropped source dimensions rather than the uncropped image', () => {
+test('bounds the uncropped source dimensions for non-destructive preparation', () => {
   const layer = createLayer();
   layer.crop = { x: 0.2, y: 0.2, width: 0.25, height: 0.5 };
-  const expectedWidth = 1250;
-  const expectedHeight = 1250;
+  const expectedWidth = 2048;
+  const expectedHeight = 1024;
   const context = new FakeCanvasContext(
     new Uint8ClampedArray(expectedWidth * expectedHeight * 4),
   );
@@ -162,14 +164,14 @@ test('bounds the cropped source dimensions rather than the uncropped image', () 
   assert.equal(canvas.width, expectedWidth);
   assert.equal(canvas.height, expectedHeight);
   assert.deepEqual(context.drawCalls[0].slice(1), [
-    1000,
-    500,
-    1250,
-    1250,
     0,
     0,
-    1250,
-    1250,
+    5000,
+    2500,
+    0,
+    0,
+    2048,
+    1024,
   ]);
 });
 
@@ -177,11 +179,15 @@ test('fingerprints every semantic preparation input stably', () => {
   const layer = createLayer();
   const source = { ...layer, correctionDigest: 'asset_corrections' };
   const fingerprint = createImagePrepFingerprint(source);
+  assert.match(fingerprint, /^prep:v2:/);
   assert.equal(fingerprint, createImagePrepFingerprint(structuredClone(source)));
+  assert.equal(
+    createImagePrepFingerprint({ ...source, crop: { ...source.crop, x: 0.2 } }),
+    fingerprint,
+  );
 
   const changes = [
     { ...source, assetId: 'asset_other' },
-    { ...source, crop: { ...source.crop, x: 0.2 } },
     { ...source, adjustments: { ...source.adjustments, contrast: 4 } },
     {
       ...source,
@@ -206,6 +212,33 @@ test('fingerprints every semantic preparation input stably', () => {
   for (const changed of changes) {
     assert.notEqual(createImagePrepFingerprint(changed), fingerprint);
   }
+});
+
+test('migrates legacy crop-local corrections only when a new source-space correction is saved', () => {
+  const storedLegacy = {
+    schemaVersion: 1 as const,
+    strokes: [{ mode: 'erase' as const, size: 32, points: [{ x: 0.5, y: 0.5 }] }],
+  };
+  const source = convertCleanupCorrectionsToSource(
+    normalizeCleanupCorrectionDocument(storedLegacy),
+    { x: 0.2, y: 0.1, width: 0.4, height: 0.6 },
+  );
+  assert.equal(storedLegacy.schemaVersion, 1);
+  assert.deepEqual(source.strokes[0].points[0], { x: 0.4, y: 0.4 });
+
+  const rewritten = normalizeCleanupCorrectionDocument({
+    schemaVersion: 2,
+    sourceCrop: source.sourceCrop,
+    strokes: [
+      ...source.strokes,
+      { mode: 'restore', size: 24, points: [{ x: 0.7, y: 0.8 }] },
+    ],
+  });
+  assert.equal(rewritten.schemaVersion, 2);
+  assert.deepEqual(rewritten.strokes.map(({ points }) => points[0]), [
+    { x: 0.4, y: 0.4 },
+    { x: 0.7, y: 0.8 },
+  ]);
 });
 
 test('encodes exact RGBA bytes as PNG and rejects a null browser result', async () => {

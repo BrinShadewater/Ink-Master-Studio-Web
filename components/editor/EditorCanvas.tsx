@@ -226,6 +226,14 @@ export const canvasPointToCropPoint = (
   };
 };
 
+export const cropPointToSourcePoint = (
+  point: NormalizedPoint,
+  crop: CropRect,
+): NormalizedPoint => ({
+  x: Number(Math.max(0, Math.min(1, crop.x + point.x * crop.width)).toFixed(6)),
+  y: Number(Math.max(0, Math.min(1, crop.y + point.y * crop.height)).toFixed(6)),
+});
+
 export const EditorCanvas = ({
   variation,
   assetsById,
@@ -291,12 +299,13 @@ export const EditorCanvas = ({
     if (!source) return null;
     const designPoint = displayPointToDesignPoint(point, zoomedDesignRect);
     if (!designPoint) return null;
-    return canvasPointToCropPoint(
+    const cropPoint = canvasPointToCropPoint(
       designPoint,
       CANONICAL_DESIGN_SIZE,
       source,
       selectedImage,
     );
+    return cropPoint ? cropPointToSourcePoint(cropPoint, selectedImage.crop) : null;
   };
 
   const cropFrame = useMemo(() => {
@@ -706,6 +715,7 @@ export const EditorCanvas = ({
       {brushCursor && (backgroundMode === 'erase' || backgroundMode === 'restore') ? (
         <div
           aria-hidden="true"
+          data-background-brush-cursor="true"
           className="pointer-events-none absolute rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.8)]"
           style={{
             width: Math.max(2, backgroundBrushSize * Math.max(viewport.size.width, viewport.size.height) / 1000),

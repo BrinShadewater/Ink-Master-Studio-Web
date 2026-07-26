@@ -8,6 +8,7 @@ import type { DecodedImageEntry } from '../../editor/decodedImages';
 import type { EditorCommand } from '../../editor/history';
 import {
   createImagePrepFingerprint,
+  convertCleanupCorrectionsToSource,
   normalizeCleanupCorrectionDocument,
   type CleanupCorrectionDocument,
   type CleanupStroke,
@@ -25,7 +26,11 @@ import {
 } from '../../editor/model';
 import type { GeneratedAssetCommand } from '../../editor/useEditorWorkspace';
 
-const EMPTY_CORRECTIONS: CleanupCorrectionDocument = { schemaVersion: 1, strokes: [] };
+const EMPTY_CORRECTIONS: CleanupCorrectionDocument = {
+  schemaVersion: 2,
+  sourceCrop: { x: 0, y: 0, width: 1, height: 1 },
+  strokes: [],
+};
 const CORRECTION_MIME = 'application/vnd.inkmaster.cleanup+json';
 
 export interface BackgroundRemovalWorkflow {
@@ -60,7 +65,10 @@ const readCorrections = async (
   const asset = assetsById[correctionAssetId];
   if (!asset) return EMPTY_CORRECTIONS;
   try {
-    return normalizeCleanupCorrectionDocument(JSON.parse(await asset.blob.text()));
+    return convertCleanupCorrectionsToSource(
+      normalizeCleanupCorrectionDocument(JSON.parse(await asset.blob.text())),
+      layer.crop,
+    );
   } catch {
     return EMPTY_CORRECTIONS;
   }
@@ -236,7 +244,8 @@ export const useBackgroundRemovalWorkflow = ({
     if (!project || !currentLayer) return;
     const current = await readCorrections(currentLayer, assetsRef.current);
     const corrections = normalizeCleanupCorrectionDocument({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      sourceCrop: current.schemaVersion === 2 ? current.sourceCrop : currentLayer.crop,
       strokes: [...current.strokes, stroke],
     });
     const blob = new Blob([JSON.stringify(corrections)], { type: CORRECTION_MIME });

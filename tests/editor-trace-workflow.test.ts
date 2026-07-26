@@ -8,6 +8,7 @@ import {
 import {
   createDefaultBackgroundRemoval,
   createImagePrepFingerprint,
+  createTraceSourceFingerprint,
 } from '../editor/imagePrepModel';
 import type { ImageLayer } from '../editor/model';
 import { createDefaultTraceSettings } from '../editor/traceModel';
@@ -73,7 +74,7 @@ test('bounds adjusted cropped source pixels to 1280 while retaining source geome
   });
 });
 
-test('uses the complete prepared cleanup output without applying adjustments twice', () => {
+test('crops full-source prepared cleanup output without applying adjustments twice', () => {
   const { canvas, context } = createCanvas();
   const input = composeTraceFrame(
     canvas,
@@ -86,9 +87,9 @@ test('uses the complete prepared cleanup output without applying adjustments twi
 
   assert.deepEqual(
     { width: input.frame.width, height: input.frame.height },
-    { width: 1280, height: 960 },
+    { width: 800, height: 600 },
   );
-  assert.deepEqual(context.drawArgs, [0, 0, 1600, 1200, 0, 0, 1280, 960]);
+  assert.deepEqual(context.drawArgs, [160, 240, 800, 600, 0, 0, 800, 600]);
   assert.equal(context.filter, 'none');
 });
 
@@ -106,6 +107,23 @@ test('blocks tracing while cleanup settings are newer than the retained prepared
   enabled.backgroundRemoval.inputFingerprint =
     createImagePrepFingerprint(enabled);
   assert.equal(hasCurrentPreparedTraceInput(enabled), true);
+});
+
+test('crop changes stale trace geometry without invalidating prepared cleanup', () => {
+  const enabled = {
+    ...layer,
+    backgroundRemoval: {
+      ...layer.backgroundRemoval,
+      enabled: true,
+      preparedAssetId: 'prepared',
+    },
+  };
+  enabled.backgroundRemoval.inputFingerprint = createImagePrepFingerprint(enabled);
+  const preparedFingerprint = enabled.backgroundRemoval.inputFingerprint;
+  const traceFingerprint = createTraceSourceFingerprint(enabled);
+  const cropped = { ...enabled, crop: { ...enabled.crop, x: 0.2 } };
+  assert.equal(createImagePrepFingerprint(cropped), preparedFingerprint);
+  assert.notEqual(createTraceSourceFingerprint(cropped), traceFingerprint);
 });
 
 test('distinguishes palette-only trace edits from geometry changes', () => {

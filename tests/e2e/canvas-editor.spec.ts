@@ -719,6 +719,8 @@ interface PersistedPhase2CWorkspaceSnapshot {
     id: string;
     role: 'prepared-image' | 'cleanup-corrections' | 'trace-svg' | null;
     mimeType: string;
+    width: number;
+    height: number;
     blobDigest: string;
     text: string | null;
     preparedSamples: {
@@ -914,6 +916,8 @@ const readPersistedPhase2CWorkspace = async (
         id: asset.id,
         role: asset.role ?? null,
         mimeType: asset.mimeType,
+        width: asset.width,
+        height: asset.height,
         blobDigest: [...digestBytes].map(
           (byte) => byte.toString(16).padStart(2, '0'),
         ).join(''),
@@ -3060,6 +3064,58 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
 });
 
+test('crop preserves completed background removal', async ({ page }) => {
+  const projectName = 'crop-preserves-cleanup';
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadPhase2CFixture(page, 320, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByLabel('Enable background removal', { exact: true }).check();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.backgroundRemoval?.preparedAssetId ?? null;
+  }).not.toBeNull();
+
+  const before = await readPersistedPhase2CWorkspace(page, projectName);
+  if (!before) throw new Error('Prepared cleanup workspace is unavailable.');
+  const sourceAsset = before.assets.find(({ id }) => id === before.sourceAssetId);
+  const image = before.variation.layers.find(({ type }) => type === 'image');
+  const preparedId = image?.backgroundRemoval?.preparedAssetId;
+  const preparedAsset = before.assets.find(({ id }) => id === preparedId);
+  if (!sourceAsset || !preparedAsset || !preparedId) throw new Error('Prepared cleanup asset is unavailable.');
+  expect(preparedAsset.width / preparedAsset.height).toBe(sourceAsset.width / sourceAsset.height);
+  const preparedDigest = preparedAsset.blobDigest;
+  const visibleBeforeCrop = await readCanvasPixels(canvas);
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '4:5', exact: true }).click();
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  await cropFrame.focus();
+  await cropFrame.press('ArrowRight');
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(visibleBeforeCrop);
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const currentImage = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return currentImage?.crop?.x ?? 0;
+  }).toBeGreaterThan(0);
+  await page.waitForTimeout(700);
+
+  const after = await readPersistedPhase2CWorkspace(page, projectName);
+  const afterImage = after?.variation.layers.find(({ type }) => type === 'image');
+  const afterPrepared = after?.assets.find(({ id }) => id === preparedId);
+  expect(afterImage?.backgroundRemoval?.preparedAssetId).toBe(preparedId);
+  expect(afterPrepared?.blobDigest).toBe(preparedDigest);
+});
+
 test('@phase2c-acceptance prepares, traces, persists, compares, and exports one owner design', async ({ page }) => {
   test.setTimeout(180_000);
   const projectName = 'phase-2c-owner';
@@ -3086,7 +3142,8 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     mimeType: 'image/png',
   });
 
-  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
   await page.getByLabel('Enable background removal', { exact: true }).check();
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
@@ -3097,6 +3154,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Pick color', exact: true }).click();
   const pickedPoint = await sourcePointOnCanvas(canvas, 0.08, 0.08);
   await page.mouse.click(pickedPoint.x, pickedPoint.y);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect(page.getByLabel('Tolerance', { exact: true })).toBeEnabled();
   await setEditorRange(page, 'Tolerance', 31);
   await setEditorRange(page, 'Edge feather', 2);
@@ -3300,6 +3358,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
   await expect(page.getByLabel('Project name', { exact: true })).toHaveValue(projectName);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
   const afterReload = await readPersistedPhase2CWorkspace(page, projectName);
   expect(afterReload?.variation).toEqual(beforeReload.variation);
@@ -3443,11 +3502,8 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Erase background', exact: true }).click();
   const brushPoint = await sourcePointOnCanvas(canvas, 0.3, 0.55);
   await page.mouse.move(brushPoint.x, brushPoint.y);
-  await expect.poll(() => canvas.evaluate((element) => {
-    const cursor = element.nextElementSibling;
-    return cursor instanceof HTMLElement && cursor.getBoundingClientRect().width > 0;
-  })).toBe(true);
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.locator('[data-background-brush-cursor="true"]')).toBeVisible();
+  await page.keyboard.press('Control+z');
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
     return workspace?.variation.layers
@@ -3699,9 +3755,9 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/editor');
-  await uploadTransparentFixture(page, 640, 640, 'phase-3b-export.png');
+  await uploadTransparentFixture(page, 4000, 4000, 'phase-3b-export.png');
   await page.getByRole('button', { name: 'Product', exact: true }).click();
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Create print-ready PNG', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
   await expect(dialog).toBeVisible();
   const closeExport = dialog.getByRole('button', { name: 'Close export', exact: true });

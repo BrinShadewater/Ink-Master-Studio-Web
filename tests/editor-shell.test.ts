@@ -61,6 +61,7 @@ import {
 } from '../components/editor/EditorApp';
 import {
   canvasPointToCropPoint,
+  cropPointToSourcePoint,
   canvasKeyboardFocusClasses,
   cropKeyboardFocusClasses,
   getZoomedDesignRect,
@@ -726,6 +727,16 @@ test('crop handles resize independently and retain the opposite crop corner', ()
       { x: 0.8, y: 0.8 },
     ),
     { x: 0.2, y: 0.25, width: 0.8, height: 0.75 },
+  );
+});
+
+test('background corrections map crop-local canvas points into immutable source coordinates', () => {
+  assert.deepEqual(
+    cropPointToSourcePoint(
+      { x: 0.5, y: 0.25 },
+      { x: 0.2, y: 0.1, width: 0.4, height: 0.6 },
+    ),
+    { x: 0.4, y: 0.25 },
   );
 });
 

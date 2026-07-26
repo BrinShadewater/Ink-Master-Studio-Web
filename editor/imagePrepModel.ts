@@ -9,10 +9,16 @@ export interface CleanupStroke {
   points: NormalizedPoint[];
 }
 
-export interface CleanupCorrectionDocument {
-  schemaVersion: 1;
-  strokes: CleanupStroke[];
+interface CorrectionCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
+
+export type CleanupCorrectionDocument =
+  | { schemaVersion: 1; strokes: CleanupStroke[] }
+  | { schemaVersion: 2; sourceCrop: CorrectionCrop; strokes: CleanupStroke[] };
 
 export interface BackgroundRemovalSettings {
   enabled: boolean;
@@ -101,7 +107,8 @@ export const normalizeCleanupCorrectionDocument = (
   value: unknown,
 ): CleanupCorrectionDocument => {
   const source = isRecord(value) ? value : {};
-  const rawStrokes = source.schemaVersion === 1 && Array.isArray(source.strokes)
+  const schemaVersion = source.schemaVersion === 2 ? 2 : 1;
+  const rawStrokes = (source.schemaVersion === 1 || source.schemaVersion === 2) && Array.isArray(source.strokes)
     ? source.strokes.slice(0, MAX_CORRECTION_STROKES)
     : [];
   const strokes: CleanupStroke[] = [];
@@ -123,7 +130,47 @@ export const normalizeCleanupCorrectionDocument = (
     });
   }
 
+  if (schemaVersion === 2) {
+    const rawCrop = isRecord(source.sourceCrop) ? source.sourceCrop : {};
+    const x = clamp(finiteNumber(rawCrop.x) ? rawCrop.x : 0, 0, 1);
+    const y = clamp(finiteNumber(rawCrop.y) ? rawCrop.y : 0, 0, 1);
+    return {
+      schemaVersion: 2,
+      sourceCrop: {
+        x,
+        y,
+        width: clamp(finiteNumber(rawCrop.width) ? rawCrop.width : 1, 0.000001, 1 - x),
+        height: clamp(finiteNumber(rawCrop.height) ? rawCrop.height : 1, 0.000001, 1 - y),
+      },
+      strokes,
+    };
+  }
   return { schemaVersion: 1, strokes };
+};
+
+export const convertCleanupCorrectionsToSource = (
+  document: CleanupCorrectionDocument,
+  legacyCrop: CorrectionCrop,
+): Extract<CleanupCorrectionDocument, { schemaVersion: 2 }> => {
+  const normalized = normalizeCleanupCorrectionDocument(document);
+  if (normalized.schemaVersion === 2) return normalized;
+  const crop = {
+    x: clamp(legacyCrop.x, 0, 1),
+    y: clamp(legacyCrop.y, 0, 1),
+    width: clamp(legacyCrop.width, 0.000001, 1 - clamp(legacyCrop.x, 0, 1)),
+    height: clamp(legacyCrop.height, 0.000001, 1 - clamp(legacyCrop.y, 0, 1)),
+  };
+  return {
+    schemaVersion: 2,
+    sourceCrop: crop,
+    strokes: normalized.strokes.map((stroke) => ({
+      ...stroke,
+      points: stroke.points.map((point) => ({
+        x: clamp(crop.x + point.x * crop.width, 0, 1),
+        y: clamp(crop.y + point.y * crop.height, 0, 1),
+      })),
+    })),
+  };
 };
 
 export const serializeBackgroundRemovalInput = (value: unknown): string => {
@@ -158,14 +205,8 @@ const hashString = (value: string) => {
 
 export const createImagePrepFingerprint = (
   source: ImagePrepFingerprintSource,
-) => `prep:${hashString(JSON.stringify({
+) => `prep:v2:${hashString(JSON.stringify({
   assetId: source.assetId,
-  crop: {
-    x: source.crop.x,
-    y: source.crop.y,
-    width: source.crop.width,
-    height: source.crop.height,
-  },
   adjustments: {
     brightness: source.adjustments.brightness,
     contrast: source.adjustments.contrast,
@@ -181,6 +222,7 @@ export const createTraceSourceFingerprint = (
   source: ImagePrepFingerprintSource,
 ) => `trace-source:${hashString(JSON.stringify({
   inputFingerprint: createImagePrepFingerprint(source),
+  crop: source.crop,
   preparedAssetId: source.backgroundRemoval.enabled
     ? source.backgroundRemoval.preparedAssetId ?? ''
     : '',

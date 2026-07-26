@@ -1,6 +1,7 @@
 import {
   normalizeBackgroundRemoval,
   normalizeCleanupCorrectionDocument,
+  convertCleanupCorrectionsToSource,
   type BackgroundRemovalSettings,
   type CleanupCorrectionDocument,
   type NormalizedPoint,
@@ -391,7 +392,10 @@ export const applyBackgroundRemoval = (
 ): RgbaFrame => {
   validateFrame(input.frame);
   const settings = normalizeBackgroundRemoval(input.settings);
-  const corrections = normalizeCleanupCorrectionDocument(input.corrections);
+  const corrections = convertCleanupCorrectionsToSource(
+    normalizeCleanupCorrectionDocument(input.corrections),
+    { x: 0, y: 0, width: 1, height: 1 },
+  );
   const sourcePixels = input.frame.pixels;
   const output = new Uint8ClampedArray(sourcePixels);
   const removed = new Uint8Array(input.frame.width * input.frame.height);

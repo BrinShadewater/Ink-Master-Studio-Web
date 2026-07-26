@@ -1,7 +1,6 @@
 import type { RgbaFrame } from './backgroundRemovalProcessor';
 import {
   buildCanvasFilter,
-  getCroppedSourceRect,
   type Size,
 } from './geometry';
 import { createImagePrepFingerprint } from './imagePrepModel';
@@ -41,9 +40,7 @@ export const composeImagePrepInput = (
   correctionDigest: string,
 ): ComposedImagePrepInput => {
   if (!isUsableSize(source)) throw new Error(COMPOSITION_ERROR);
-  const crop = getCroppedSourceRect(source, layer.crop);
-  if (!isUsableSize(crop)) throw new Error(COMPOSITION_ERROR);
-  const output = resolveImagePrepSize(crop);
+  const output = resolveImagePrepSize(source);
   canvas.width = output.width;
   canvas.height = output.height;
   const context = canvas.getContext('2d', {
@@ -57,10 +54,10 @@ export const composeImagePrepInput = (
   context.filter = buildCanvasFilter(layer.adjustments);
   context.drawImage(
     image,
-    crop.x,
-    crop.y,
-    crop.width,
-    crop.height,
+    0,
+    0,
+    source.width,
+    source.height,
     0,
     0,
     output.width,

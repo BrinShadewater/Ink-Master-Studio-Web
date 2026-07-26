@@ -137,6 +137,7 @@ export const EditorApp = () => {
   const [productPreviewMode, setProductPreviewMode] = useState<ProductPreviewMode>('rgb');
   const [compareOpen, setCompareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [productExportOpen, setProductExportOpen] = useState(false);
   const [compareVariationIds, setCompareVariationIds] = useState<string[]>([]);
   const [compareBackground, setCompareBackground] = useState<CompareBackground>('neutral');
   const [compareZoom, setCompareZoom] = useState(100);
@@ -673,7 +674,7 @@ export const EditorApp = () => {
                   workspace.dispatch({ type: 'select-layer', layerId: productArtworkImageLayer.id });
                   setTool('remove-background');
                 }}
-                onProductExport={() => setExportOpen(true)}
+                onProductExport={() => setProductExportOpen(true)}
                 onRetryProduct={() => {
                   productMockup.retry();
                   setProductArtworkRetryGeneration((current) => current + 1);
@@ -748,11 +749,10 @@ export const EditorApp = () => {
         dispatch={workspace.dispatch}
       />
 
+      <ExportMenu open={exportOpen} projectName={project?.name ?? 'Untitled design'} variation={variation} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
       {project && variation && product ? (
-        <ProductExportDialog open={exportOpen} projectName={project.name} variation={variation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
-      ) : (
-        <ExportMenu open={exportOpen} projectName={project?.name ?? 'Untitled design'} variation={variation} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setExportOpen(false)} />
-      )}
+        <ProductExportDialog open={productExportOpen} projectName={project.name} variation={variation} product={product} assetsById={workspace.assetsById} returnFocusRef={exportButtonRef} onClose={() => setProductExportOpen(false)} />
+      ) : null}
     </main>
   );
 };

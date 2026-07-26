@@ -644,12 +644,7 @@ const renderRasterLayer = async (
     height: sourceAsset.height,
   };
   const cropRect = usesPreparedAsset
-    ? {
-        x: 0,
-        y: 0,
-        width: authoritativeAsset.width,
-        height: authoritativeAsset.height,
-      }
+    ? getCroppedSourceRect(authoritativeAsset, layer.crop)
     : getCroppedSourceRect(sourceSize, layer.crop);
   const drawRect = getLayerDrawRect(
     sourceSize,
