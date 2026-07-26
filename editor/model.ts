@@ -5,9 +5,9 @@ import {
   TEXT_FONT_FAMILIES,
 } from './textNormalization';
 import {
-  createDefaultLook,
   normalizeVariationLook,
-  type VariationLook,
+  normalizeVariationLooks,
+  type VariationLookStack,
 } from './lookModel';
 import {
   createDefaultBackgroundRemoval,
@@ -27,7 +27,7 @@ import {
 
 export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
-export const EDITOR_PROJECT_SCHEMA_VERSION = 6 as const;
+export const EDITOR_PROJECT_SCHEMA_VERSION = 7 as const;
 
 export type EditorTool =
   | 'select'
@@ -136,7 +136,7 @@ export interface DesignVariation {
   name: string;
   layers: DesignLayer[];
   selectedLayerId: string;
-  look: VariationLook;
+  looks: VariationLookStack;
 }
 
 export interface EditorProject {
@@ -230,7 +230,7 @@ export const createEditorProject = (name: string, asset: EditorAsset): EditorPro
     name: 'Original',
     layers: [layer],
     selectedLayerId: layer.id,
-    look: createDefaultLook('original'),
+    looks: [],
   };
   return {
     schemaVersion: EDITOR_PROJECT_SCHEMA_VERSION, id: asset.projectId, name: name.trim() || 'Untitled design',
@@ -397,12 +397,18 @@ const createLayerNormalizer = (availableAssetIds?: ReadonlySet<string>) =>
     normalizeTextLayer(value) ??
     normalizeTraceLayer(value, availableAssetIds);
 
-const normalizeLegacyLook = () => createDefaultLook('original');
+const normalizeIgnoredLooks = () => [] as VariationLookStack;
+
+const normalizeLegacyLooks = (look: unknown): VariationLookStack => {
+  const normalized = normalizeVariationLook(look);
+  return normalized.id === 'original' ? [] : [normalized];
+};
 
 const normalizeVariation = (
   value: unknown,
   normalizeLayerValue: (layer: unknown) => DesignLayer | null = createLayerNormalizer(),
-  normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
+  normalizeLooksValue: (variation: RecordValue) => VariationLookStack = (variation) =>
+    normalizeVariationLooks(variation.looks),
 ): DesignVariation | null => {
   if (!isRecord(value) || !nonEmptyString(value.id) || !Array.isArray(value.layers)) return null;
   const normalizedLayers = value.layers
@@ -419,7 +425,7 @@ const normalizeVariation = (
     name: nonEmptyString(value.name) ? value.name : 'Original',
     layers,
     selectedLayerId,
-    look: normalizeLookValue(value.look),
+    looks: normalizeLooksValue(value),
   };
 };
 
@@ -448,13 +454,13 @@ const migrateProjectFields = (
   sourceAssetId: string,
   sourceMetadata: SourceMetadata,
   normalizeLayerValue: (layer: unknown) => DesignLayer | null,
-  normalizeLookValue: (look: unknown) => VariationLook = normalizeVariationLook,
+  normalizeLooksValue: (variation: RecordValue) => VariationLookStack,
   productVariantsValue: unknown = [],
 ): EditorProject => {
   if (!nonEmptyString(value.id)) throw new Error('Project does not contain a valid id.');
   if (!Array.isArray(value.variations)) throw new Error('Project does not contain a valid variation.');
   const variations = value.variations
-    .map((variation) => normalizeVariation(variation, normalizeLayerValue, normalizeLookValue))
+    .map((variation) => normalizeVariation(variation, normalizeLayerValue, normalizeLooksValue))
     .filter((variation): variation is DesignVariation => variation !== null);
   if (variations.length === 0) throw new Error('Project does not contain a valid variation.');
   if (!finiteNumber(value.createdAt)) throw new Error('Project does not contain a valid createdAt.');
@@ -485,13 +491,14 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     value.schemaVersion !== 3 &&
     value.schemaVersion !== 4 &&
     value.schemaVersion !== 5 &&
+    value.schemaVersion !== 6 &&
     value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION
   )) {
     throw new Error('Unsupported editor project schema.');
   }
   if (value.schemaVersion === 1) {
     const variations = Array.isArray(value.variations)
-      ? value.variations.map((variation) => normalizeVariation(variation, normalizeImageLayer, normalizeLegacyLook)) : [];
+      ? value.variations.map((variation) => normalizeVariation(variation, normalizeImageLayer, normalizeIgnoredLooks)) : [];
     const firstImageLayer = variations.find((variation): variation is DesignVariation => variation !== null)
       ?.layers.find(isImageLayer);
     const sourceAsset = firstImageLayer && findAsset(assets, firstImageLayer.assetId);
@@ -501,7 +508,7 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
       sourceAsset.id,
       sourceMetadataFromAsset(sourceAsset),
       normalizeImageLayer,
-      normalizeLegacyLook,
+      normalizeIgnoredLooks,
     );
   }
 
@@ -514,7 +521,11 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     sourceAsset.id,
     normalizeSourceMetadata(value.sourceMetadata, sourceAsset),
     createLayerNormalizer(availableAssetIds),
-    value.schemaVersion === 2 ? normalizeLegacyLook : normalizeVariationLook,
+    value.schemaVersion <= 2
+      ? normalizeIgnoredLooks
+      : value.schemaVersion <= 6
+        ? (variation) => normalizeLegacyLooks(variation.look)
+        : (variation) => normalizeVariationLooks(variation.looks),
     value.schemaVersion >= 5 ? value.productVariants : [],
   );
 };

@@ -1152,6 +1152,99 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   return readCanvasPixels(canvas);
 };
 
+test('schema 7 preserves legacy Look Product state and picks', async ({ page }) => {
+  const projectName = 'schema-7-legacy-preservation';
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 320, 240, `${projectName}.png`);
+  await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
+
+  await page.evaluate(async (name) => {
+    await new Promise<void>((resolve, reject) => {
+      const openRequest = indexedDB.open('inkmaster-studio');
+      openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+      openRequest.onsuccess = () => {
+        const database = openRequest.result;
+        const transaction = database.transaction('editor-projects', 'readwrite');
+        const store = transaction.objectStore('editor-projects');
+        const request = store.getAll();
+        request.onerror = () => reject(request.error ?? new Error('Could not read editor projects.'));
+        request.onsuccess = () => {
+          const project = request.result.find((candidate) => candidate.name === name);
+          if (!project) {
+            reject(new Error('Seed project not found.'));
+            return;
+          }
+          project.schemaVersion = 6;
+          const variation = project.variations[0];
+          delete variation.looks;
+          variation.look = {
+            id: 'duotone', strength: 65, shadowColor: '#112233', highlightColor: '#ddeeff', balance: 12,
+          };
+          variation.layers[0].backgroundRemoval = {
+            ...variation.layers[0].backgroundRemoval,
+            mode: 'picked',
+            picks: [
+              { color: '#112233', point: { x: 0.2, y: 0.3 } },
+              { color: '#ddeeff', point: { x: 0.7, y: 0.8 } },
+            ],
+          };
+          project.productVariants[0].mockupSlug = 'white';
+          project.productVariants[0].placement = { x: 0.37, y: 0.61, scale: 0.82, rotation: 9 };
+          store.put(project);
+        };
+        transaction.onerror = () => reject(transaction.error ?? new Error('Could not seed schema 6 project.'));
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+      };
+    });
+  }, projectName);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  const projectNameInput = page.getByLabel('Project name', { exact: true });
+  await expect(projectNameInput).toHaveValue(projectName);
+  await projectNameInput.fill(`${projectName} temp`);
+  await projectNameInput.press('Enter');
+  await projectNameInput.fill(projectName);
+  await projectNameInput.press('Enter');
+  await expect.poll(async () => page.evaluate(async (name) => {
+    return new Promise<any>((resolve, reject) => {
+      const openRequest = indexedDB.open('inkmaster-studio');
+      openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+      openRequest.onsuccess = () => {
+        const database = openRequest.result;
+        const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+        request.onerror = () => reject(request.error ?? new Error('Could not read editor projects.'));
+        request.onsuccess = () => {
+          const project = request.result.find((candidate) => candidate.name === name);
+          database.close();
+          resolve(project ? {
+            schemaVersion: project.schemaVersion,
+            looks: project.variations[0].looks,
+            product: project.productVariants[0],
+            picks: project.variations[0].layers[0].backgroundRemoval.picks,
+          } : null);
+        };
+      };
+    });
+  }, projectName)).toEqual({
+    schemaVersion: 7,
+    looks: [{
+      id: 'duotone', strength: 65, shadowColor: '#112233', highlightColor: '#ddeeff', balance: 12,
+    }],
+    product: expect.objectContaining({
+      mockupSlug: 'white', placement: { x: 0.37, y: 0.61, scale: 0.82, rotation: 9 },
+    }),
+    picks: [
+      { color: '#112233', point: { x: 0.2, y: 0.3 } },
+      { color: '#ddeeff', point: { x: 0.7, y: 0.8 } },
+    ],
+  });
+});
+
 test('composes ordered image and text layers with persistence on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/editor');
@@ -3658,7 +3751,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
   const initial = await readPersistedPhase3AWorkspace(page, projectName);
   if (!initial) throw new Error('Initial Phase 3A workspace was not persisted.');
-  expect(initial.schemaVersion).toBe(6);
+  expect(initial.schemaVersion).toBe(7);
   const originalLayerBytes = JSON.stringify(initial.variations[0].layers);
 
   await page.getByRole('button', { name: 'Product', exact: true }).click();

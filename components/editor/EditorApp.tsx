@@ -250,7 +250,7 @@ export const EditorApp = () => {
   });
   const comparisonBeforeVariation = (() => {
     if (!variation) return null;
-    if (tool === 'looks') return { ...variation, look: createDefaultLook('original') };
+    if (tool === 'looks') return { ...variation, looks: [] };
     if (
       tool !== 'enhance' ||
       !selectedImageLayer ||

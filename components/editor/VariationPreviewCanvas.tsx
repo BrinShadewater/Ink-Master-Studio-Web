@@ -263,7 +263,9 @@ const createVariationRenderKey = (
       const asset = assetsById[assetId];
       return asset ? [assetId, asset.id, asset.width, asset.height] : [assetId, null];
     }),
-    look: JSON.parse(serializeVariationLook(variation.look)) as unknown,
+    look: JSON.parse(serializeVariationLook(
+      variation.looks[variation.looks.length - 1] ?? { id: 'original', strength: 100 },
+    )) as unknown,
   });
   return `${variation.id}:${hashCanonicalValue(canonical)}:${canonical.length}`;
 };
@@ -547,7 +549,8 @@ export const useVariationPreviewSurface = ({
       maxPixelDimension,
     );
 
-    if (variation.look.id === 'original') {
+    const activeLook = variation.looks[variation.looks.length - 1];
+    if (!activeLook) {
       coordinator.clearSurface(surfaceId);
       lastReadyFrameRef.current = frame;
       lastReadyAuthorityRef.current = {
@@ -575,7 +578,7 @@ export const useVariationPreviewSurface = ({
       surfaceId,
       renderKey,
       frame,
-      look: variation.look,
+      look: activeLook,
     }).then((outcome) => {
       if (!active || currentRenderKeyRef.current !== renderKey || !frameCanvasRef.current) return;
       const selected = selectPreviewOutcomeFrame(
@@ -628,7 +631,7 @@ export const useVariationPreviewSurface = ({
     retryGenerationRef.current = retryGeneration;
     const renderKey = currentRenderKeyRef.current;
     const unprocessedFrame = unprocessedFrameRef.current;
-    if (!renderKey || !unprocessedFrame || variation.look.id === 'original') return undefined;
+    if (!renderKey || !unprocessedFrame || variation.looks.length === 0) return undefined;
 
     updateFailureAuthority({ type: 'start', renderKey, retry: true });
     let active = true;
@@ -675,7 +678,7 @@ export const useVariationPreviewSurface = ({
     retryGeneration,
     surfaceId,
     updateFailureAuthority,
-    variation.look.id,
+    variation.looks,
     viewport,
     maxPixelDimension,
     zoom,

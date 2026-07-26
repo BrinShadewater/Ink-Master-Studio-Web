@@ -216,31 +216,39 @@ export const LooksInspector = ({
   error,
   onRetry,
 }: LooksInspectorProps) => {
+  const activeLook = variation.looks[variation.looks.length - 1] ?? createDefaultLook('original');
   const candidatesRef = useRef<CandidateRecipes | null>(null);
   if (!candidatesRef.current) {
-    candidatesRef.current = createLookCandidateRecipes(variation.look);
+    candidatesRef.current = createLookCandidateRecipes(activeLook);
   }
   const [thumbnailFailures, setThumbnailFailures] = useState<Record<string, string>>({});
   const [retryGeneration, setRetryGeneration] = useState(0);
-  const previousLookIdRef = useRef(variation.look.id);
+  const previousLookIdRef = useRef(activeLook.id);
   const endHistoryGroup = () => dispatch({ type: 'end-history-group' });
 
   useEffect(() => {
-    if (previousLookIdRef.current === variation.look.id) return;
-    previousLookIdRef.current = variation.look.id;
+    if (previousLookIdRef.current === activeLook.id) return;
+    previousLookIdRef.current = activeLook.id;
     dispatch({ type: 'end-history-group' });
-  }, [dispatch, variation.look.id]);
+  }, [activeLook.id, dispatch]);
 
   useEffect(() => () => dispatch({ type: 'end-history-group' }), [dispatch]);
 
   const setLook = (look: VariationLook, historyGroup?: string) => {
-    dispatch({ type: 'set-look', look, historyGroup });
+    if (look.id === 'original') {
+      dispatch({ type: 'reset-looks' });
+      return;
+    }
+    const existing = variation.looks.some(({ id }) => id === look.id);
+    dispatch(existing
+      ? { type: 'update-look', lookId: look.id, look, historyGroup }
+      : { type: 'add-look', look });
   };
   const updateLook = (patch: Partial<VariationLook>, historyGroup: string) => {
-    setLook({ ...variation.look, ...patch } as VariationLook, historyGroup);
+    setLook({ ...activeLook, ...patch } as VariationLook, historyGroup);
   };
   const updateDistress = (wear: number) => {
-    if (variation.look.id === 'distressed-print') {
+    if (activeLook.id === 'distressed-print') {
       updateLook({ wear }, 'look-distress');
       return;
     }
@@ -264,14 +272,14 @@ export const LooksInspector = ({
       bounds={bounds}
       onChange={(nextValue) => updateLook(
         { [parameter]: nextValue } as Partial<VariationLook>,
-        `look-${variation.look.id}-${id}`,
+        `look-${activeLook.id}-${id}`,
       )}
       onEnd={endHistoryGroup}
     />
   );
 
   const advancedControls = (() => {
-    const look = variation.look;
+    const look = activeLook;
     switch (look.id) {
       case 'original':
         return <p className="text-xs leading-5 text-neutral-500">Original has no additional controls.</p>;
@@ -392,7 +400,7 @@ export const LooksInspector = ({
           aria-label="Reset Look"
           onClick={() => {
             endHistoryGroup();
-            dispatch({ type: 'reset-look' });
+            dispatch({ type: 'reset-looks' });
           }}
         >
           <RotateCcw aria-hidden="true" size={15} />
@@ -408,9 +416,10 @@ export const LooksInspector = ({
           </div>
         <div className="grid grid-cols-2 gap-2" aria-label="Look previews">
           {LOOK_IDS.map((lookId) => {
-            const selected = variation.look.id === lookId;
-            const recipe = selected ? variation.look : candidatesRef.current![lookId];
-            const previewVariation = { ...variation, look: recipe };
+            const applied = variation.looks.find(({ id }) => id === lookId);
+            const selected = Boolean(applied) || (lookId === 'original' && variation.looks.length === 0);
+            const recipe = applied ?? candidatesRef.current![lookId];
+            const previewVariation = { ...variation, looks: lookId === 'original' ? [] : [recipe] };
             return (
               <button
                 key={lookId}
@@ -460,7 +469,7 @@ export const LooksInspector = ({
         <NumericLookControl
           id="editor-look-distress"
           label="Distress"
-          value={variation.look.id === 'distressed-print' ? variation.look.wear : 0}
+          value={activeLook.id === 'distressed-print' ? activeLook.wear : 0}
           bounds={lookControlBounds.wear}
           onChange={updateDistress}
           onEnd={endHistoryGroup}
@@ -469,9 +478,9 @@ export const LooksInspector = ({
         <NumericLookControl
           id="editor-look-strength"
           label="Preset strength"
-          value={variation.look.strength}
+          value={activeLook.strength}
           bounds={lookControlBounds.strength}
-          disabled={variation.look.id === 'original'}
+          disabled={activeLook.id === 'original'}
           onChange={(strength) => updateLook({ strength }, 'look-strength')}
           onEnd={endHistoryGroup}
         />
@@ -481,14 +490,14 @@ export const LooksInspector = ({
           <div className="mt-4 grid gap-4">{advancedControls}</div>
         </details>
 
-        {isSeededLook(variation.look) ? (
+        {isSeededLook(activeLook) ? (
           <button
             type="button"
             className={commandButtonClass}
             aria-label="Reroll texture"
             onClick={() => {
               endHistoryGroup();
-              dispatch({ type: 'reroll-look-seed', seed: createLookSeed() });
+              dispatch({ type: 'reroll-look-seed', lookId: activeLook.id, seed: createLookSeed() });
             }}
           >
             <Dices aria-hidden="true" size={15} />

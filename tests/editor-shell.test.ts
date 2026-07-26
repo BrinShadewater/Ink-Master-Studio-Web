@@ -134,7 +134,7 @@ const createLayerPanelVariation = (): DesignVariation => {
     name: 'Original',
     layers: [bottom, top],
     selectedLayerId: top.id,
-    look: { id: 'original', strength: 100 },
+    looks: [],
   };
 };
 
@@ -1006,7 +1006,7 @@ const renderLooksInspector = (
   const variation = {
     ...project.variations[0],
     id: 'variation-looks-inspector',
-    look: createDefaultLook(lookId, options.seed ?? 7),
+    looks: lookId === 'original' ? [] : [createDefaultLook(lookId, options.seed ?? 7)],
   };
   return renderToStaticMarkup(createElement(LooksInspector, {
     variation,

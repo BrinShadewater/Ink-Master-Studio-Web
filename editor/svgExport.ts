@@ -47,7 +47,7 @@ export const getSvgExportEligibility = (
 ): SvgExportEligibility => {
   const blockers: SvgExportEligibility['blockers'] = [];
   let visibleVectorContent = 0;
-  if (variation.look.id !== 'original') {
+  if (variation.looks.length > 0) {
     blockers.push({
       layerId: null,
       message: "Set this variation's Look to Original before exporting SVG.",

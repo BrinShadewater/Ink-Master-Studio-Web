@@ -888,7 +888,7 @@ const applySavedLook = (
         height: masterCanvas.height,
         pixels: sourcePixels,
       },
-      snapshot.variation.look,
+      snapshot.variation.looks[snapshot.variation.looks.length - 1] ?? { id: 'original', strength: 100 },
       {
         output: outputPixels,
         maxWorkingBytes: MAX_EXPORT_LOOK_WORKING_BYTES,

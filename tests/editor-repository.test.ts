@@ -367,9 +367,9 @@ test('hydrates stored version one projects with matching project assets', async 
     await seedRawEditorProject(factory, legacyProject, asset);
 
     const project = await getEditorProject('project_legacy');
-    assert.equal(project?.schemaVersion, 6);
+    assert.equal(project?.schemaVersion, 7);
     assert.equal(project?.productVariants.length, 1);
-    assert.deepEqual(project?.variations[0].look, { id: 'original', strength: 100 });
+    assert.deepEqual(project?.variations[0].looks, []);
     assert.equal(project?.sourceAssetId, asset.id);
     assert.deepEqual(project?.sourceMetadata, {
       name: 'legacy-source.webp', mimeType: 'image/webp', width: 1440, height: 960,
@@ -421,17 +421,17 @@ test('migrates stored schema two projects with injected Looks to schema six Orig
     await seedRawEditorProject(factory, rawSchemaTwo, asset);
 
     const hydrated = await getEditorProject(rawSchemaTwo.id);
-    assert.equal(hydrated?.schemaVersion, 6);
+    assert.equal(hydrated?.schemaVersion, 7);
     assert.equal(hydrated?.productVariants.length, 1);
-    assert.deepEqual(hydrated?.variations[0].look, { id: 'original', strength: 100 });
+    assert.deepEqual(hydrated?.variations[0].looks, []);
     await saveEditorProject(hydrated!);
 
     const stored = await readRawEditorProject(factory, rawSchemaTwo.id) as typeof rawSchemaTwo & {
       look?: unknown;
-      variations: Array<typeof rawSchemaTwo.variations[number] & { look: unknown }>;
+      variations: Array<typeof rawSchemaTwo.variations[number] & { looks: unknown[] }>;
     };
-    assert.equal(stored.schemaVersion, 6);
-    assert.deepEqual(stored.variations[0].look, { id: 'original', strength: 100 });
+    assert.equal(stored.schemaVersion, 7);
+    assert.deepEqual(stored.variations[0].looks, []);
 
     const reopened = await getEditorProject(rawSchemaTwo.id);
     assert.deepEqual(reopened?.sourceMetadata, rawSchemaTwo.sourceMetadata);

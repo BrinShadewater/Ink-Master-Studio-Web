@@ -42,7 +42,7 @@ const emptyVariation: DesignVariation = {
   name: 'Empty',
   layers: [],
   selectedLayerId: '',
-  look: { id: 'original', strength: 100 },
+  looks: [],
 };
 
 const EDITOR_CANVAS_SURFACE_ID = 'editor-main-preview';

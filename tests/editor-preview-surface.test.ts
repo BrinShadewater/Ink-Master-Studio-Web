@@ -69,7 +69,7 @@ const variation = (
   name: 'Preview',
   layers,
   selectedLayerId: layers[0]?.id ?? '',
-  look: createDefaultLook('original'),
+  looks: [],
   ...overrides,
 });
 
@@ -328,7 +328,7 @@ test('render keys use stable design identity and exclude replacement object URLs
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;
   const changedLook = compose(variation([baseLayer], {
-    look: createDefaultLook('monochrome'),
+    looks: [createDefaultLook('monochrome')],
   }), assetsById, {
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;

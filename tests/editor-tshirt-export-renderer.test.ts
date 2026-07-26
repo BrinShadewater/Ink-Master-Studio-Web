@@ -360,7 +360,7 @@ const snapshot = (
     name: 'Original',
     layers,
     selectedLayerId: layers[0]?.id ?? '',
-    look: createDefaultLook('original', 0x12345678),
+    looks: [],
   },
   placement: { x: 0.3, y: 0.6, scale: 0.8, rotation: 30 },
   assets,
@@ -536,7 +536,7 @@ test('preserves transparent red RGB through enlargement and repeats seeded pixel
         name: 'Distressed',
         layers: [imageLayer('edge-layer', 'edge', { name: 'Transparent red edge' })],
         selectedLayerId: 'edge-layer',
-        look: createDefaultLook('vintage-ink', 0x98765432),
+        looks: [createDefaultLook('vintage-ink', 0x98765432)],
       },
     },
   );
