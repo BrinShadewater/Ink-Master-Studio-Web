@@ -11,6 +11,7 @@ const analysis: ArtworkAnalysis = {
   height: 5100,
   hasTransparency: true,
   transparencyCoverage: 0.35,
+  partialTransparencyCoverage: 0,
   edgeBackground: { isUniform: false, color: '#000000', tone: 'dark', confidence: 0.2 },
   printQuality: { dpi: 300, status: 'good', label: 'Print Ready' },
   palette: ['#111111', '#FFFFFF'],

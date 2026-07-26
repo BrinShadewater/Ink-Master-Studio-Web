@@ -31,6 +31,7 @@ export const analyzePixelData = (
   const colorCounts = new Map<string, { count: number; r: number; g: number; b: number }>();
   const edgeSamples: Array<[number, number, number]> = [];
   let transparentPixels = 0;
+  let partiallyTransparentPixels = 0;
   let opaquePixels = 0;
   let totalR = 0;
   let totalG = 0;
@@ -48,6 +49,8 @@ export const analyzePixelData = (
         transparentPixels += 1;
         continue;
       }
+
+      if (a < 223) partiallyTransparentPixels += 1;
 
       opaquePixels += 1;
       totalR += r;
@@ -107,6 +110,7 @@ export const analyzePixelData = (
     height: sourceHeight,
     hasTransparency: transparencyCoverage >= 0.01,
     transparencyCoverage: Number(transparencyCoverage.toFixed(4)),
+    partialTransparencyCoverage: Number((partiallyTransparentPixels / totalPixels).toFixed(4)),
     edgeBackground: {
       isUniform: edgeConfidence >= 0.82 && edgeSamples.length > 0,
       color: toHex(edgeAverage[0], edgeAverage[1], edgeAverage[2]),

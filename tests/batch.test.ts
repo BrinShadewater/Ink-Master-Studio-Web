@@ -18,6 +18,7 @@ const analysis = (override: Partial<ArtworkAnalysis> = {}): ArtworkAnalysis => (
   height: 3000,
   hasTransparency: true,
   transparencyCoverage: 0.4,
+  partialTransparencyCoverage: 0,
   edgeBackground: {
     isUniform: false,
     color: '#000000',
