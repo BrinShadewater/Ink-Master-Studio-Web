@@ -18,6 +18,8 @@ test('landing page presents the branded print-design workflow', () => {
   assert.match(markup, /Resolution, transparency, and file-size guidance/);
   assert.match(markup, /Every export, checked/);
   assert.match(markup, /Classic tee/);
+  assert.match(markup, /Front preview/);
+  assert.doesNotMatch(markup, />View<|>Front</);
   assert.match(markup, /landing-grid/);
   assert.doesNotMatch(markup, /landing-particle/);
   assert.match(markup, /<figure[^>]*aria-label="Interactive garment preview"/);

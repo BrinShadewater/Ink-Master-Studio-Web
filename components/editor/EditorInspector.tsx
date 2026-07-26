@@ -30,6 +30,7 @@ import {
 import { ProductInspector } from './ProductInspector';
 import { ResolutionInspector } from './ResolutionInspector';
 import type { ResolutionWorkflow } from './useResolutionWorkflow';
+import type { ReactNode } from 'react';
 
 export { controlBounds } from './TransformControls';
 
@@ -108,7 +109,61 @@ const sectionTitle: Record<EditorTool, string> = {
   product: 'Product',
 };
 
-const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const toolPurpose: Record<EditorTool, string> = {
+  select: 'Place, size, rotate, and align the selected layer.',
+  crop: 'Reframe image artwork without changing the canvas size.',
+  adjust: 'Correct brightness, contrast, and saturation.',
+  enhance: 'Prepare small raster artwork for a larger print area.',
+  looks: 'Apply one consistent finish across this variation.',
+  'remove-background': 'Create transparent artwork for a clean garment print.',
+  trace: 'Convert suitable artwork into scalable vector shapes.',
+  product: 'Check placement and color on the selected garment.',
+};
+
+const getAdvancedRecommendation = (layer: DesignLayer | null, tool: EditorTool) => {
+  if (!layer || tool !== 'select') return null;
+  if (layer.type === 'image') {
+    return 'Crop first if framing needs work. Use Remove background only for transparency.';
+  }
+  if (layer.type === 'text') {
+    return 'Place the text first. Use Looks only for a variation-wide finish.';
+  }
+  return 'Place the trace first. Use Looks only for a variation-wide finish.';
+};
+
+const InspectorFrame = ({
+  tool,
+  mode,
+  layer,
+  children,
+}: {
+  tool: EditorTool;
+  mode: 'easy' | 'advanced';
+  layer: DesignLayer | null;
+  children: ReactNode;
+}) => {
+  const recommendation = mode === 'advanced' ? getAdvancedRecommendation(layer, tool) : null;
+  return (
+    <aside className="flex h-60 min-h-0 flex-col overflow-hidden border-t border-neutral-800 bg-neutral-900 md:h-full md:border-l md:border-t-0" aria-label="Inspector">
+      <div className="hidden shrink-0 border-b border-neutral-800 bg-neutral-950/55 px-4 py-2 md:block">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-studio-measure">Print bench</p>
+          <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+        </div>
+        <p className="mt-0.5 text-xs leading-4 text-neutral-400">{toolPurpose[tool]}</p>
+        {recommendation ? (
+          <p className="mt-1 border-t border-neutral-800 pt-1 text-xs leading-4 text-neutral-300">
+            <span className="font-semibold text-emerald-300">Recommended next: </span>
+            {recommendation}
+          </p>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </aside>
+  );
+};
+
+const resetButtonClass = 'h-11 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
 const ImageInspector = ({
   layer,
@@ -188,7 +243,7 @@ const ImageInspector = ({
         ) : null}
 
         {tool === 'crop' ? (
-          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-8 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
             <RangeControl
               key={edge}
               id={`editor-crop-${edge}`}
@@ -261,7 +316,7 @@ export const EditorInspector = ({
 }: EditorInspectorProps) => {
   if (tool === 'product' && product) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame tool={tool} mode={mode} layer={layer}>
         <ProductInspector
           product={product}
           mockupStatus={productMockupStatus}
@@ -279,13 +334,13 @@ export const EditorInspector = ({
           onRetry={onRetryProduct}
           onReturnToDesign={onReturnToDesign}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   if (project && variation && tool === 'looks') {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame tool={tool} mode={mode} layer={layer}>
         <LooksInspector
           key={variation.id}
           variation={variation}
@@ -296,21 +351,23 @@ export const EditorInspector = ({
           error={lookError}
           onRetry={onRetryLook}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   if (!project || !layer) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
-        <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
-        <p className="mt-2 text-xs leading-5 text-neutral-400">Import artwork to edit.</p>
-      </aside>
+      <InspectorFrame tool={tool} mode={mode} layer={layer}>
+        <div className="p-4">
+          <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
+          <p className="mt-2 text-xs leading-5 text-neutral-400">Import artwork to edit.</p>
+        </div>
+      </InspectorFrame>
     );
   }
 
   if (tool === 'enhance' && layer.type === 'image' && resolutionWorkflow) {
-    return <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector"><ResolutionInspector workflow={resolutionWorkflow} /></aside>;
+    return <InspectorFrame tool={tool} mode={mode} layer={layer}><ResolutionInspector workflow={resolutionWorkflow} /></InspectorFrame>;
   }
 
   if (
@@ -319,19 +376,19 @@ export const EditorInspector = ({
     (layer.type === 'image' || layer.type === 'trace')
   ) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame tool={tool} mode={mode} layer={layer}>
         <TraceInspector
           traceLayer={layer.type === 'trace' ? layer : null}
           workflow={traceWorkflow}
           dispatch={dispatch}
           mode={mode}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   return (
-    <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+    <InspectorFrame tool={tool} mode={mode} layer={layer}>
       {layer.type === 'text' ? (
         <>
           <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4">
@@ -367,6 +424,6 @@ export const EditorInspector = ({
           </div>
         </>
       )}
-    </aside>
+    </InspectorFrame>
   );
 };

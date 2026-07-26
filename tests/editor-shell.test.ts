@@ -1284,6 +1284,11 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.equal(layer.type, 'image');
 
   const transformMarkup = renderInspector(layer);
+  assert.match(transformMarkup, /Print bench/);
+  assert.match(transformMarkup, /Place, size, rotate, and align the selected layer/);
+  assert.match(transformMarkup, /Recommended next:/);
+  assert.match(transformMarkup, /Crop first if framing needs work/);
+  assert.match(transformMarkup, /class="[^"]*h-11[^"]*"[^>]*>Reset/);
   assert.match(transformMarkup, /id="editor-position-x"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-position-y"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-scale"[^>]*min="5"[^>]*max="400"[^>]*step="1"/);
@@ -1291,6 +1296,9 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.match(transformMarkup, /id="editor-opacity"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
 
   const cropMarkup = renderInspector(layer, 'crop');
+  assert.match(cropMarkup, /Reframe image artwork without changing the canvas size/);
+  assert.doesNotMatch(cropMarkup, /Recommended next:/);
+  assert.equal(cropMarkup.match(/class="[^"]*h-11[^"]*"[^>]*>[^<]*<\/button>/g)?.length, 7);
   for (const edge of ['left', 'top', 'right', 'bottom']) {
     assert.match(cropMarkup, new RegExp(`id="editor-crop-${edge}"[^>]*min="0"[^>]*max="45"[^>]*step="1"`));
   }

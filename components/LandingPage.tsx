@@ -59,7 +59,7 @@ const ProductStage = () => {
             <span className="mr-1 text-xs font-semibold uppercase tracking-[0.14em] text-studio-measure">Color</span>
             {garments.map((garment) => <button key={garment.id} type="button" className={`grid h-11 w-11 place-items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72bfc0] ${selectedId === garment.id ? 'border-[#5ca7a7] ring-1 ring-[#5ca7a7]' : 'border-[#4b6573] hover:border-[#72bfc0]'}`} aria-label={`Show ${garment.label} T-shirt`} aria-pressed={selectedId === garment.id} title={garment.label} onClick={() => setSelectedId(garment.id)}><span className="h-5 w-5 rounded-full border border-black/20" style={{ backgroundColor: garment.swatch }} /></button>)}
           </div>
-          <div className="border-l border-[#4b6573] pl-3 text-right"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-studio-measure">View</p><p className="mt-1 text-sm font-medium text-[#6db7bb]">Front</p></div>
+          <div className="border-l border-[#4b6573] pl-3 text-right"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-studio-measure">Front preview</p></div>
         </div>
       </div>
     </div>
