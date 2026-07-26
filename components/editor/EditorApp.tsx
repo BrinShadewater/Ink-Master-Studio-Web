@@ -309,6 +309,7 @@ export const EditorApp = () => {
       return;
     }
     if (!project || projectVariationIds.length < 2) return;
+    if (tool === 'product') setTool('select');
     const selection = reconcileCompareSelection(
       compareVariationIds,
       projectVariationIds,
@@ -368,7 +369,6 @@ export const EditorApp = () => {
   useEffect(() => {
     if (tool !== 'product') return;
     setCompareOpen(false);
-    setLayersOpen(false);
     setBackgroundBrushMode('idle');
   }, [tool]);
 
@@ -462,10 +462,10 @@ export const EditorApp = () => {
       <section className={focusedEmptyState
         ? 'grid min-h-0'
         : compareOpen
-          ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[60px_minmax(0,1fr)] md:grid-rows-1'
+          ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[88px_minmax(0,1fr)] md:grid-rows-1'
           : mobileInspectorExpanded
-            ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'
-            : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_56px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
+            ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[88px_minmax(0,1fr)_304px] md:grid-rows-1'
+            : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_56px_64px] md:grid-cols-[88px_minmax(0,1fr)_304px] md:grid-rows-1'}>
         {!focusedEmptyState ? <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
@@ -473,7 +473,6 @@ export const EditorApp = () => {
           hasProject={Boolean(project)}
           onToolChange={(nextTool) => {
             if (nextTool === 'product') {
-              setLayersOpen(false);
               setCompareOpen(false);
             }
             const requiresImage = nextTool === 'crop' || nextTool === 'adjust' ||

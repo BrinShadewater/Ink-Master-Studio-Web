@@ -1571,10 +1571,15 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
 
   const select = page.getByRole('button', { name: 'Select' });
   const crop = page.getByRole('button', { name: 'Crop' });
-  const adjust = page.getByRole('button', { name: 'Adjust' });
+  const product = page.getByRole('button', { name: 'Product' });
+  const layers = page.getByRole('button', { name: 'Layers' });
+  const more = page.getByRole('button', { name: 'More tools' });
   await expect(select).toBeVisible();
   await expect(crop).toBeVisible();
-  await expect(adjust).toBeVisible();
+  await expect(product).toBeVisible();
+  await expect(layers).toBeVisible();
+  await expect(more).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adjust' })).toHaveCount(0);
   await expect(page.getByLabel('Variation name')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate variation' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeVisible();
@@ -1600,7 +1605,7 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.inspector.top + 1);
   expect(layout.inspector.bottom).toBeLessThanOrEqual(layout.toolbar.top + 1);
 
-  const toolBoxes = await Promise.all([select, crop, adjust].map((button) => button.boundingBox()));
+  const toolBoxes = await Promise.all([select, crop, product, layers, more].map((button) => button.boundingBox()));
   for (const box of toolBoxes) {
     expect(box?.width).toBeGreaterThanOrEqual(44);
     expect(box?.height).toBeGreaterThanOrEqual(44);
@@ -1635,6 +1640,50 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
     path: artifactPath('mobile-390x844.png'),
     animations: 'disabled',
   });
+});
+
+test('Basic keeps Product visible and specialists behind More', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 900, 1200, 'basic-workflow.png');
+
+  const toolbar = page.getByRole('navigation', { name: 'Editor tools' });
+  const primaryCommands = toolbar.getByRole('button');
+  await expect(primaryCommands).toHaveCount(5);
+  await expect(primaryCommands.nth(0)).toHaveAccessibleName('Select');
+  await expect(primaryCommands.nth(1)).toHaveAccessibleName('Crop');
+  await expect(primaryCommands.nth(2)).toHaveAccessibleName('Product');
+  await expect(primaryCommands.nth(3)).toHaveAccessibleName('Layers');
+  await expect(primaryCommands.nth(4)).toHaveAccessibleName('More tools');
+
+  const productBounds = await primaryCommands.nth(2).boundingBox();
+  const toolbarBounds = await toolbar.boundingBox();
+  expect(productBounds).not.toBeNull();
+  expect(toolbarBounds).not.toBeNull();
+  expect(productBounds!.x).toBeGreaterThanOrEqual(toolbarBounds!.x);
+  expect(productBounds!.x + productBounds!.width).toBeLessThanOrEqual(
+    toolbarBounds!.x + toolbarBounds!.width,
+  );
+  await expect(toolbar).toHaveJSProperty('scrollLeft', 0);
+
+  await toolbar.getByRole('button', { name: 'More tools' }).click();
+  await page.getByRole('menuitem', { name: 'Remove background' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Remove background' })).toBeEnabled();
+  await toolbar.getByRole('button', { name: 'Product' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();
+  await expect(toolbar.getByRole('button', { name: 'Layers' })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Compare' }).click();
+  await expect(page.getByRole('region', { name: 'Compare Board' })).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Compare Board' })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();
+  await toolbar.getByRole('button', { name: 'Crop' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#editor-product-mode-disabled-reason')).toHaveCount(0);
 });
 
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {

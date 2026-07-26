@@ -280,12 +280,18 @@ test('empty Advanced top bar does not report a saved project', () => {
   assert.doesNotMatch(markup, /role="status"/);
 });
 
-test('easy mode keeps Looks available and hides Compare', () => {
+test('Basic toolbar keeps the guided workflow visible and specialists behind More', () => {
   const easy = renderToStaticMarkup(createElement(EditorToolbar, {
-    tool: 'select', mode: 'easy', onToolChange: () => undefined, onOpenLayers: () => undefined,
+    tool: 'select', mode: 'easy', hasProject: true, hasImageLayer: true,
+    onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
-  assert.match(easy, /aria-label="Looks"/);
+  const labels = [...easy.matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(labels.slice(0, 5), ['Select', 'Crop', 'Product', 'Layers', 'More tools']);
+  for (const label of ['Adjust', 'Enhance resolution', 'Remove background', 'Trace', 'Looks']) {
+    assert.doesNotMatch(easy, new RegExp(`aria-label="${label}"[^>]*data-primary-tool`));
+  }
   assert.doesNotMatch(easy, /aria-label="Compare"/);
+
   const advanced = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select', mode: 'advanced', onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
@@ -369,17 +375,19 @@ test('toolbar exposes the Looks tool with a visible mobile label and stable targ
   assert.match(markup, /aria-label="Looks"[\s\S]*?>Looks<\/span>/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
   assert.match(looksButton, /class="[^"]*h-14 w-14/);
-  assert.match(looksButton, /md:h-11 md:w-11/);
+  assert.match(looksButton, /md:h-14 md:w-\[72px\]/);
   for (const group of ['Arrange', 'Prepare artwork', 'Finish and preview']) {
     assert.match(markup, new RegExp(`role="group"[^>]*aria-label="${group}"`));
   }
 });
 
-test('toolbar exposes Product only for an open project and constrains conflicting modes', () => {
+test('Product mode leaves navigation and Layers enabled', () => {
   const productMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'product',
     layerType: 'image',
+    hasImageLayer: true,
     hasProject: true,
+    mode: 'easy',
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
     variationCount: 2,
@@ -387,10 +395,12 @@ test('toolbar exposes Product only for an open project and constrains conflictin
 
   assert.match(productMarkup, /aria-label="Product"[^>]*aria-pressed="true"/);
   assert.match(productMarkup, /aria-label="Product"[\s\S]*?lucide-shirt/);
-  assert.match(productMarkup, /Product mode/);
-  assert.match(productMarkup, /aria-label="Select"[^>]*(?!disabled)/);
-  for (const label of ['Crop', 'Adjust', 'Remove background', 'Trace', 'Looks', 'Compare', 'Layers']) {
-    assert.match(productMarkup, new RegExp(`aria-label="${label}"[^>]*disabled=""`));
+  assert.doesNotMatch(productMarkup, /editor-product-mode-disabled-reason/);
+  for (const label of ['Select', 'Crop', 'Product', 'Layers', 'More tools']) {
+    assert.doesNotMatch(
+      productMarkup.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? '',
+      /disabled=""/,
+    );
   }
 
   const emptyMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
@@ -400,6 +410,21 @@ test('toolbar exposes Product only for an open project and constrains conflictin
     onOpenLayers: () => undefined,
   }));
   assert.match(emptyMarkup, /aria-label="Product"[^>]*disabled=""/);
+});
+
+test('an active Basic specialist occupies the preparation slot', () => {
+  const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'remove-background',
+    mode: 'easy',
+    hasProject: true,
+    hasImageLayer: true,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+
+  assert.match(markup, /data-primary-tool="remove-background"/);
+  assert.match(markup, /aria-label="Product"/);
+  assert.doesNotMatch(markup, /aria-label="Crop"[^>]*data-primary-tool/);
 });
 
 test('product inspector exposes the complete shirt catalog and bounded placement controls', () => {
@@ -1153,12 +1178,13 @@ test('Basic toolbar omits unavailable image tools until artwork provides context
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
-  for (const label of ['Crop', 'Adjust', 'Enhance resolution', 'Remove background', 'Trace']) {
+  for (const label of ['Crop', 'Adjust', 'Enhance resolution', 'Remove background', 'Trace', 'Looks']) {
     assert.doesNotMatch(empty, new RegExp(`aria-label="${label}"`));
   }
   assert.match(empty, /aria-label="Select"/);
-  assert.match(empty, /aria-label="Looks"/);
   assert.match(empty, /aria-label="Product"/);
+  assert.match(empty, /aria-label="Layers"/);
+  assert.match(empty, /aria-label="More tools"/);
 });
 
 test('top bar keeps local save progress visible', () => {
