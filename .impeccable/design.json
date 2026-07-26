@@ -1,0 +1,423 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-26T00:33:03+10:00",
+  "title": "Design System: InkMaster Studio",
+  "extensions": {
+    "colorMeta": {
+      "canvas-night": {
+        "role": "neutral",
+        "displayName": "Canvas Night",
+        "canonical": "#0b121a",
+        "tonalRamp": [
+          "#05090d",
+          "#0b121a",
+          "#101d27",
+          "#14232d",
+          "#263746",
+          "#48616e",
+          "#93aab5",
+          "#eef4f5"
+        ]
+      },
+      "page-night": {
+        "role": "neutral",
+        "displayName": "Page Night",
+        "canonical": "#0d1d24",
+        "tonalRamp": [
+          "#05090d",
+          "#0b121a",
+          "#0d1d24",
+          "#14232d",
+          "#263746",
+          "#48616e",
+          "#93aab5",
+          "#eef4f5"
+        ]
+      },
+      "panel-night": {
+        "role": "neutral",
+        "displayName": "Panel Night",
+        "canonical": "#151a22",
+        "tonalRamp": [
+          "#090c10",
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#a5aebb",
+          "#fbfcfe"
+        ]
+      },
+      "raised-night": {
+        "role": "neutral",
+        "displayName": "Raised Night",
+        "canonical": "#1d2430",
+        "tonalRamp": [
+          "#090c10",
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#a5aebb",
+          "#fbfcfe"
+        ]
+      },
+      "board-blue": {
+        "role": "neutral",
+        "displayName": "Blueprint Board",
+        "canonical": "#263746",
+        "tonalRamp": [
+          "#091116",
+          "#101d27",
+          "#263746",
+          "#36515f",
+          "#48616e",
+          "#718c98",
+          "#b2c5c8",
+          "#eff6f7"
+        ]
+      },
+      "structural-border": {
+        "role": "neutral",
+        "displayName": "Structural Border",
+        "canonical": "#3b4554",
+        "tonalRamp": [
+          "#090c10",
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#a5aebb",
+          "#fbfcfe"
+        ]
+      },
+      "primary-teal": {
+        "role": "primary",
+        "displayName": "Pressroom Teal",
+        "canonical": "#315f6c",
+        "tonalRamp": [
+          "#071719",
+          "#0d292c",
+          "#173d42",
+          "#315f6c",
+          "#3d7781",
+          "#62a0a7",
+          "#9ac9ce",
+          "#e4f5f6"
+        ]
+      },
+      "primary-teal-hover": {
+        "role": "primary",
+        "displayName": "Pressroom Teal Hover",
+        "canonical": "#3d7781",
+        "tonalRamp": [
+          "#071719",
+          "#0d292c",
+          "#173d42",
+          "#315f6c",
+          "#3d7781",
+          "#62a0a7",
+          "#9ac9ce",
+          "#e4f5f6"
+        ]
+      },
+      "active-emerald": {
+        "role": "primary",
+        "displayName": "Calibration Emerald",
+        "canonical": "#159f9f",
+        "tonalRamp": [
+          "#082b30",
+          "#12464a",
+          "#125459",
+          "#10686d",
+          "#0f8185",
+          "#159f9f",
+          "#72d9d5",
+          "#edfcfb"
+        ]
+      },
+      "active-emerald-hover": {
+        "role": "primary",
+        "displayName": "Calibration Emerald Hover",
+        "canonical": "#39bebd",
+        "tonalRamp": [
+          "#082b30",
+          "#12464a",
+          "#125459",
+          "#10686d",
+          "#0f8185",
+          "#159f9f",
+          "#72d9d5",
+          "#edfcfb"
+        ]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Print White",
+        "canonical": "#f2f4f7",
+        "tonalRamp": [
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#7b8798",
+          "#c6cdd7",
+          "#fbfcfe"
+        ]
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Cool Copy",
+        "canonical": "#a5aebb",
+        "tonalRamp": [
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#7b8798",
+          "#a5aebb",
+          "#fbfcfe"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Measure",
+        "canonical": "#7b8798",
+        "tonalRamp": [
+          "#151a22",
+          "#1d2430",
+          "#28303d",
+          "#3b4554",
+          "#596477",
+          "#7b8798",
+          "#c6cdd7",
+          "#fbfcfe"
+        ]
+      },
+      "measurement-copy": {
+        "role": "neutral",
+        "displayName": "Blueprint Measure",
+        "canonical": "#93aab5",
+        "tonalRamp": [
+          "#091116",
+          "#101d27",
+          "#263746",
+          "#36515f",
+          "#48616e",
+          "#718c98",
+          "#93aab5",
+          "#eff6f7"
+        ]
+      },
+      "technical-grid": {
+        "role": "neutral",
+        "displayName": "Technical Grid",
+        "canonical": "#2a3d4d",
+        "tonalRamp": [
+          "#091116",
+          "#101d27",
+          "#1c2d39",
+          "#2a3d4d",
+          "#48616e",
+          "#718c98",
+          "#b2c5c8",
+          "#eff6f7"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Oversized uppercase landing statements."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Compact marketing section statements."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Inspector, project, and component headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Explanations and marketing copy."
+      },
+      "label": {
+        "displayName": "Technical Label",
+        "purpose": "Uppercase metadata, badges, and measurements."
+      },
+      "micro": {
+        "displayName": "Micro Label",
+        "purpose": "Compact 10px mobile tool names and dense editor labels."
+      },
+      "fine-print": {
+        "displayName": "Fine Print",
+        "purpose": "Narrowly scoped 9px metadata in dense editor chrome."
+      }
+    },
+    "shadows": [
+      {
+        "name": "header-separation",
+        "value": "0 8px 24px rgba(0,0,0,0.28)",
+        "purpose": "Separates the landing header from the hero."
+      },
+      {
+        "name": "garment-stage",
+        "value": "0 28px 80px rgba(0,0,0,0.7)",
+        "purpose": "Gives the principal product preview physical presence."
+      },
+      {
+        "name": "artwork-lift",
+        "value": "0 8px 18px rgba(0,0,0,0.3)",
+        "purpose": "Lifts printed artwork within the garment mockup."
+      },
+      {
+        "name": "feature-rail-separation",
+        "value": "0 -10px 28px rgba(0,0,0,0.2)",
+        "purpose": "Separates the lower proof rail from the hero."
+      },
+      {
+        "name": "editor-hairline",
+        "value": "0 1px 0 rgba(255,255,255,0.03)",
+        "purpose": "Provides nearly flat separation in the workbench."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-standard",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default hover and selected-state transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Landing Primary Button",
+      "kind": "button",
+      "refersTo": "landing-button",
+      "description": "Square, confident entry action for marketing surfaces.",
+      "html": "<button class=\"ds-landing-button\">START DESIGNING</button>",
+      "css": ".ds-landing-button { height: 44px; border: 0; border-radius: 0; background: #315f6c; color: #f2f4f7; padding: 0 16px; font: 700 12px/1 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-landing-button:hover { background: #3d7781; } .ds-landing-button:focus-visible { outline: 2px solid #9ac9ce; outline-offset: 2px; }"
+    },
+    {
+      "name": "Editor Selected Tool",
+      "kind": "button",
+      "refersTo": "editor-tool-selected",
+      "description": "Compact selected state for the editor tool rail.",
+      "html": "<button class=\"ds-tool-selected\" aria-pressed=\"true\">SELECT</button>",
+      "css": ".ds-tool-selected { width: 44px; height: 44px; border: 0; border-radius: 6px; background: #159f9f; color: #151a22; font: 700 10px/1 Inter, ui-sans-serif, system-ui, sans-serif; } .ds-tool-selected:hover { background: #39bebd; } .ds-tool-selected:focus-visible { outline: 2px solid #72d9d5; outline-offset: 2px; }"
+    },
+    {
+      "name": "Editor Ghost Tool",
+      "kind": "button",
+      "description": "Quiet icon or text action for dense editor command surfaces.",
+      "html": "<button class=\"ds-tool-ghost\">CROP</button>",
+      "css": ".ds-tool-ghost { width: 44px; height: 44px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #a5aebb; font: 600 10px/1 Inter, ui-sans-serif, system-ui, sans-serif; transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-tool-ghost:hover { border-color: #3b4554; background: #28303d; color: #f2f4f7; } .ds-tool-ghost:focus-visible { outline: 2px solid #39bebd; outline-offset: 2px; }"
+    },
+    {
+      "name": "Editor Text Field",
+      "kind": "input",
+      "refersTo": "editor-field",
+      "description": "Compact dark field for project, variation, and inspector values.",
+      "html": "<input class=\"ds-editor-field\" value=\"Untitled design\" aria-label=\"Project name\">",
+      "css": ".ds-editor-field { height: 36px; width: 220px; border: 1px solid #3b4554; border-radius: 6px; background: #1d2430; color: #f2f4f7; padding: 0 8px; font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif; outline: none; } .ds-editor-field:hover { border-color: #596477; } .ds-editor-field:focus-visible { border-color: #159f9f; box-shadow: 0 0 0 2px #39bebd; }"
+    },
+    {
+      "name": "Technical Badge",
+      "kind": "chip",
+      "description": "Square production label used for concise proof and context.",
+      "html": "<span class=\"ds-technical-badge\">CANVAS-FIRST. PRINT-READY.</span>",
+      "css": ".ds-technical-badge { display: inline-flex; border: 1px solid #496879; border-radius: 0; background: #121f2a; color: #86b8bb; padding: 8px 12px; font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.12em; }"
+    },
+    {
+      "name": "Editor Panel",
+      "kind": "card",
+      "refersTo": "editor-panel",
+      "description": "Flat operational container separated by tone and borders.",
+      "html": "<section class=\"ds-editor-panel\"><h3>Transform</h3><p>Import artwork to edit.</p></section>",
+      "css": ".ds-editor-panel { width: 304px; border: 1px solid #28303d; border-radius: 0; background: #1d2430; color: #f2f4f7; padding: 16px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-editor-panel h3 { margin: 0; font-size: 14px; font-weight: 600; } .ds-editor-panel p { margin: 8px 0 0; color: #7b8798; font-size: 12px; line-height: 20px; }"
+    },
+    {
+      "name": "Landing Header",
+      "kind": "nav",
+      "description": "Dark architectural header with uppercase identity and one clear action.",
+      "html": "<nav class=\"ds-landing-nav\"><strong>INKMASTER <span>STUDIO</span></strong><button>START DESIGNING</button></nav>",
+      "css": ".ds-landing-nav { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #36515f; background: #101d27; color: #f2f4f7; padding: 16px 32px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.28); } .ds-landing-nav strong { font-size: 20px; font-weight: 900; letter-spacing: 0.08em; } .ds-landing-nav strong span { margin-left: 8px; color: #70aeb2; font-size: 12px; letter-spacing: 0.32em; } .ds-landing-nav button { height: 44px; border: 0; border-radius: 0; background: #315f6c; color: #f2f4f7; padding: 0 16px; font-size: 12px; font-weight: 700; } .ds-landing-nav button:hover { background: #3d7781; } .ds-landing-nav button:focus-visible { outline: 2px solid #9ac9ce; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Midnight Print Lab",
+    "overview": "InkMaster Studio feels like a focused production bench after dark: cool, precise, and built around the artwork rather than decorative interface chrome. Deep navy and charcoal surfaces establish a controlled working field, while cyan-teal signals bring selected tools, trusted actions, and print-readiness into focus.\n\nThe landing page expresses this world at poster scale through oversized uppercase type, a technical grid, and a garment stage. The editor compresses the same identity into a dense operating environment with compact controls, disciplined panels, and clear state changes. Refinements should preserve this relationship rather than introducing a new visual language.",
+    "keyCharacteristics": [
+      "Nocturnal navy and charcoal surface hierarchy",
+      "Cyan-teal signals used with restraint and purpose",
+      "Technical grid, measurement, and production-bench cues",
+      "Bold uppercase marketing type paired with compact sentence-case controls",
+      "Square presentation surfaces with gently rounded operational controls"
+    ],
+    "rules": [
+      {
+        "name": "The Cool Signal Rule",
+        "body": "Teal and emerald identify action, selection, focus, or readiness. They do not become decorative surface fills.",
+        "section": "colors"
+      },
+      {
+        "name": "The Night Field Rule",
+        "body": "Product and interface chrome stay dark so uploaded artwork remains the brightest and most variable object in the experience.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tool Voice Rule",
+        "body": "Marketing speaks in bold uppercase blocks; controls and guidance use compact sentence case. Do not make the editor shout.",
+        "section": "typography"
+      },
+      {
+        "name": "The Structural Depth Rule",
+        "body": "Use tone and one-pixel borders first. Add a strong shadow only when a surface physically overlays, slides over, or stages another object.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Contextual Corner Rule",
+        "body": "Presentation surfaces stay architectural and square; operational controls may curve gently. Avoid large soft cards and pill-shaped containers.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do preserve the dark production-bench hierarchy across landing and editor surfaces.",
+      "Do reserve teal and emerald for clear interaction and readiness signals.",
+      "Do use thin borders, grid lines, and measurements to communicate precision.",
+      "Do keep editor controls compact, direct, and keyboard-visible.",
+      "Do let real artwork and garment imagery carry the visual variety."
+    ],
+    "donts": [
+      "Don't replace the incumbent identity with glossy neon SaaS styling.",
+      "Don't introduce playful craft-marketplace motifs or soft scrapbook decoration.",
+      "Don't flatten the system into sterile monochrome minimalism.",
+      "Don't turn every panel into a rounded floating card.",
+      "Don't use accent color as broad decoration or compete with the artwork."
+    ]
+  }
+}

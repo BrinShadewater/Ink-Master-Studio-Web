@@ -304,7 +304,7 @@ export const EditorInspector = ({
     return (
       <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
         <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
-        <p className="mt-2 text-xs leading-5 text-neutral-500">Import artwork to edit.</p>
+        <p className="mt-2 text-xs leading-5 text-neutral-400">Import artwork to edit.</p>
       </aside>
     );
   }

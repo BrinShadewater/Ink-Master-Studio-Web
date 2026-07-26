@@ -33,6 +33,7 @@ export interface EditorToolbarProps {
 interface ToolbarTool {
   id: EditorTool;
   label: string;
+  shortLabel: string;
   icon: LucideIcon;
 }
 
@@ -40,29 +41,29 @@ const toolGroups: Array<{ label: string; tools: ToolbarTool[] }> = [
   {
     label: 'Arrange',
     tools: [
-      { id: 'select', label: 'Select', icon: MousePointer2 },
-      { id: 'crop', label: 'Crop', icon: Crop },
-      { id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+      { id: 'select', label: 'Select', shortLabel: 'Select', icon: MousePointer2 },
+      { id: 'crop', label: 'Crop', shortLabel: 'Crop', icon: Crop },
+      { id: 'adjust', label: 'Adjust', shortLabel: 'Adjust', icon: SlidersHorizontal },
     ],
   },
   {
     label: 'Prepare artwork',
     tools: [
-      { id: 'enhance', label: 'Enhance resolution', icon: Maximize2 },
-      { id: 'remove-background', label: 'Remove background', icon: WandSparkles },
-      { id: 'trace', label: 'Trace', icon: ScanLine },
+      { id: 'enhance', label: 'Enhance resolution', shortLabel: 'Enhance', icon: Maximize2 },
+      { id: 'remove-background', label: 'Remove background', shortLabel: 'Cutout', icon: WandSparkles },
+      { id: 'trace', label: 'Trace', shortLabel: 'Trace', icon: ScanLine },
     ],
   },
   {
     label: 'Finish and preview',
     tools: [
-      { id: 'looks', label: 'Looks', icon: Palette },
-      { id: 'product', label: 'Product', icon: Shirt },
+      { id: 'looks', label: 'Looks', shortLabel: 'Looks', icon: Palette },
+      { id: 'product', label: 'Product', shortLabel: 'Product', icon: Shirt },
     ],
   },
 ];
 
-const toolButtonClass = 'grid h-10 w-10 shrink-0 place-items-center rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const toolButtonClass = 'flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:grid md:h-11 md:w-11';
 
 export const EditorToolbar = ({
   tool,
@@ -80,7 +81,7 @@ export const EditorToolbar = ({
   mode = 'advanced',
 }: EditorToolbarProps) => (
   <nav
-    className="order-3 flex h-16 min-w-0 items-center justify-center gap-1 border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[60px] md:flex-col md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-3"
+    className="order-3 flex h-16 min-w-0 items-center justify-start gap-1 overflow-x-auto border-t border-neutral-800 bg-neutral-900 px-2 md:order-none md:h-full md:w-[60px] md:flex-col md:gap-2 md:overflow-visible md:border-r md:border-t-0 md:px-0 md:py-3"
     aria-label="Editor tools"
   >
     {compareOpen ? (
@@ -105,7 +106,10 @@ export const EditorToolbar = ({
         role="group"
         aria-label={groupLabel}
       >
-        {tools.map(({ id, label, icon: Icon }) => {
+        {tools.map(({ id, label, shortLabel, icon: Icon }) => {
+          const imageContextTool = id === 'crop' || id === 'adjust' || id === 'enhance' ||
+            id === 'remove-background' || id === 'trace';
+          if (mode === 'easy' && imageContextTool && !hasImageLayer && layerType !== 'trace') return null;
           const selected = tool === id;
           const productConflict = tool === 'product' &&
             id !== 'select' &&
@@ -143,6 +147,9 @@ export const EditorToolbar = ({
               onClick={() => onToolChange(id)}
             >
               <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
+              <span className="max-w-full truncate px-0.5 text-[10px] font-medium leading-none md:sr-only">
+                {shortLabel}
+              </span>
             </button>
           );
         })}
@@ -160,6 +167,7 @@ export const EditorToolbar = ({
       onClick={onToggleCompare}
     >
       <Columns2 aria-hidden="true" size={19} strokeWidth={1.8} />
+      <span className="max-w-full truncate px-0.5 text-[10px] font-medium leading-none md:sr-only">Compare</span>
     </button> : null}
     <button
       ref={layersButtonRef}
@@ -174,6 +182,7 @@ export const EditorToolbar = ({
       onClick={onOpenLayers}
     >
       <Layers aria-hidden="true" size={19} strokeWidth={1.8} />
+      <span className="max-w-full truncate px-0.5 text-[10px] font-medium leading-none md:sr-only">Layers</span>
     </button>
   </nav>
 );

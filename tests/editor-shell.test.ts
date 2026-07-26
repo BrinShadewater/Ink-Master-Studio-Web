@@ -232,6 +232,7 @@ test('mobile toolbar exposes a stable Layers command', () => {
 
   assert.match(markup, /aria-label="Layers"/);
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
+  assert.match(markup, />Layers<\/span>/);
 });
 
 test('top bar exposes export as a project command', () => {
@@ -241,6 +242,7 @@ test('top bar exposes export as a project command', () => {
   const disabled = renderToStaticMarkup(createElement(EditorTopBar, {
     ...topBarProps,
     projectId: null,
+    mode: 'advanced',
   }));
   assert.match(disabled, /aria-label="Export"[^>]*disabled=""/);
 });
@@ -249,7 +251,30 @@ test('top bar defaults to Basic and exposes Advanced editor mode', () => {
   const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.match(markup, /aria-label="Editor mode"/);
   assert.match(markup, /aria-checked="true"[^>]*>Basic/);
-  assert.match(markup, /aria-checked="false"[^>]*>Adv/);
+  assert.match(markup, /aria-checked="false"[^>]*>Advanced/);
+});
+
+test('empty Basic top bar keeps only project-start commands', () => {
+  const markup = renderToStaticMarkup(createElement(EditorTopBar, {
+    ...topBarProps,
+    projectId: null,
+    mode: 'easy',
+  }));
+  assert.match(markup, /aria-label="Import artwork"/);
+  assert.match(markup, /aria-label="Open local projects"/);
+  assert.doesNotMatch(markup, /aria-label="Project name"/);
+  assert.doesNotMatch(markup, /aria-label="Export"/);
+  assert.doesNotMatch(markup, /aria-label="Variant selector"/);
+});
+
+test('empty Advanced top bar does not report a saved project', () => {
+  const markup = renderToStaticMarkup(createElement(EditorTopBar, {
+    ...topBarProps,
+    projectId: null,
+    mode: 'advanced',
+  }));
+  assert.doesNotMatch(markup, /Saved locally/);
+  assert.doesNotMatch(markup, /role="status"/);
 });
 
 test('easy mode keeps Looks available and hides Compare', () => {
@@ -329,7 +354,7 @@ test('export menu presents blockers or enables a vector-only SVG download', () =
   );
 });
 
-test('toolbar exposes the Looks tool with the Palette icon and stable mobile target', () => {
+test('toolbar exposes the Looks tool with a visible mobile label and stable target', () => {
   const markup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'looks',
     onToolChange: () => undefined,
@@ -338,8 +363,10 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
 
   assert.match(markup, /aria-label="Looks"[^>]*aria-pressed="true"/);
   assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
+  assert.match(markup, /aria-label="Looks"[\s\S]*?>Looks<\/span>/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
-  assert.match(looksButton, /class="[^"]*h-10 w-10/);
+  assert.match(looksButton, /class="[^"]*h-14 w-14/);
+  assert.match(looksButton, /md:h-11 md:w-11/);
   for (const group of ['Arrange', 'Prepare artwork', 'Finish and preview']) {
     assert.match(markup, new RegExp(`role="group"[^>]*aria-label="${group}"`));
   }
@@ -1088,8 +1115,39 @@ test('top bar exposes variation management and a live retryable save failure', (
   assert.match(markup, /aria-label="Duplicate variation"/);
   assert.match(markup, /aria-label="Delete variation"/);
   assert.match(markup, /aria-live="polite"/);
-  assert.match(markup, /Project save failed/);
+  assert.match(markup, /Save failed/);
   assert.match(markup, /aria-label="Retry save"/);
+});
+
+test('Basic toolbar omits unavailable image tools until artwork provides context', () => {
+  const empty = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    mode: 'easy',
+    hasProject: true,
+    hasImageLayer: false,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  for (const label of ['Crop', 'Adjust', 'Enhance resolution', 'Remove background', 'Trace']) {
+    assert.doesNotMatch(empty, new RegExp(`aria-label="${label}"`));
+  }
+  assert.match(empty, /aria-label="Select"/);
+  assert.match(empty, /aria-label="Looks"/);
+  assert.match(empty, /aria-label="Product"/);
+});
+
+test('top bar keeps local save progress visible', () => {
+  for (const [saveStatus, label] of [
+    ['saving', 'Saving locally'],
+    ['saved', 'Saved locally'],
+  ] as const) {
+    const markup = renderToStaticMarkup(createElement(EditorTopBar, {
+      ...topBarProps,
+      saveStatus,
+    }));
+    assert.match(markup, new RegExp(label));
+    assert.match(markup, /role="status"[^>]*aria-live="polite"/);
+  }
 });
 
 test('top bar disables variation deletion when only one variation remains', () => {

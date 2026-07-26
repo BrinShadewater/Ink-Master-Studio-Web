@@ -413,13 +413,19 @@ export const EditorApp = () => {
     const file = event.dataTransfer.files[0];
     if (file) void workspace.importFile(file);
   };
+  const focusedEmptyState = !project && editorMode === 'easy';
 
   if (!lookCoordinator) {
     return <main className="h-dvh bg-neutral-950" aria-label="Loading editor" />;
   }
 
   return (
-    <main className="relative grid h-dvh min-w-0 grid-rows-[96px_minmax(0,1fr)] overflow-hidden bg-neutral-950 text-neutral-100 md:grid-rows-[56px_minmax(0,1fr)]">
+    <main className={`relative grid h-dvh min-w-0 overflow-hidden bg-neutral-950 text-neutral-100 ${
+      focusedEmptyState
+        ? 'grid-rows-[56px_minmax(0,1fr)]'
+        : 'grid-rows-[112px_minmax(0,1fr)] md:grid-rows-[56px_minmax(0,1fr)]'
+    }`}>
+      <h1 className="sr-only">InkMaster Studio editor</h1>
       <EditorTopBar
         projectId={project?.id ?? null}
         projectName={project?.name ?? 'Untitled design'}
@@ -452,10 +458,12 @@ export const EditorApp = () => {
         onModeChange={setEditorMode}
       />
 
-      <section className={compareOpen
-        ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[60px_minmax(0,1fr)] md:grid-rows-1'
-        : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
-        <EditorToolbar
+      <section className={focusedEmptyState
+        ? 'grid min-h-0'
+        : compareOpen
+          ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[60px_minmax(0,1fr)] md:grid-rows-1'
+          : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
+        {!focusedEmptyState ? <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
           hasImageLayer={Boolean(variation?.layers.some((layer) => layer.type === 'image'))}
@@ -481,7 +489,7 @@ export const EditorApp = () => {
           compareButtonRef={compareButtonRef}
           activeToolButtonRef={activeToolButtonRef}
           mode={editorMode}
-        />
+        /> : null}
         {compareOpen && project ? (
           <CompareBoard
             variations={project.variations}
@@ -573,17 +581,36 @@ export const EditorApp = () => {
                 />
               )}
               {!project ? (
-                <button
-                  type="button"
-                  className="absolute left-1/2 top-1/2 flex min-h-24 w-[min(260px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 bg-neutral-900/95 px-5 text-sm font-medium text-neutral-200 shadow-xl transition hover:border-emerald-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload aria-hidden="true" size={20} />
-                  Import artwork
-                </button>
+                <div className="absolute inset-0 grid place-items-center overflow-y-auto p-4">
+                  <div className="w-full max-w-lg text-center">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
+                      {editorMode === 'easy' ? 'Basic workflow' : 'Editor workflow'}
+                    </p>
+                    <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Start with your artwork</h2>
+                    <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-neutral-400">
+                      Import a PNG, JPEG, or WebP file. Your artwork stays in this browser while you prepare it.
+                    </p>
+                    <button
+                      type="button"
+                      className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-md bg-emerald-400 px-6 text-sm font-bold text-neutral-950 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload aria-hidden="true" size={18} />
+                      Import artwork
+                    </button>
+                    <ol className="mt-8 grid grid-cols-3 gap-2 border-t border-neutral-800 pt-5 text-left" aria-label="Design workflow">
+                      {['Import', 'Prepare', 'Preview and export'].map((step, index) => (
+                        <li key={step} className="min-w-0">
+                          <span className="block text-xs font-semibold text-emerald-300">{index + 1}</span>
+                          <span className="mt-1 block text-xs font-medium text-neutral-300">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
               ) : null}
             </div>
-            <div className={`order-2 h-60 min-h-0 md:order-none md:h-auto ${
+            {!focusedEmptyState ? <div className={`order-2 h-60 min-h-0 md:order-none md:h-auto ${
               tool === 'product'
                 ? ''
                 : 'md:grid md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]'
@@ -650,7 +677,7 @@ export const EditorApp = () => {
                 mode={editorMode}
                 dispatch={workspace.dispatch}
               />
-            </div>
+            </div> : null}
           </>
         )}
       </section>
