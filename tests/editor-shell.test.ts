@@ -1241,6 +1241,31 @@ test('Basic inspector preserves the three-step workflow after import', () => {
   );
 });
 
+test('mobile inspector exposes an accessible collapsed state', () => {
+  const source = createEditorAsset('project-collapsed-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Collapsed inspector', source);
+  const markup = renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer: project.variations[0].layers[0],
+    tool: 'select',
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    mobileExpanded: false,
+    dispatch: () => undefined,
+  }));
+
+  assert.match(markup, /aria-controls="editor-inspector-content"/);
+  assert.match(markup, /aria-expanded="false"/);
+  assert.match(markup, />Expand</);
+  assert.match(markup, /id="editor-inspector-content"[^>]*hidden md:block/);
+});
+
 test('text inspector exposes complete editable text and shared transform controls', () => {
   const layer = {
     ...createTextLayer('First line\nSecond line'),

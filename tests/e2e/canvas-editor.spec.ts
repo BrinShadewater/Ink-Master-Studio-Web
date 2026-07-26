@@ -1605,6 +1605,30 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   }
   expect(new Set(toolBoxes.map((box) => box?.y)).size).toBe(1);
 
+  await page.getByRole('button', { name: 'Collapse' }).click();
+  const expandInspector = page.getByRole('button', { name: 'Expand' });
+  await expect(expandInspector).toHaveAttribute('aria-expanded', 'false');
+  const collapsedLayout = await page.evaluate(() => {
+    const canvas = document.querySelector('canvas[aria-label="Design canvas"]');
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!(canvas instanceof HTMLElement) || !(inspector instanceof HTMLElement) || !(toolbar instanceof HTMLElement)) {
+      throw new Error('Missing mobile editor region');
+    }
+    const canvasBounds = canvas.getBoundingClientRect();
+    const inspectorBounds = inspector.getBoundingClientRect();
+    const toolbarBounds = toolbar.getBoundingClientRect();
+    return {
+      canvasHeight: canvasBounds.height,
+      inspectorHeight: inspectorBounds.height,
+      inspectorBottom: inspectorBounds.bottom,
+      toolbarTop: toolbarBounds.top,
+    };
+  });
+  expect(collapsedLayout.canvasHeight).toBeGreaterThan(layout.canvas.height);
+  expect(collapsedLayout.inspectorHeight).toBe(56);
+  expect(collapsedLayout.inspectorBottom).toBeLessThanOrEqual(collapsedLayout.toolbarTop + 1);
+
   await page.screenshot({
     path: artifactPath('mobile-390x844.png'),
     animations: 'disabled',

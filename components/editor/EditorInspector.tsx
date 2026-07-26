@@ -13,6 +13,7 @@ import type {
 import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
 import type { TShirtProductVariant } from '../../editor/productModel';
 import type { ProductPreviewMode } from '../../editor/productModel';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { LooksInspector } from './LooksInspector';
 import {
   BackgroundRemovalInspector,
@@ -95,6 +96,8 @@ export interface EditorInspectorProps {
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
   mode?: 'easy' | 'advanced';
+  mobileExpanded?: boolean;
+  onMobileExpandedChange?: (expanded: boolean) => void;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -157,26 +160,44 @@ const InspectorFrame = ({
   tool,
   mode,
   layer,
+  mobileExpanded,
+  onMobileExpandedChange,
   children,
 }: {
   tool: EditorTool;
   mode: 'easy' | 'advanced';
   layer: DesignLayer | null;
+  mobileExpanded: boolean;
+  onMobileExpandedChange: (expanded: boolean) => void;
   children: ReactNode;
 }) => {
   const workflow = getInspectorWorkflowContext(mode, layer, tool);
   return (
-    <aside className="flex h-60 min-h-0 flex-col overflow-hidden border-t border-neutral-800 bg-neutral-900 md:h-full md:border-l md:border-t-0" aria-label="Inspector">
-      <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-3 py-2 md:hidden" aria-live="polite">
+    <aside className={`flex min-h-0 flex-col overflow-hidden border-t border-neutral-800 bg-neutral-900 md:h-full md:border-l md:border-t-0 ${mobileExpanded ? 'h-60' : 'h-14'}`} aria-label="Inspector">
+      <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-3 py-1.5 md:hidden" aria-live="polite">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-studio-measure">
-            {mode === 'easy' ? workflow.stage : 'Advanced workspace'}
-          </p>
-          <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+          <div className="min-w-0">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-studio-measure">
+              {mode === 'easy' ? workflow.stage : 'Advanced workspace'}
+            </p>
+            <p className="truncate text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+          </div>
+          <button
+            type="button"
+            className="flex h-11 shrink-0 items-center gap-1.5 border border-neutral-700 px-3 text-xs font-semibold text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-controls="editor-inspector-content"
+            aria-expanded={mobileExpanded}
+            onClick={() => onMobileExpandedChange(!mobileExpanded)}
+          >
+            {mobileExpanded ? 'Collapse' : 'Expand'}
+            {mobileExpanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronUp aria-hidden="true" size={16} />}
+          </button>
         </div>
-        <p className="mt-1 line-clamp-2 text-xs leading-4 text-neutral-300">
-          {workflow.recommendation ?? toolPurpose[tool]}
-        </p>
+        {mobileExpanded ? (
+          <p className="mt-1 line-clamp-2 text-xs leading-4 text-neutral-300">
+            {workflow.recommendation ?? toolPurpose[tool]}
+          </p>
+        ) : null}
       </div>
       <div className="hidden shrink-0 border-b border-neutral-800 bg-neutral-950/55 px-4 py-2 md:block">
         <div className="flex items-center justify-between gap-3">
@@ -191,7 +212,12 @@ const InspectorFrame = ({
           </p>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div
+        id="editor-inspector-content"
+        className={`min-h-0 flex-1 overflow-y-auto ${mobileExpanded ? '' : 'hidden md:block'}`}
+      >
+        {children}
+      </div>
     </aside>
   );
 };
@@ -345,11 +371,14 @@ export const EditorInspector = ({
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
   mode = 'advanced',
+  mobileExpanded = true,
+  onMobileExpandedChange = () => undefined,
   dispatch,
 }: EditorInspectorProps) => {
+  const frameProps = { tool, mode, layer, mobileExpanded, onMobileExpandedChange };
   if (tool === 'product' && product) {
     return (
-      <InspectorFrame tool={tool} mode={mode} layer={layer}>
+      <InspectorFrame {...frameProps}>
         <ProductInspector
           product={product}
           mockupStatus={productMockupStatus}
@@ -373,7 +402,7 @@ export const EditorInspector = ({
 
   if (project && variation && tool === 'looks') {
     return (
-      <InspectorFrame tool={tool} mode={mode} layer={layer}>
+      <InspectorFrame {...frameProps}>
         <LooksInspector
           key={variation.id}
           variation={variation}
@@ -390,7 +419,7 @@ export const EditorInspector = ({
 
   if (!project || !layer) {
     return (
-      <InspectorFrame tool={tool} mode={mode} layer={layer}>
+      <InspectorFrame {...frameProps}>
         <div className="p-4">
           <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
           <p className="mt-2 text-xs leading-5 text-neutral-400">Import artwork to edit.</p>
@@ -400,7 +429,7 @@ export const EditorInspector = ({
   }
 
   if (tool === 'enhance' && layer.type === 'image' && resolutionWorkflow) {
-    return <InspectorFrame tool={tool} mode={mode} layer={layer}><ResolutionInspector workflow={resolutionWorkflow} /></InspectorFrame>;
+    return <InspectorFrame {...frameProps}><ResolutionInspector workflow={resolutionWorkflow} /></InspectorFrame>;
   }
 
   if (
@@ -409,7 +438,7 @@ export const EditorInspector = ({
     (layer.type === 'image' || layer.type === 'trace')
   ) {
     return (
-      <InspectorFrame tool={tool} mode={mode} layer={layer}>
+      <InspectorFrame {...frameProps}>
         <TraceInspector
           traceLayer={layer.type === 'trace' ? layer : null}
           workflow={traceWorkflow}
@@ -421,7 +450,7 @@ export const EditorInspector = ({
   }
 
   return (
-    <InspectorFrame tool={tool} mode={mode} layer={layer}>
+    <InspectorFrame {...frameProps}>
       {layer.type === 'text' ? (
         <>
           <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4">

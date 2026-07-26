@@ -119,6 +119,7 @@ export const EditorApp = () => {
   const imagesById = useDecodedEditorImages(workspace.assetUrlsById);
   const [tool, setTool] = useState<EditorTool>('select');
   const [editorMode, setEditorMode] = useState<'easy' | 'advanced'>('easy');
+  const [mobileInspectorExpanded, setMobileInspectorExpanded] = useState(true);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
@@ -462,7 +463,9 @@ export const EditorApp = () => {
         ? 'grid min-h-0'
         : compareOpen
           ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_64px] md:grid-cols-[60px_minmax(0,1fr)] md:grid-rows-1'
-          : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
+          : mobileInspectorExpanded
+            ? 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_240px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'
+            : 'grid min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_56px_64px] md:grid-cols-[60px_minmax(0,1fr)_304px] md:grid-rows-1'}>
         {!focusedEmptyState ? <EditorToolbar
           tool={tool}
           layerType={selectedLayerType}
@@ -610,7 +613,9 @@ export const EditorApp = () => {
                 </div>
               ) : null}
             </div>
-            {!focusedEmptyState ? <div className={`order-2 h-60 min-h-0 md:order-none md:h-auto ${
+            {!focusedEmptyState ? <div className={`order-2 min-h-0 md:order-none md:h-auto ${
+              mobileInspectorExpanded ? 'h-60' : 'h-14'
+            } ${
               tool === 'product'
                 ? ''
                 : 'md:grid md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]'
@@ -675,6 +680,8 @@ export const EditorApp = () => {
                 }}
                 onReturnToDesign={() => setTool('select')}
                 mode={editorMode}
+                mobileExpanded={mobileInspectorExpanded}
+                onMobileExpandedChange={setMobileInspectorExpanded}
                 dispatch={workspace.dispatch}
               />
             </div> : null}
