@@ -61,6 +61,8 @@ import {
 } from '../components/editor/EditorApp';
 import {
   canvasPointToCropPoint,
+  canvasKeyboardFocusClasses,
+  cropKeyboardFocusClasses,
   getZoomedDesignRect,
   moveCropRectWithKeyboard,
   resizeCropRect,
@@ -745,6 +747,13 @@ test('keyboard crop controls support precise and larger movement steps', () => {
     resizeCropRectWithKeyboard(crop, 'bottom-right', 'ArrowDown', true),
     { x: 0.2, y: 0.25, width: 0.5, height: 0.45 },
   );
+});
+
+test('design canvas and crop frame expose visible keyboard focus styles', () => {
+  assert.match(canvasKeyboardFocusClasses, /focus-visible:ring-2/);
+  assert.match(canvasKeyboardFocusClasses, /focus-visible:ring-inset/);
+  assert.match(cropKeyboardFocusClasses, /focus-visible:ring-2/);
+  assert.match(cropKeyboardFocusClasses, /focus-visible:ring-inset/);
 });
 
 const createCompareVariations = (count: number): DesignVariation[] => {

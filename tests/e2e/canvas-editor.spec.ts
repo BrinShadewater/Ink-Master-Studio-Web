@@ -1528,6 +1528,8 @@ test('moves selected artwork and crop bounds with the keyboard', async ({ page }
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
   await canvas.focus();
+  await expect(page.getByText('Arrow keys move. Shift moves farther.', { exact: true })).toBeVisible();
+  await expect.poll(async () => canvas.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
   await canvas.press('ArrowRight');
   await expect.poll(async () => (await readPersistedEditorState(page, 'keyboard-canvas'))?.x)
     .toBeGreaterThan(0.5);
@@ -1554,6 +1556,8 @@ test('moves selected artwork and crop bounds with the keyboard', async ({ page }
   }).toEqual({ x: 0.01, y: 0, width: 0.99, height: 1 });
 
   await cropFrame.focus();
+  await expect(cropFrame.getByText('Arrow keys move. Shift moves farther.', { exact: true })).toBeVisible();
+  await expect.poll(async () => cropFrame.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
   await cropFrame.press('ArrowLeft');
   await expect.poll(async () => {
     const composition = await readPersistedComposition(page, 'keyboard-canvas');
@@ -3663,6 +3667,11 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
   await expect(dialog).toBeVisible();
+  const closeExport = dialog.getByRole('button', { name: 'Close export', exact: true });
+  const createPng = dialog.getByRole('button', { name: 'Create PNG', exact: true });
+  await expect.poll(async () => (await closeExport.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await closeExport.boundingBox())?.width).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await createPng.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
   await expect(dialog).toContainText('Proof only');
   await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
@@ -3674,7 +3683,9 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   await expect(dialog).toContainText('Transparency');
   await expect(dialog).toContainText('Proof only. Do not send this preset to production.');
   const downloadPromise = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const downloadPng = dialog.getByRole('button', { name: 'Download PNG', exact: true });
+  await expect.poll(async () => (await downloadPng.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await downloadPng.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-draft-proof\.png$/);
   const downloadPath = await download.path();

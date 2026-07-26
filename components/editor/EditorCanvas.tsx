@@ -155,6 +155,9 @@ export const resizeCropRect = (
 
 const cropKeyboardStep = (largeStep: boolean) => largeStep ? 0.05 : 0.01;
 
+export const canvasKeyboardFocusClasses = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300';
+export const cropKeyboardFocusClasses = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white';
+
 export const moveCropRectWithKeyboard = (
   crop: CropRect,
   key: string,
@@ -633,7 +636,7 @@ export const EditorCanvas = ({
         aria-label="Design canvas"
         aria-describedby={variation?.selectedLayerId ? 'editor-canvas-keyboard-help' : undefined}
         aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
-        className="block h-full min-h-0 w-full cursor-grab touch-none active:cursor-grabbing"
+        className={`peer block h-full min-h-0 w-full cursor-grab touch-none active:cursor-grabbing ${canvasKeyboardFocusClasses}`}
         tabIndex={variation ? 0 : -1}
         data-selected-layer-id={variation?.selectedLayerId || undefined}
         data-background-mode={backgroundMode}
@@ -650,10 +653,15 @@ export const EditorCanvas = ({
         onKeyUp={finishKeyboardChange}
         onBlur={onTransformEnd}
       />
+      {variation?.selectedLayerId ? (
+        <p className="pointer-events-none absolute bottom-3 left-1/2 z-30 hidden -translate-x-1/2 bg-neutral-950/90 px-3 py-2 text-xs font-medium text-white shadow-lg peer-focus-visible:block">
+          Arrow keys move. Shift moves farther.
+        </p>
+      ) : null}
       {tool === 'crop' && selectedImage && cropFrame ? (
         <div
           aria-label="Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step."
-          className="absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)]"
+          className={`group absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)] ${cropKeyboardFocusClasses}`}
           role="group"
           tabIndex={0}
           style={{
@@ -673,6 +681,9 @@ export const EditorCanvas = ({
           onBlur={onTransformEnd}
         >
           <span className="absolute -top-7 left-0 bg-emerald-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">Drag or resize</span>
+          <span className="pointer-events-none absolute bottom-2 left-1/2 hidden -translate-x-1/2 whitespace-nowrap bg-neutral-950/90 px-3 py-2 text-xs font-medium text-white shadow-lg group-focus-visible:block">
+            Arrow keys move. Shift moves farther.
+          </span>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((handle) => (
             <button
               key={handle}

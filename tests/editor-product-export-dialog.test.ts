@@ -32,4 +32,6 @@ test('Product export dialog presents the fixed production and proof PNG presets'
   assert.match(markup, /3000 x 3600 px, 300 DPI, 10 x 12 in/);
   assert.match(markup, /Create PNG/);
   assert.match(markup, /role="radiogroup"/);
+  assert.match(markup, /class="[^"]*h-11[^"]*w-11[^"]*"[^>]*aria-label="Close export"/);
+  assert.match(markup, /class="[^"]*h-11[^"]*"[^>]*>.*Create PNG/);
 });
