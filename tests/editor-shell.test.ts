@@ -242,6 +242,11 @@ test('top bar exposes export as a project command', () => {
   const enabled = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.doesNotMatch(enabled, /aria-label="Export"[^>]*disabled=""/);
   assert.match(enabled, /aria-label="Export"[\s\S]*?lucide-download/);
+  assert.match(enabled, /aria-label="Export"[\s\S]*?>Export<\/span>/);
+  assert.match(enabled, /aria-label="Open local projects"[\s\S]*?>Projects<\/span>/);
+  for (const group of ['project', 'variation', 'commands']) {
+    assert.match(enabled, new RegExp(`data-topbar-group="${group}"`));
+  }
   const disabled = renderToStaticMarkup(createElement(EditorTopBar, {
     ...topBarProps,
     projectId: null,
@@ -1189,8 +1194,8 @@ test('Basic toolbar omits unavailable image tools until artwork provides context
 
 test('top bar keeps local save progress visible', () => {
   for (const [saveStatus, label] of [
-    ['saving', 'Saving locally'],
-    ['saved', 'Saved locally'],
+    ['saving', 'Saving in this browser'],
+    ['saved', 'Saved in this browser'],
   ] as const) {
     const markup = renderToStaticMarkup(createElement(EditorTopBar, {
       ...topBarProps,

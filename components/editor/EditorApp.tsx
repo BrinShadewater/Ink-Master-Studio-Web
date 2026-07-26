@@ -424,7 +424,7 @@ export const EditorApp = () => {
     <main className={`relative grid h-dvh min-w-0 overflow-hidden bg-neutral-950 text-neutral-100 ${
       focusedEmptyState
         ? 'grid-rows-[56px_minmax(0,1fr)]'
-        : 'grid-rows-[112px_minmax(0,1fr)] md:grid-rows-[56px_minmax(0,1fr)]'
+        : 'grid-rows-[112px_minmax(0,1fr)] xl:grid-rows-[56px_minmax(0,1fr)]'
     }`}>
       <h1 className="sr-only">InkMaster Studio editor</h1>
       <EditorTopBar

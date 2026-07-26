@@ -1686,6 +1686,58 @@ test('Basic keeps Product visible and specialists behind More', async ({ page })
   await expect(page.locator('#editor-product-mode-disabled-reason')).toHaveCount(0);
 });
 
+test('top bar groups stay readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 900, 1200, 'top-bar-groups.png');
+  await expect(page.getByLabel('Project name')).toHaveValue('top-bar-groups');
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const layout = await page.evaluate(() => {
+      const header = document.querySelector('header');
+      const groups = [...document.querySelectorAll<HTMLElement>('[data-topbar-group]')];
+      if (!(header instanceof HTMLElement) || groups.length !== 3) {
+        throw new Error('Top bar groups are unavailable.');
+      }
+      const bounds = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+      };
+      return {
+        header: bounds(header),
+        groups: groups.map((group) => ({ name: group.dataset.topbarGroup, ...bounds(group) })),
+      };
+    });
+
+    for (const group of layout.groups) {
+      expect(group.left, `${viewport.width} ${group.name} left`).toBeGreaterThanOrEqual(layout.header.left - 1);
+      expect(group.right, `${viewport.width} ${group.name} right`).toBeLessThanOrEqual(layout.header.right + 1);
+      expect(group.top, `${viewport.width} ${group.name} top`).toBeGreaterThanOrEqual(layout.header.top - 1);
+      expect(group.bottom, `${viewport.width} ${group.name} bottom`).toBeLessThanOrEqual(layout.header.bottom + 1);
+    }
+    for (let first = 0; first < layout.groups.length; first += 1) {
+      for (let second = first + 1; second < layout.groups.length; second += 1) {
+        const a = layout.groups[first];
+        const b = layout.groups[second];
+        const overlapWidth = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const overlapHeight = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        expect(overlapWidth * overlapHeight, `${viewport.width} ${a.name} overlaps ${b.name}`).toBeLessThanOrEqual(1);
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByRole('button', { name: 'Export' }).getByText('Export', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open local projects' }).getByText('Projects', { exact: true })).toBeVisible();
+});
+
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
