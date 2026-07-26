@@ -393,6 +393,7 @@ export const EditorInspector = ({
           assetsById={assetsById}
           imagesById={imagesById}
           coordinator={coordinator}
+          mode={mode}
           dispatch={dispatch}
           error={lookError}
           onRetry={onRetryLook}

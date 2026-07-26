@@ -997,7 +997,12 @@ test('duplicating selected text from Adjust normalizes the duplicate to Select',
 
 const renderLooksInspector = (
   lookId: LookId,
-  options: { error?: string | null; seed?: number } = {},
+  options: {
+    error?: string | null;
+    seed?: number;
+    looks?: DesignVariation['looks'];
+    mode?: 'easy' | 'advanced';
+  } = {},
 ) => {
   const source = createEditorAsset('project-looks-inspector', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -1006,20 +1011,21 @@ const renderLooksInspector = (
   const variation = {
     ...project.variations[0],
     id: 'variation-looks-inspector',
-    looks: lookId === 'original' ? [] : [createDefaultLook(lookId, options.seed ?? 7)],
+    looks: options.looks ?? (lookId === 'original' ? [] : [createDefaultLook(lookId, options.seed ?? 7)]),
   };
   return renderToStaticMarkup(createElement(LooksInspector, {
     variation,
     assetsById: { [source.id]: source },
     imagesById: {},
     coordinator: {} as LookRenderCoordinator,
+    mode: options.mode,
     dispatch: () => undefined,
     error: options.error ?? null,
     onRetry: () => undefined,
   }));
 };
 
-test('Looks inspector renders nine actual selected-state previews and complete commands', () => {
+test('Looks inspector renders nine add previews and complete stack commands', () => {
   const markup = renderLooksInspector('distressed-print', {
     error: 'Look preview failed.',
     seed: 19,
@@ -1030,14 +1036,18 @@ test('Looks inspector renders nine actual selected-state previews and complete c
   for (const id of LOOK_IDS) {
     assert.match(markup, new RegExp(`data-look-id="${id}"`));
   }
-  assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
-  assert.match(markup, />Preset strength</);
+  assert.match(markup, />Applied finishes</);
+  assert.match(markup, /aria-label="Edit Distressed Print"/);
+  assert.match(markup, />Distressed Print strength</);
+  assert.match(markup, /aria-label="Move Distressed Print earlier"/);
+  assert.match(markup, /aria-label="Move Distressed Print later"/);
+  assert.match(markup, /aria-label="Remove Distressed Print"/);
   assert.match(markup, />Finish presets</);
-  assert.doesNotMatch(markup, />Before \/ after</);
+  assert.doesNotMatch(markup, />Original \/ finishes</);
   assert.match(markup, />Worn print texture and broken edges\.</);
   assert.match(markup, /<label[^>]*>Distress</);
-  assert.match(markup, /<summary[^>]*>More<\/summary>/);
-  assert.match(markup, /aria-label="Reset Look"/);
+  assert.doesNotMatch(markup, />More</);
+  assert.match(markup, /aria-label="Use Original"/);
   assert.match(markup, /aria-label="Reroll texture"/);
   assert.match(markup, /Look preview failed\./);
   assert.match(markup, /aria-label="Retry Look preview"/);
@@ -1115,8 +1125,8 @@ test('Look controls expose stable numeric bounds for every documented recipe par
     Array<[string, number, number]>,
   ]>) {
     const markup = renderLooksInspector(lookId);
-    assert.match(markup, /id="editor-look-strength"[^>]*type="range"[^>]*min="0"[^>]*max="100"/);
-    assert.match(markup, /id="editor-look-strength-number"[^>]*type="number"[^>]*min="0"[^>]*max="100"/);
+    assert.match(markup, new RegExp(`id="editor-look-${lookId}-strength"[^>]*type="range"[^>]*min="0"[^>]*max="100"`));
+    assert.match(markup, new RegExp(`id="editor-look-${lookId}-strength-number"[^>]*type="number"[^>]*min="0"[^>]*max="100"`));
     for (const [parameter, minimum, maximum] of controls) {
       assert.match(markup, new RegExp(
         `id="editor-look-${parameter}"[^>]*type="range"[^>]*min="${minimum}"[^>]*max="${maximum}"`,
@@ -1126,6 +1136,23 @@ test('Look controls expose stable numeric bounds for every documented recipe par
       ));
     }
   }
+});
+
+test('Basic keeps stack order and strength while Advanced reveals recipe controls', () => {
+  const looks = [createDefaultLook('duotone'), createDefaultLook('distressed-print', 9)];
+  const basic = renderLooksInspector('distressed-print', { looks, mode: 'easy' });
+  assert.match(basic, /aria-label="Edit Duotone"/);
+  assert.match(basic, /aria-label="Edit Distressed Print"/);
+  assert.match(basic, /aria-label="Move Duotone later"/);
+  assert.match(basic, /aria-label="Remove Distressed Print"/);
+  assert.match(basic, />Distressed Print strength</);
+  assert.doesNotMatch(basic, /<label[^>]*>Distress</);
+  assert.doesNotMatch(basic, />More</);
+  assert.match(basic, /Recommended next: Open Product/);
+
+  const advanced = renderLooksInspector('distressed-print', { looks, mode: 'advanced' });
+  assert.match(advanced, /<label[^>]*>Distress</);
+  assert.match(advanced, /aria-label="Reroll texture"/);
 });
 
 test('Duotone and Halftone expose native swatches and Halftone background modes', () => {

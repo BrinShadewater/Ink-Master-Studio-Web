@@ -53,12 +53,12 @@ export const CanvasBeforeAfter = ({
             </div>
           </div>
           <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-px bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.75)]" style={{ left: `${position}%` }} />
-          <span className="absolute left-3 top-3 bg-[#101820]/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">Before</span>
-          <span className="absolute right-3 top-3 bg-[#101820]/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">After</span>
+          <span className="absolute left-3 top-3 bg-[#101820]/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">Original</span>
+          <span className="absolute right-3 top-3 bg-[#101820]/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">Applied finishes</span>
         </div>
       </div>
       <div className="absolute inset-x-4 bottom-6 z-10 flex items-center gap-3 border border-[#355061] bg-[#101820]/90 px-3 py-2 backdrop-blur md:inset-x-8">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-300">Before / after</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-300">Original / finishes</span>
         <input
           aria-label="Before and after position"
           type="range"
