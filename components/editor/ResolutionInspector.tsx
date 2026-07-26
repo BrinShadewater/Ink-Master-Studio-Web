@@ -1,6 +1,11 @@
 import type { ResolutionWorkflow } from './useResolutionWorkflow';
 
-export const ResolutionInspector = ({ workflow }: { workflow: ResolutionWorkflow }) => (
+export interface ResolutionInspectorProps {
+  workflow: ResolutionWorkflow;
+  mode?: 'easy' | 'advanced';
+}
+
+export const ResolutionInspector = ({ workflow }: ResolutionInspectorProps) => (
   <>
     <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4"><h2 className="text-sm font-semibold text-neutral-100">Enhance resolution</h2></div>
     <div className="grid gap-5 p-4">

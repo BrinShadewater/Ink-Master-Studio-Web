@@ -124,17 +124,6 @@ const toolPurpose: Record<EditorTool, string> = {
   product: 'Check placement and color on the selected garment.',
 };
 
-const getAdvancedRecommendation = (layer: DesignLayer | null, tool: EditorTool) => {
-  if (!layer || tool !== 'select') return null;
-  if (layer.type === 'image') {
-    return 'Crop first if framing needs work. Use Remove background only for transparency.';
-  }
-  if (layer.type === 'text') {
-    return 'Place the text first. Use Looks only for a variation-wide finish.';
-  }
-  return 'Place the trace first. Use Looks only for a variation-wide finish.';
-};
-
 const basicRecommendations: Record<EditorTool, string> = {
   select: 'Crop if framing needs work, then preview the result on Product.',
   crop: 'Adjust only if the artwork needs correction, then open Product.',
@@ -147,14 +136,12 @@ const basicRecommendations: Record<EditorTool, string> = {
 };
 
 export const getInspectorWorkflowContext = (
-  mode: 'easy' | 'advanced',
-  layer: DesignLayer | null,
+  _mode: 'easy' | 'advanced',
+  _layer: DesignLayer | null,
   tool: EditorTool,
 ) => ({
   stage: tool === 'product' ? 'Step 3 of 3 · Preview and export' : 'Step 2 of 3 · Prepare',
-  recommendation: mode === 'easy'
-    ? basicRecommendations[tool]
-    : getAdvancedRecommendation(layer, tool),
+  recommendation: basicRecommendations[tool],
 });
 
 const InspectorFrame = ({
@@ -298,12 +285,13 @@ const ImageInspector = ({
         {tool === 'select' ? (
           <div className="grid gap-4">
             {mode === 'advanced' ? <h3 className="text-xs font-semibold text-neutral-200">Precise placement</h3> : null}
+            {mode === 'easy' ? <p className="text-xs leading-5 text-neutral-500">Drag the artwork on the canvas to place it. Use Advanced when you need exact position, size, rotation, opacity, or flips.</p> : null}
             <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} />
           </div>
         ) : null}
 
         {tool === 'crop' ? (
-          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{mode === 'advanced' ? (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
             <RangeControl
               key={edge}
               id={`editor-crop-${edge}`}
@@ -317,7 +305,7 @@ const ImageInspector = ({
               )}
               onEnd={endHistoryGroup}
             />
-          ))}</>
+          )) : null}</>
         ) : null}
 
         {tool === 'adjust' ? (
@@ -433,7 +421,7 @@ export const EditorInspector = ({
   }
 
   if (tool === 'enhance' && layer.type === 'image' && resolutionWorkflow) {
-    return <InspectorFrame {...frameProps}><ResolutionInspector workflow={resolutionWorkflow} /></InspectorFrame>;
+    return <InspectorFrame {...frameProps}><ResolutionInspector workflow={resolutionWorkflow} mode={mode} /></InspectorFrame>;
   }
 
   if (
@@ -476,6 +464,7 @@ export const EditorInspector = ({
             onBrushSizeChange={onBackgroundBrushSizeChange}
             onClearCorrections={backgroundRemoval.clearCorrections}
             onDone={onBackgroundDone}
+            mode={mode}
           />
         ) : (
           <ImageInspector layer={layer} asset={assetsById[layer.assetId]} tool={tool} mode={mode} dispatch={dispatch} />

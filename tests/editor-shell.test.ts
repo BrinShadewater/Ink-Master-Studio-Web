@@ -1294,6 +1294,76 @@ const renderInspector = (
   }));
 };
 
+const renderInspectorModeTool = (
+  tool: 'select' | 'crop' | 'adjust' | 'enhance' | 'remove-background' | 'trace',
+  mode: 'easy' | 'advanced',
+) => {
+  const source = createEditorAsset(`project-mode-${tool}-${mode}`, new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Mode matrix', source);
+  const layer = project.variations[0].layers[0];
+  if (layer.type !== 'image') throw new Error('Expected image layer.');
+  const traceSettings = createDefaultTraceSettings();
+  return renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer,
+    tool,
+    mode,
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    backgroundRemoval: {
+      status: 'idle', error: null, retry: () => undefined, pickColor: () => undefined,
+      commitStroke: async () => undefined, clearCorrections: async () => undefined,
+    },
+    resolutionWorkflow: {
+      status: 'idle', error: null, beforeAssetId: null, enhance: async () => undefined,
+    },
+    traceWorkflow: {
+      status: 'idle', error: null, stale: true, canGenerate: true, settings: traceSettings,
+      updateSettings: () => undefined, endSettingsEdit: () => undefined,
+      generate: () => undefined, retry: () => undefined,
+    },
+    dispatch: () => undefined,
+  }));
+};
+
+test('Basic and Advanced reveal real controls while preserving guidance', () => {
+  const expectations = {
+    select: {
+      basicHidden: ['editor-position-x', 'editor-position-y', 'editor-scale', 'editor-rotation', 'editor-opacity', 'editor-flip-horizontal', 'editor-flip-vertical'],
+      advancedShown: ['editor-position-x', 'editor-position-y', 'editor-scale', 'editor-rotation', 'editor-opacity', 'editor-flip-horizontal', 'editor-flip-vertical'],
+    },
+    crop: { basicHidden: ['editor-crop-left'], advancedShown: ['editor-crop-left'] },
+    adjust: { basicShown: ['editor-brightness'], advancedShown: ['editor-brightness'] },
+    enhance: { basicText: '2x enhance', advancedText: '2x enhance' },
+    'remove-background': { basicHidden: ['editor-background-tolerance'], advancedShown: ['editor-background-tolerance'] },
+    trace: { basicHidden: ['editor-trace-detail'], advancedShown: ['editor-trace-detail'] },
+  } as const;
+
+  for (const [tool, expectation] of Object.entries(expectations)) {
+    const basic = renderInspectorModeTool(tool as keyof typeof expectations, 'easy');
+    const advanced = renderInspectorModeTool(tool as keyof typeof expectations, 'advanced');
+    assert.match(basic, /Recommended next:/, `${tool} Basic should retain guidance`);
+    assert.match(advanced, /Recommended next:/, `${tool} Advanced should retain guidance`);
+    for (const id of 'basicHidden' in expectation ? expectation.basicHidden : []) {
+      assert.doesNotMatch(basic, new RegExp(`id="${id}"`), `${tool} Basic should hide ${id}`);
+    }
+    for (const id of 'basicShown' in expectation ? expectation.basicShown : []) {
+      assert.match(basic, new RegExp(`id="${id}"`), `${tool} Basic should show ${id}`);
+    }
+    for (const id of 'advancedShown' in expectation ? expectation.advancedShown : []) {
+      assert.match(advanced, new RegExp(`id="${id}"`), `${tool} Advanced should show ${id}`);
+    }
+    if ('basicText' in expectation) assert.match(basic, new RegExp(expectation.basicText));
+    if ('advancedText' in expectation) assert.match(advanced, new RegExp(expectation.advancedText));
+  }
+});
+
 test('Basic inspector preserves the three-step workflow after import', () => {
   const source = createEditorAsset('project-basic-workflow', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -1435,7 +1505,7 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.match(transformMarkup, /Print bench/);
   assert.match(transformMarkup, /Place, size, rotate, and align the selected layer/);
   assert.match(transformMarkup, /Recommended next:/);
-  assert.match(transformMarkup, /Crop first if framing needs work/);
+  assert.match(transformMarkup, /Crop if framing needs work, then preview the result on Product/);
   assert.match(transformMarkup, /class="[^"]*h-11[^"]*"[^>]*>Reset/);
   assert.match(transformMarkup, /id="editor-position-x"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-position-y"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
@@ -1445,7 +1515,7 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
 
   const cropMarkup = renderInspector(layer, 'crop');
   assert.match(cropMarkup, /Reframe image artwork without changing the canvas size/);
-  assert.doesNotMatch(cropMarkup, /Recommended next:/);
+  assert.match(cropMarkup, /Recommended next:/);
   assert.equal(cropMarkup.match(/class="[^"]*h-11[^"]*"[^>]*>[^<]*<\/button>/g)?.length, 7);
   for (const edge of ['left', 'top', 'right', 'bottom']) {
     assert.match(cropMarkup, new RegExp(`id="editor-crop-${edge}"[^>]*min="0"[^>]*max="45"[^>]*step="1"`));
@@ -1477,9 +1547,8 @@ test('Basic image inspector keeps placement direct-manipulation-first', () => {
     onRetryLook: () => undefined,
     dispatch: () => undefined,
   }));
-  assert.doesNotMatch(markup, /editor-position-x|editor-position-y|editor-scale/);
-  assert.match(markup, /editor-rotation/);
-  assert.match(markup, /editor-opacity/);
+  assert.doesNotMatch(markup, /editor-position-x|editor-position-y|editor-scale|editor-rotation|editor-opacity|editor-flip-horizontal|editor-flip-vertical/);
+  assert.match(markup, /Drag the artwork on the canvas to place it/);
 });
 
 test('project drawer closes only after the requested project opens successfully', async () => {

@@ -17,6 +17,7 @@ export interface BackgroundRemovalInspectorProps {
   onBrushSizeChange: (size: number) => void;
   onClearCorrections: () => Promise<void>;
   onDone: () => void;
+  mode?: 'easy' | 'advanced';
 }
 
 const segmentedClass = (selected: boolean) =>
@@ -40,6 +41,7 @@ export const BackgroundRemovalInspector = ({
   onBrushSizeChange,
   onClearCorrections,
   onDone,
+  mode = 'advanced',
 }: BackgroundRemovalInspectorProps) => {
   const settings = layer.backgroundRemoval;
   const processing = status === 'processing';
@@ -92,8 +94,17 @@ export const BackgroundRemovalInspector = ({
             Pick color
           </button>
         </div>
+        {settings.pickedColor ? (
+          <div className="flex items-center justify-between gap-3 border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300">
+            <span>Selected color</span>
+            <span className="flex items-center gap-2 font-mono uppercase">
+              <span aria-hidden="true" className="h-5 w-5 border border-neutral-600" style={{ backgroundColor: settings.pickedColor }} />
+              {settings.pickedColor}
+            </span>
+          </div>
+        ) : null}
 
-        <RangeControl
+        {mode === 'advanced' ? <><RangeControl
           id="editor-background-tolerance"
           label="Tolerance"
           value={settings.tolerance}
@@ -150,6 +161,7 @@ export const BackgroundRemovalInspector = ({
           onChange={onBrushSizeChange}
           onEnd={() => undefined}
         />
+        </> : null}
 
         {status === 'processing' ? (
           <p className="text-xs text-neutral-400" role="status">Removing background...</p>
@@ -161,7 +173,7 @@ export const BackgroundRemovalInspector = ({
           </div>
         ) : null}
 
-        <div className="grid gap-2">
+        {mode === 'advanced' ? <div className="grid gap-2">
           <button
             type="button"
             className={commandClass}
@@ -182,7 +194,7 @@ export const BackgroundRemovalInspector = ({
           >
             Reset background
           </button>
-        </div>
+        </div> : null}
       </div>
     </>
   );
