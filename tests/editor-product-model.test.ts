@@ -5,6 +5,7 @@ import {
   duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
+  normalizeTShirtMockupSlug,
   normalizeTShirtProductVariants,
 } from '../editor/productModel';
 
@@ -115,4 +116,9 @@ test('duplicates a product under fresh identities without sharing placement', ()
   assert.equal(source.placement.x, 0.25);
   assert.notEqual(duplicate.placement, source.placement);
   assert.notEqual(duplicate.colorVariationIds, source.colorVariationIds);
+});
+
+test('normalizes White as a supported shirt color', () => {
+  assert.equal(normalizeTShirtMockupSlug('white'), 'white');
+  assert.equal(normalizeTShirtMockupSlug('missing'), 'black');
 });

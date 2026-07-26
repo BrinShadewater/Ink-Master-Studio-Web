@@ -30,6 +30,8 @@ export interface ProductInspectorProps {
   artworkUrl?: string | null;
   onEnhanceResolution?: () => void;
   onRemoveBackground?: () => void;
+  onExport?: () => void;
+  mode?: 'easy' | 'advanced';
   dispatch: (command: EditorCommand) => void;
   onRetry: () => void;
   onReturnToDesign: () => void;
@@ -60,7 +62,7 @@ const rotationBounds = {
   step: 1,
 } as const;
 
-const actionClass = 'h-9 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const actionClass = 'h-11 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 const darkGarmentSlugs = new Set(['black', 'navy', 'charcoal', 'burgundy', 'cardinal', 'forest-green', 'military-green', 'red', 'royal-blue']);
 
 export const getProductReadinessEstimate = (
@@ -73,11 +75,11 @@ export const getProductReadinessEstimate = (
     .map((layer) => assetsById?.[layer.assetId])
     .filter((asset): asset is EditorAsset => Boolean(asset)) ?? [];
   if (imageAssets.length === 0) return null;
-  const sourceSide = Math.min(...imageAssets.map((asset) => Math.min(asset.width, asset.height)));
+  const smallestSourceEdge = Math.min(...imageAssets.map((asset) => Math.min(asset.width, asset.height)));
   const preset = getTShirtExportPreset('printify-full-front');
   const renderedSide = resolveTShirtExportGeometry(preset, product.placement).renderedSide;
-  const scale = renderedSide / Math.max(1, sourceSide);
-  return { sourceSide, scale, status: scale <= 1 ? 'ready' as const : scale <= 2 ? 'review' as const : 'enhance' as const };
+  const scale = renderedSide / Math.max(1, smallestSourceEdge);
+  return { smallestSourceEdge, scale, status: scale <= 1 ? 'ready' as const : scale <= 2 ? 'review' as const : 'enhance' as const };
 };
 
 export const ProductInspector = ({
@@ -93,6 +95,8 @@ export const ProductInspector = ({
   artworkUrl = null,
   onEnhanceResolution = () => undefined,
   onRemoveBackground = () => undefined,
+  onExport = () => undefined,
+  mode = 'advanced',
   dispatch,
   onRetry,
   onReturnToDesign,
@@ -128,6 +132,23 @@ export const ProductInspector = ({
   const contrastRisk = darkGarmentSlugs.has(product.mockupSlug)
     ? analysis?.contrastRisk.darkGarment
     : analysis?.contrastRisk.lightGarment;
+  const needsBackgroundRemoval = Boolean(
+    analysis && !analysis.hasTransparency && analysis.edgeBackground.isUniform,
+  );
+  const readinessTitle = readiness?.status === 'ready'
+    ? 'Ready at this size'
+    : readiness?.status === 'review'
+      ? 'Check sharpness at this size'
+      : readiness
+        ? 'Artwork needs more resolution'
+        : 'Readiness unavailable';
+  const readinessDescription = readiness?.status === 'ready'
+    ? 'The export uses less than the available artwork resolution.'
+    : readiness?.status === 'review'
+      ? 'The export enlarges the artwork. Check small details before production.'
+      : readiness
+        ? 'The export enlarges the artwork enough to soften visible details.'
+        : 'Add raster artwork to calculate print readiness.';
 
   return (
     <>
@@ -146,12 +167,34 @@ export const ProductInspector = ({
       </div>
 
       <div className="grid gap-5 p-4">
+        <section className={`grid gap-3 border p-3 ${readiness?.status === 'ready' ? 'border-emerald-900/70 bg-emerald-950/20' : readiness?.status === 'review' ? 'border-amber-900/70 bg-amber-950/20' : 'border-red-900/70 bg-red-950/20'}`} aria-labelledby="product-readiness-title">
+          <div className="flex items-center justify-between gap-3">
+            <h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">{readinessTitle}</h3>
+            <span className={`text-[10px] font-semibold uppercase ${readiness?.status === 'ready' ? 'text-emerald-300' : readiness?.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>
+              {readiness?.status === 'ready' ? 'Ready' : readiness?.status === 'review' ? 'Review' : 'Improve'}
+            </span>
+          </div>
+          <p className="text-xs leading-5 text-neutral-300">{readinessDescription}</p>
+          {mode === 'advanced' && readiness ? (
+            <p className="text-xs leading-5 text-neutral-500">
+              Smallest source edge: {readiness.smallestSourceEdge}px. The production PNG uses {readiness.scale.toFixed(2)}x of that available detail.
+            </p>
+          ) : null}
+          {needsBackgroundRemoval ? (
+            <button type="button" className={`${actionClass} justify-self-start`} onClick={onRemoveBackground}>Remove background</button>
+          ) : readiness?.status === 'ready' ? (
+            <button type="button" className={`${actionClass} justify-self-start border-emerald-500 bg-emerald-500 text-neutral-950 hover:border-emerald-300 hover:text-neutral-950`} onClick={onExport}>Create print-ready PNG</button>
+          ) : (
+            <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button>
+          )}
+        </section>
+
         <section aria-labelledby="product-color-title" className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
             <h3 id="product-color-title" className="text-xs font-medium text-neutral-300">Shirt color</h3>
             <span className="text-xs text-neutral-400">{activeMockup.name}</span>
           </div>
-          <div className="grid grid-cols-6 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {TSHIRT_MOCKUPS.map((mockup) => {
               const selected = mockup.slug === product.mockupSlug;
               return (
@@ -177,7 +220,7 @@ export const ProductInspector = ({
           <p className="text-xs leading-5 text-neutral-500">Choose a garment color, then drag the artwork directly on the mockup to place it within the printable area.</p>
         </section>
 
-        <section className="grid gap-3" aria-labelledby="product-artwork-title">
+        {mode === 'advanced' ? <><section className="grid gap-3" aria-labelledby="product-artwork-title">
           <div>
             <h3 id="product-artwork-title" className="text-xs font-medium text-neutral-300">Artwork for {activeMockup.name}</h3>
             <p className="mt-1 text-xs leading-5 text-neutral-500">Assign a light or dark design to this shirt color without creating another product.</p>
@@ -205,40 +248,34 @@ export const ProductInspector = ({
           <div className="grid grid-cols-2 border border-neutral-700" role="group" aria-label="Mockup color mode">
             {(['rgb', 'print'] as const).map((mode) => <button key={mode} type="button" className={`h-9 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${previewMode === mode ? 'bg-emerald-500 text-neutral-950' : 'bg-neutral-950 text-neutral-300 hover:bg-neutral-800'}`} aria-pressed={previewMode === mode} onClick={() => onPreviewModeChange(mode)}>{mode === 'rgb' ? 'RGB' : 'Print intent'}</button>)}
           </div>
-        </section>
+        </section></> : null}
 
-        {readiness ? <section className={`grid gap-2 border p-3 ${readiness.status === 'ready' ? 'border-emerald-900/70 bg-emerald-950/20' : readiness.status === 'review' ? 'border-amber-900/70 bg-amber-950/20' : 'border-red-900/70 bg-red-950/20'}`} aria-labelledby="product-readiness-title">
-          <div className="flex items-center justify-between gap-3"><h3 id="product-readiness-title" className="text-xs font-medium text-neutral-100">Full-front print check</h3><span className={`text-[10px] font-semibold uppercase ${readiness.status === 'ready' ? 'text-emerald-300' : readiness.status === 'review' ? 'text-amber-300' : 'text-red-300'}`}>{readiness.status === 'ready' ? 'Good' : readiness.status === 'review' ? 'Review' : 'Enhance'}</span></div>
-          <p className="text-xs leading-5 text-neutral-400">Largest source edge: {readiness.sourceSide}px. Estimated scale for a 15 in x 18 in full-front PNG: {readiness.scale.toFixed(2)}x.</p>
-          {readiness.status === 'enhance' ? <button type="button" className={`${actionClass} justify-self-start`} onClick={onEnhanceResolution}>Enhance resolution</button> : null}
-        </section> : null}
-
-        {analysis ? <section className="grid gap-3 border border-neutral-800 bg-neutral-950/70 p-3" aria-labelledby="print-lens-title">
+        {mode === 'advanced' ? <section className="grid gap-3 border border-neutral-800 bg-neutral-950/70 p-3" aria-labelledby="artwork-checks-title">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 id="print-lens-title" className="text-xs font-medium text-neutral-100">Print Lens</h3>
-              <p className="mt-1 text-xs leading-5 text-neutral-500">Checks the current art against this garment.</p>
+              <h3 id="artwork-checks-title" className="text-xs font-medium text-neutral-100">Artwork checks</h3>
+              <p className="mt-1 text-xs leading-5 text-neutral-500">Check the background, shirt contrast, and print color count.</p>
             </div>
             <span className="text-[10px] font-semibold uppercase text-cyan-300">Live check</span>
           </div>
-          <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
+          {analysis ? <><div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
             <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Background</span><span className={analysis.hasTransparency ? 'font-medium text-emerald-300' : analysis.edgeBackground.isUniform ? 'font-medium text-amber-300' : 'font-medium text-neutral-300'}>{analysis.hasTransparency ? 'Transparent' : analysis.edgeBackground.isUniform ? 'Review edge' : 'Mixed edge'}</span></div>
             {!analysis.hasTransparency && analysis.edgeBackground.isUniform ? <div className="flex items-center justify-between gap-3"><span className="text-neutral-500">Uniform {analysis.edgeBackground.tone} edge detected.</span><button type="button" className="text-xs font-medium text-cyan-300 hover:text-cyan-200" onClick={onRemoveBackground}>Remove background</button></div> : null}
           </div>
           <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Garment contrast</span><span className={contrastRisk ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{contrastRisk ? 'May blend in' : 'Visible'}</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Contrast on this shirt</span><span className={contrastRisk ? 'font-medium text-amber-300' : 'font-medium text-emerald-300'}>{contrastRisk ? 'May blend in' : 'Visible'}</span></div>
             <p className="text-neutral-500">{darkGarmentSlugs.has(product.mockupSlug) ? 'Checked against a dark garment.' : 'Checked against a light garment.'}</p>
           </div>
           <div className="grid gap-1 border-t border-neutral-800 pt-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Color complexity</span><span className="font-medium text-neutral-200">{analysis.palette.length} sampled colors</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-neutral-400">Print color count</span><span className="font-medium text-neutral-200">{analysis.palette.length} sampled colors</span></div>
             <p className="text-neutral-500">Vector trace: {analysis.vectorSuitability === 'strong' ? 'strong candidate' : analysis.vectorSuitability === 'possible' ? 'possible candidate' : 'best kept raster'}.</p>
-          </div>
+          </div></> : <p role="status" className="border-t border-neutral-800 pt-3 text-xs text-neutral-500">Analyzing artwork checks...</p>}
         </section> : null}
 
         <section aria-labelledby="product-placement-title" className="grid gap-3">
           <div>
             <h3 id="product-placement-title" className="text-xs font-medium text-neutral-300">Artwork placement</h3>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">Use the canvas for visual placement. These controls are for a precise final adjustment.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Use the canvas to move and resize the artwork. Center and Fit provide quick starting points.</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -264,7 +301,7 @@ export const ProductInspector = ({
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-3">
+        {mode === 'advanced' ? <><div className="grid grid-cols-2 gap-3">
           <NumberControl
             id="product-position-x"
             label="X position"
@@ -312,7 +349,7 @@ export const ProductInspector = ({
             'product-rotation',
           )}
           onEnd={endHistoryGroup}
-        />
+        /></> : null}
 
         {failure ? (
           <div role="alert" className="grid gap-3 border border-red-900 bg-red-950/40 p-3 text-xs text-red-200">

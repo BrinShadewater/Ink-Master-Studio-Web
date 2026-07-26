@@ -60,6 +60,19 @@ test('renders a labeled photographic shirt with undarkened transparent artwork a
   assert.match(markup, /bg-\[#718481\]/);
 });
 
+test('renders the transparent White shirt without dark-garment blending', () => {
+  const props = createProps();
+  const white = { ...props.product, mockupSlug: 'white' as const };
+  const markup = renderToStaticMarkup(createElement(ProductCanvas, {
+    ...props,
+    product: white,
+    displayedMockup: getTShirtMockup('white'),
+  }));
+  assert.match(markup, /alt="White T-shirt"/);
+  assert.match(markup, /src="\/landing-tee-white\.webp"/);
+  assert.match(markup, /mix-blend-mode:normal/);
+});
+
 test('announces initial loading and exposes recovery for initial shirt failure', () => {
   const loading = renderToStaticMarkup(createElement(ProductCanvas, createProps({
     displayedMockup: null,

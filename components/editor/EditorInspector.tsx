@@ -93,6 +93,7 @@ export interface EditorInspectorProps {
   productArtworkUrl?: string | null;
   onEnhanceProductArtwork?: () => void;
   onRemoveProductArtworkBackground?: () => void;
+  onProductExport?: () => void;
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
   mode?: 'easy' | 'advanced';
@@ -368,6 +369,7 @@ export const EditorInspector = ({
   productArtworkUrl = null,
   onEnhanceProductArtwork = () => undefined,
   onRemoveProductArtworkBackground = () => undefined,
+  onProductExport = () => undefined,
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
   mode = 'advanced',
@@ -392,6 +394,8 @@ export const EditorInspector = ({
           artworkUrl={productArtworkUrl}
           onEnhanceResolution={onEnhanceProductArtwork}
           onRemoveBackground={onRemoveProductArtworkBackground}
+          onExport={onProductExport}
+          mode={mode}
           dispatch={dispatch}
           onRetry={onRetryProduct}
           onReturnToDesign={onReturnToDesign}

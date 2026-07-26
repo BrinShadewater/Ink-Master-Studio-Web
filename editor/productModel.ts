@@ -10,6 +10,7 @@ export const TSHIRT_MOCKUP_SLUGS = [
   'orange',
   'red',
   'royal-blue',
+  'white',
 ] as const;
 
 export type TShirtMockupSlug = typeof TSHIRT_MOCKUP_SLUGS[number];

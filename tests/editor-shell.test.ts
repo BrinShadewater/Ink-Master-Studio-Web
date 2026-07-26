@@ -453,7 +453,7 @@ test('product inspector exposes the complete shirt catalog and bounded placement
 
   assert.match(markup, /<h2[^>]*>Product<\/h2>/);
   assert.match(markup, />Black<\/span>/);
-  assert.equal(markup.match(/data-product-swatch="true"/g)?.length, 11);
+  assert.equal(markup.match(/data-product-swatch="true"/g)?.length, 12);
   for (const mockup of TSHIRT_MOCKUPS) {
     assert.match(markup, new RegExp(`aria-label="${mockup.name}"[^>]*title="${mockup.name}"`));
   }
@@ -481,8 +481,41 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   });
   assert.deepEqual(
     getProductReadinessEstimate(project.variations[0], product, { [source.id]: source }),
-    { sourceSide: 80, scale: 40.5, status: 'enhance' },
+    { smallestSourceEdge: 80, scale: 40.5, status: 'enhance' },
   );
+});
+
+test('Product Basic leads with readiness and keeps precision in Advanced', () => {
+  const source = createEditorAsset('project-product-ready', new Blob(['source']), {
+    name: 'ready.png', width: 8333, height: 8333,
+  });
+  const project = createEditorProject('Product ready', source);
+  const product = findTShirtProduct(project.productVariants, project.activeVariationId);
+  const props = {
+    product,
+    mockupStatus: 'ready' as const,
+    mockupError: null,
+    artworkError: null,
+    artworkVariation: project.variations[0],
+    assetsById: { [source.id]: source },
+    dispatch: () => undefined,
+    onRetry: () => undefined,
+    onReturnToDesign: () => undefined,
+    onExport: () => undefined,
+  };
+  const basic = renderToStaticMarkup(createElement(ProductInspector, { ...props, mode: 'easy' }));
+  assert.ok(basic.indexOf('Ready at this size') < basic.indexOf('Shirt color'));
+  assert.match(basic, /The export uses less than the available artwork resolution/);
+  assert.match(basic, />Create print-ready PNG<\/button>/);
+  assert.doesNotMatch(basic, /Artwork checks|Artwork for Black|Mockup color mode|product-position-x|product-scale/);
+  assert.doesNotMatch(basic, /Largest source edge|Estimated scale|Print Lens/);
+
+  const advanced = renderToStaticMarkup(createElement(ProductInspector, { ...props, mode: 'advanced' }));
+  assert.match(advanced, /Artwork checks/);
+  assert.match(advanced, /aria-label="Artwork for Black"/);
+  assert.match(advanced, /aria-label="Mockup color mode"/);
+  assert.match(advanced, /id="product-position-x"/);
+  assert.match(advanced, /id="product-scale"/);
 });
 
 test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {

@@ -285,7 +285,7 @@ export const ProductCanvas = ({
             top: mockupRect.y,
             width: mockupRect.width,
             height: mockupRect.height,
-            mixBlendMode: 'multiply',
+            mixBlendMode: placementMockup.slug === 'white' ? 'normal' : 'multiply',
             filter: previewMode === 'print' ? 'saturate(.78) contrast(.94) brightness(.94)' : undefined,
           }}
         />

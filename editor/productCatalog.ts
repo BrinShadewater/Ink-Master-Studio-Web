@@ -37,6 +37,7 @@ const catalogRows = [
   ['orange', 'Orange', '/mockups/mockup-orange.webp', '#D4620A'],
   ['red', 'Red', '/mockups/mockup-red.webp', '#C0392B'],
   ['royal-blue', 'Royal blue', '/mockups/mockup-royalblue.webp', '#2255A4'],
+  ['white', 'White', '/landing-tee-white.webp', '#F8FAFC'],
 ] as const satisfies readonly [
   TShirtMockupSlug,
   string,

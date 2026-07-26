@@ -673,6 +673,7 @@ export const EditorApp = () => {
                   workspace.dispatch({ type: 'select-layer', layerId: productArtworkImageLayer.id });
                   setTool('remove-background');
                 }}
+                onProductExport={() => setExportOpen(true)}
                 onRetryProduct={() => {
                   productMockup.retry();
                   setProductArtworkRetryGeneration((current) => current + 1);

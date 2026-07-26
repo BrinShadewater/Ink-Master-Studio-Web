@@ -57,7 +57,8 @@ interface TShirtProductSnapshot {
     | 'navy'
     | 'orange'
     | 'red'
-    | 'royal-blue';
+    | 'royal-blue'
+    | 'white';
   placement: {
     x: number;
     y: number;
@@ -1766,6 +1767,49 @@ test('Product canvas supports keyboard placement and resize', async ({ page }) =
     const workspace = await readPersistedPhase3AWorkspace(page, projectName);
     return workspace?.productVariants[0].placement;
   }).toEqual({ x: 0.51, y: 0.55, scale: 0.73, rotation: 0 });
+});
+
+test('Product Basic leads with readiness and White persists', async ({ page }) => {
+  const projectName = 'product-white';
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1800, 1800, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  const readiness = inspector.getByRole('heading', { name: /Ready at this size|Check sharpness at this size|Artwork needs more resolution/ });
+  const shirtColor = inspector.getByRole('heading', { name: 'Shirt color', exact: true });
+  await expect(readiness).toBeVisible();
+  await expect(shirtColor).toBeVisible();
+  const readinessBox = await readiness.boundingBox();
+  const colorBox = await shirtColor.boundingBox();
+  expect(readinessBox!.y).toBeLessThan(colorBox!.y);
+  await expect(inspector.getByLabel('Artwork for Black')).toHaveCount(0);
+  await expect(inspector.getByLabel('Mockup color mode')).toHaveCount(0);
+  await expect(inspector.getByLabel('X position', { exact: true })).toHaveCount(0);
+
+  await inspector.getByRole('button', { name: 'White', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].mockupSlug;
+  }).toBe('white');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(inspector.getByRole('heading', { name: 'Artwork checks', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('combobox', { name: 'Artwork for White' })).toBeVisible();
+  await expect(inspector.getByLabel('Mockup color mode')).toBeVisible();
+  await expect(inspector.getByLabel('X position', { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+  await expect(readiness).toBeVisible();
 });
 
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
