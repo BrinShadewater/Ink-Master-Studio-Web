@@ -40,7 +40,7 @@ import { useEditorWorkspace } from '../../editor/useEditorWorkspace';
 import { EditorCanvas } from './EditorCanvas';
 import { CompareBoard } from './CompareBoard';
 import { EditorInspector } from './EditorInspector';
-import { LayerDrawer, LayerPanel } from './LayerPanel';
+import { LayerDrawer } from './LayerPanel';
 import { EditorToolbar } from './EditorToolbar';
 import { EditorTopBar } from './EditorTopBar';
 import { ProjectDrawer } from './ProjectDrawer';
@@ -148,7 +148,6 @@ export const EditorApp = () => {
   const compareButtonRef = useRef<HTMLButtonElement>(null);
   const activeToolButtonRef = useRef<HTMLButtonElement>(null);
   const pendingCompareExitFocusRef = useRef<'compare' | 'tool' | null>(null);
-  const desktopLayersPanelRef = useRef<HTMLElement>(null);
   const layerDrawerReturnFocusRef = useRef<HTMLElement>(null);
   const previousPreviewScopeRef = useRef<VariationPreviewScope | null>(null);
   const project = workspace.history?.present ?? null;
@@ -378,19 +377,6 @@ export const EditorApp = () => {
   }, [project?.id, variation?.id]);
 
   useEffect(() => {
-    if (!layersOpen) return undefined;
-    const desktopQuery = window.matchMedia('(min-width: 768px)');
-    const closeAtDesktopBreakpoint = () => {
-      if (!desktopQuery.matches) return;
-      layerDrawerReturnFocusRef.current = desktopLayersPanelRef.current;
-      setLayersOpen(false);
-    };
-    closeAtDesktopBreakpoint();
-    desktopQuery.addEventListener('change', closeAtDesktopBreakpoint);
-    return () => desktopQuery.removeEventListener('change', closeAtDesktopBreakpoint);
-  }, [layersOpen]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || isTextControl(event.target)) return;
       const key = event.key.toLowerCase();
@@ -615,25 +601,7 @@ export const EditorApp = () => {
             </div>
             {!focusedEmptyState ? <div className={`order-2 min-h-0 md:order-none md:h-auto ${
               mobileInspectorExpanded ? 'h-60' : 'h-14'
-            } ${
-              tool === 'product'
-                ? ''
-                : 'md:grid md:grid-rows-[minmax(180px,320px)_minmax(0,1fr)]'
             }`}>
-              {tool !== 'product' ? (
-                <LayerPanel
-                  className="hidden border-b border-neutral-800 md:flex md:border-l"
-                  panelRef={desktopLayersPanelRef}
-                  focusable
-                  variation={variation}
-                  onAddImage={() => layerFileInputRef.current?.click()}
-                  onAddText={() => {
-                    addTextLayerFromPanel(workspace.dispatch, closeLayers);
-                  }}
-                  onSelectLayer={(layer) => selectLayerFromPanel(layer, workspace.dispatch)}
-                  dispatch={workspace.dispatch}
-                />
-              ) : null}
               <EditorInspector
                 project={project}
                 variation={variation}

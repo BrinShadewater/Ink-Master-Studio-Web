@@ -190,16 +190,10 @@ const InspectorFrame = ({
       </div>
       <div className="hidden shrink-0 border-b border-neutral-800 bg-neutral-950/55 px-4 py-2 md:block">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-studio-measure">Print bench</p>
-          <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+          <p className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-studio-measure">{mode === 'easy' ? workflow.stage : 'Advanced'}</p>
         </div>
-        <p className="mt-0.5 text-xs leading-4 text-neutral-400">{toolPurpose[tool]}</p>
-        {workflow.recommendation ? (
-          <p className="mt-1 border-t border-neutral-800 pt-1 text-xs leading-4 text-neutral-300">
-            <span className="font-semibold text-emerald-300">Recommended next: </span>
-            {workflow.recommendation}
-          </p>
-        ) : null}
+        <p className="mt-0.5 text-xs leading-4 text-neutral-500">{toolPurpose[tool]}</p>
       </div>
       <div
         id="editor-inspector-content"

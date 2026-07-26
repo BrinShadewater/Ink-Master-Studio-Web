@@ -52,7 +52,7 @@ const toolGroups: Array<{ label: string; tools: ToolbarTool[] }> = [
     label: 'Prepare artwork',
     tools: [
       { id: 'enhance', label: 'Enhance resolution', shortLabel: 'Enhance', icon: Maximize2 },
-      { id: 'remove-background', label: 'Remove background', shortLabel: 'Cutout', icon: WandSparkles },
+      { id: 'remove-background', label: 'Remove background', shortLabel: 'Clean', icon: WandSparkles },
       { id: 'trace', label: 'Trace', shortLabel: 'Trace', icon: ScanLine },
     ],
   },
@@ -66,14 +66,8 @@ const toolGroups: Array<{ label: string; tools: ToolbarTool[] }> = [
 ];
 
 const toolsById = new Map(toolGroups.flatMap(({ tools }) => tools).map((item) => [item.id, item]));
-const basicSpecialistTools = new Set<EditorTool>([
-  'adjust',
-  'enhance',
-  'remove-background',
-  'trace',
-  'looks',
-]);
-const moreTools = ['adjust', 'enhance', 'remove-background', 'trace'] as const;
+const basicTools = ['select', 'remove-background', 'crop', 'enhance', 'looks', 'product'] as const;
+const moreTools = ['adjust', 'trace'] as const;
 
 const toolButtonClass = 'flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:h-14 md:w-[72px]';
 
@@ -91,14 +85,9 @@ export const EditorToolbar = ({
   compareButtonRef,
   activeToolButtonRef,
   mode = 'advanced',
-  basicPreparationTool,
+  basicPreparationTool: _basicPreparationTool,
 }: EditorToolbarProps) => {
   const [moreOpen, setMoreOpen] = useState(false);
-  const activePreparationTool = basicSpecialistTools.has(tool)
-    ? tool
-    : basicPreparationTool && basicSpecialistTools.has(basicPreparationTool)
-      ? basicPreparationTool
-      : 'crop';
 
   const getToolState = (id: EditorTool) => {
     const productUnavailable = id === 'product' && !hasProject;
@@ -184,14 +173,11 @@ export const EditorToolbar = ({
 
       {mode === 'easy' ? (
         <div className="flex shrink-0 items-center gap-1 md:flex-col md:gap-2" role="group" aria-label="Guided workflow">
-          {renderToolButton(toolsById.get('select')!, 'Guided workflow', true)}
-          {(hasImageLayer || activePreparationTool === 'looks')
-            ? renderToolButton(toolsById.get(activePreparationTool)!, 'Guided workflow', true)
-            : null}
-          {hasImageLayer && activePreparationTool !== 'looks'
-            ? renderToolButton(toolsById.get('looks')!, 'Finish artwork', true)
-            : null}
-          {renderToolButton(toolsById.get('product')!, 'Guided workflow', true)}
+          {basicTools.map((id) => renderToolButton(
+            toolsById.get(id)!,
+            id === 'remove-background' ? 'Prepare artwork' : id === 'looks' ? 'Finish artwork' : 'Guided workflow',
+            true,
+          ))}
           {layersButton(true)}
           <div className="relative shrink-0">
             <button

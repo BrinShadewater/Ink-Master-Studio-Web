@@ -1,10 +1,9 @@
 import {
-  CopyPlus,
   Download,
   FolderOpen,
+  MoreHorizontal,
   Redo2,
   RefreshCw,
-  Trash2,
   Undo2,
   Upload,
   type LucideIcon,
@@ -207,8 +206,8 @@ export const EditorTopBar = ({
   }
 
   return (
-    <header className="grid h-28 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:px-3 xl:flex xl:h-14 xl:items-center xl:gap-2">
-      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 self-center xl:w-64 xl:flex-none" data-topbar-group="project" aria-label="Project details">
+    <header className="relative flex h-14 min-w-0 items-center gap-2 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:px-3">
+      <div className="flex min-w-0 items-center gap-2" data-topbar-group="project" aria-label="Project details">
         <a href="/" aria-label="InkMaster Studio home" className="flex h-11 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
           <img src="/logo/logo-mark.webp" alt="" className="h-10 w-10 object-contain" />
           <span className="hidden leading-[0.85] text-[10px] font-bold uppercase tracking-[0.08em] text-neutral-200 lg:grid">
@@ -216,23 +215,11 @@ export const EditorTopBar = ({
             <span>Master</span>
           </span>
         </a>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-40 sm:w-52">
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
-          <div className="flex items-center justify-between gap-2 px-1">
-            <p className="hidden text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 md:block">Project name</p>
-            {projectId && saveStatus === 'error' ? (
-              <span
-                className="truncate text-[10px] leading-none text-red-400"
-                role="status"
-                aria-live="polite"
-              >
-                Save failed
-              </span>
-            ) : null}
-          </div>
           <input
             id="editor-project-name"
-            className="h-11 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:h-7"
+            className="h-11 w-full min-w-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             value={projectNameState.draft}
             aria-label="Project name"
             spellCheck={false}
@@ -248,15 +235,15 @@ export const EditorTopBar = ({
               }
             }}
           />
+          {projectId && saveStatus === 'error' ? <span className="block truncate px-1 text-[10px] leading-none text-red-300" role="status" aria-live="polite">Save failed</span> : null}
         </div>
       </div>
 
-      <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-1 border-t border-neutral-900 xl:min-w-0 xl:flex-1 xl:border-t-0" data-topbar-group="variation" aria-label="Variation controls">
+      <div className="flex min-w-0 items-center gap-1" data-topbar-group="variation" aria-label="Variation controls">
         <label className="sr-only" htmlFor="editor-variation">Variation</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation</span>
         <select
           id="editor-variation"
-          className="h-11 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
+          className="h-11 w-28 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:w-36"
           value={activeVariationId}
           disabled={variations.length === 0}
           aria-label="Variation"
@@ -267,42 +254,37 @@ export const EditorTopBar = ({
             <option key={variation.id} value={variation.id}>{variation.name}</option>
           ))}
         </select>
-        <label className="sr-only" htmlFor="editor-variation-name">Variation name</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation name</span>
-        <input
-          id="editor-variation-name"
-          className="h-11 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-48 md:flex-none"
-          value={variationNameState.draft}
-          aria-label="Variation name"
-          disabled={variations.length === 0}
-          spellCheck={false}
-          onChange={(event) => updateVariationNameState({ type: 'input', value: event.currentTarget.value })}
-          onBlur={commitVariationName}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              event.currentTarget.blur();
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              updateVariationNameState({ type: 'restore' });
-            }
-          }}
-        />
-        <IconButton
-          label="Duplicate variation"
-          icon={CopyPlus}
-          disabled={variations.length === 0}
-          onClick={onDuplicateVariation}
-        />
-        <IconButton
-          label="Delete variation"
-          icon={Trash2}
-          disabled={!canDeleteVariation}
-          onClick={onDeleteVariation}
-        />
+        <details className="relative shrink-0">
+          <summary aria-label="Manage variation" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-md border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+            <MoreHorizontal aria-hidden="true" size={18} strokeWidth={1.8} />
+            <span className="sr-only">Manage variation</span>
+          </summary>
+          <div className="absolute left-0 top-12 z-40 grid w-64 gap-3 border border-neutral-700 bg-neutral-900 p-3 shadow-2xl">
+            <label className="grid gap-1 text-xs font-medium text-neutral-300" htmlFor="editor-variation-name">Variant name
+              <input
+                id="editor-variation-name"
+                className="h-10 min-w-0 border border-neutral-700 bg-neutral-950 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                value={variationNameState.draft}
+                aria-label="Variation name"
+                disabled={variations.length === 0}
+                spellCheck={false}
+                onChange={(event) => updateVariationNameState({ type: 'input', value: event.currentTarget.value })}
+                onBlur={commitVariationName}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+                  else if (event.key === 'Escape') { event.preventDefault(); updateVariationNameState({ type: 'restore' }); }
+                }}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" aria-label="Duplicate variation" className="h-10 border border-neutral-700 px-2 text-xs font-medium text-neutral-200 hover:border-neutral-500" disabled={variations.length === 0} onClick={onDuplicateVariation}>Duplicate</button>
+              <button type="button" aria-label="Delete variation" className="h-10 border border-neutral-700 px-2 text-xs font-medium text-neutral-200 hover:border-red-400 hover:text-red-200 disabled:opacity-35" disabled={!canDeleteVariation} onClick={onDeleteVariation}>Delete</button>
+            </div>
+          </div>
+        </details>
       </div>
 
-      <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands" data-topbar-group="commands">
+      <div className="ml-auto flex items-center gap-0 md:gap-1" aria-label="Project commands" data-topbar-group="commands">
         <div className="flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
           <button type="button" role="radio" aria-label="Basic" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
           <button type="button" role="radio" aria-label="Advanced" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}><span className="md:hidden">Adv</span><span className="hidden md:inline">Advanced</span></button>

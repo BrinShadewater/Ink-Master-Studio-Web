@@ -339,7 +339,7 @@ export const LayerDrawer = ({
   return (
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-50 flex bg-black/70 md:hidden"
+      className="fixed inset-0 z-50 flex bg-black/70"
       role="dialog"
       aria-modal="true"
       aria-labelledby="mobile-layers-title"
@@ -348,7 +348,7 @@ export const LayerDrawer = ({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="ml-auto flex h-full w-full max-w-sm flex-col border-l border-neutral-700 bg-neutral-900 shadow-2xl">
+      <section className="ml-auto flex h-full w-full max-w-sm flex-col border-l border-neutral-700 bg-neutral-900 shadow-2xl md:max-w-md">
         <LayerPanel
           {...panelProps}
           titleId="mobile-layers-title"

@@ -295,8 +295,8 @@ test('Basic toolbar keeps the guided workflow visible with Looks available for f
     onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
   const labels = [...easy.matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(labels.slice(0, 6), ['Select', 'Crop', 'Looks', 'Product', 'Layers', 'More tools']);
-  for (const label of ['Adjust', 'Enhance resolution', 'Remove background', 'Trace']) {
+  assert.deepEqual(labels.slice(0, 8), ['Select', 'Remove background', 'Crop', 'Enhance resolution', 'Looks', 'Product', 'Layers', 'More tools']);
+  for (const label of ['Adjust', 'Trace']) {
     assert.doesNotMatch(easy, new RegExp(`aria-label="${label}"[^>]*data-primary-tool`));
   }
   assert.doesNotMatch(easy, /aria-label="Compare"/);
@@ -421,7 +421,7 @@ test('Product mode leaves navigation and Layers enabled', () => {
   assert.match(emptyMarkup, /aria-label="Product"[^>]*disabled=""/);
 });
 
-test('an active Basic specialist occupies the preparation slot', () => {
+test('Basic toolbar keeps preparation tools in stable positions while active', () => {
   const markup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'remove-background',
     mode: 'easy',
@@ -433,7 +433,7 @@ test('an active Basic specialist occupies the preparation slot', () => {
 
   assert.match(markup, /data-primary-tool="remove-background"/);
   assert.match(markup, /aria-label="Product"/);
-  assert.doesNotMatch(markup, /aria-label="Crop"[^>]*data-primary-tool/);
+  assert.match(markup, /aria-label="Crop"[^>]*data-primary-tool="crop"/);
 });
 
 test('product inspector exposes the complete shirt catalog and bounded placement controls', () => {
@@ -1290,7 +1290,7 @@ test('top bar exposes variation management and a live retryable save failure', (
   assert.match(markup, /aria-label="Retry save"/);
 });
 
-test('Basic toolbar omits unavailable image tools until artwork provides context', () => {
+test('Basic toolbar keeps unavailable image tools visible but disabled', () => {
   const empty = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select',
     mode: 'easy',
@@ -1299,9 +1299,11 @@ test('Basic toolbar omits unavailable image tools until artwork provides context
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
   }));
-  for (const label of ['Crop', 'Adjust', 'Enhance resolution', 'Remove background', 'Trace', 'Looks']) {
-    assert.doesNotMatch(empty, new RegExp(`aria-label="${label}"`));
+  for (const label of ['Crop', 'Enhance resolution', 'Remove background']) {
+    assert.match(empty, new RegExp(`aria-label="${label}"[^>]*disabled=""`));
   }
+  assert.match(empty, /aria-label="Looks"/);
+  for (const label of ['Adjust', 'Trace']) assert.doesNotMatch(empty, new RegExp(`aria-label="${label}"[^>]*data-primary-tool`));
   assert.match(empty, /aria-label="Select"/);
   assert.match(empty, /aria-label="Product"/);
   assert.match(empty, /aria-label="Layers"/);
@@ -1419,8 +1421,8 @@ test('Basic and Advanced reveal real controls while preserving guidance', () => 
   for (const [tool, expectation] of Object.entries(expectations)) {
     const basic = renderInspectorModeTool(tool as keyof typeof expectations, 'easy');
     const advanced = renderInspectorModeTool(tool as keyof typeof expectations, 'advanced');
-    assert.match(basic, /Recommended next:/, `${tool} Basic should retain guidance`);
-    assert.match(advanced, /Recommended next:/, `${tool} Advanced should retain guidance`);
+    assert.match(basic, /Step [1-3] of 3/, `${tool} Basic should retain workflow context`);
+    assert.match(advanced, /Advanced/, `${tool} Advanced should identify its mode`);
     for (const id of 'basicHidden' in expectation ? expectation.basicHidden : []) {
       assert.doesNotMatch(basic, new RegExp(`id="${id}"`), `${tool} Basic should hide ${id}`);
     }
@@ -1573,10 +1575,9 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.equal(layer.type, 'image');
 
   const transformMarkup = renderInspector(layer);
-  assert.match(transformMarkup, /Print bench/);
+  assert.match(transformMarkup, /<p[^>]*>Transform<\/p>/);
   assert.match(transformMarkup, /Place, size, rotate, and align the selected layer/);
-  assert.match(transformMarkup, /Recommended next:/);
-  assert.match(transformMarkup, /Crop if framing needs work, then preview the result on Product/);
+  assert.doesNotMatch(transformMarkup, /Recommended next:/);
   assert.match(transformMarkup, /class="[^"]*h-11[^"]*"[^>]*>Reset/);
   assert.match(transformMarkup, /id="editor-position-x"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-position-y"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
@@ -1586,7 +1587,7 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
 
   const cropMarkup = renderInspector(layer, 'crop');
   assert.match(cropMarkup, /Reframe image artwork without changing the canvas size/);
-  assert.match(cropMarkup, /Recommended next:/);
+  assert.doesNotMatch(cropMarkup, /Recommended next:/);
   assert.match(cropMarkup, />Reset crop</);
   assert.doesNotMatch(cropMarkup, />Free</);
   assert.equal(cropMarkup.match(/class="[^"]*h-11[^"]*"[^>]*>[^<]*<\/button>/g)?.length, 7);
