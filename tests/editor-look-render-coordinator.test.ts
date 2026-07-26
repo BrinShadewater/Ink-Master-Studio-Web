@@ -97,7 +97,7 @@ const renderInput = (surfaceId: string, renderKey: string, source = frame(1, 2, 
   surfaceId,
   renderKey,
   frame: source,
-  look: createDefaultLook('original'),
+  looks: [],
 });
 
 test('a newer request makes an older success stale without populating the cache', async (context) => {
@@ -124,6 +124,21 @@ test('a newer request makes an older success stale without populating the cache'
     frame: frame(40, 50, 60, 255),
   });
   assert.equal((await probe).status, 'ready');
+});
+
+test('owns the caller Look stack before worker dispatch', async (context) => {
+  const worker = new FakeLookWorker();
+  const coordinator = new LookRenderCoordinator(() => worker);
+  context.after(() => coordinator.dispose());
+  const looks = [createDefaultLook('monochrome'), createDefaultLook('duotone')];
+  const pending = coordinator.render({
+    surfaceId: 'main', renderKey: 'variation-a:stack', frame: frame(1, 2, 3, 255), looks,
+  });
+  looks.reverse();
+  looks[0] = { ...createDefaultLook('monochrome'), strength: 20 };
+  assert.deepEqual(worker.posts[0].request.looks.map(({ id }) => id), ['monochrome', 'duotone']);
+  worker.succeed(worker.posts[0], new Uint8ClampedArray([1, 2, 3, 255]));
+  assert.equal((await pending).status, 'ready');
 });
 
 test('a stale failure cannot replace retry authority for the current failed request', async (context) => {
@@ -612,7 +627,7 @@ test('the module worker validates requests, transfers results, and exposes only 
       width: 1,
       height: 1,
       pixels: input.buffer,
-      look: createDefaultLook('original'),
+      looks: [],
     });
     assert.deepEqual(scope.posts[0].message, {
       requestId: 1,
@@ -630,7 +645,7 @@ test('the module worker validates requests, transfers results, and exposes only 
       width: 2,
       height: 1,
       pixels: new Uint8ClampedArray([9, 9, 9, 255]).buffer,
-      look: createDefaultLook('original'),
+      looks: [],
     });
     assert.deepEqual(scope.posts[1], {
       message: {

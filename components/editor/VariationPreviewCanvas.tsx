@@ -16,7 +16,7 @@ import {
   type DecodedImageEntry,
 } from '../../editor/decodedImages';
 import type { Point, Size } from '../../editor/geometry';
-import { serializeVariationLook } from '../../editor/lookModel';
+import { serializeVariationLooks } from '../../editor/lookModel';
 import {
   type LookRenderCoordinator,
   type LookRenderOutcome,
@@ -263,9 +263,7 @@ const createVariationRenderKey = (
       const asset = assetsById[assetId];
       return asset ? [assetId, asset.id, asset.width, asset.height] : [assetId, null];
     }),
-    look: JSON.parse(serializeVariationLook(
-      variation.looks[variation.looks.length - 1] ?? { id: 'original', strength: 100 },
-    )) as unknown,
+    looks: JSON.parse(serializeVariationLooks(variation.looks)) as unknown,
   });
   return `${variation.id}:${hashCanonicalValue(canonical)}:${canonical.length}`;
 };
@@ -549,8 +547,7 @@ export const useVariationPreviewSurface = ({
       maxPixelDimension,
     );
 
-    const activeLook = variation.looks[variation.looks.length - 1];
-    if (!activeLook) {
+    if (variation.looks.length === 0) {
       coordinator.clearSurface(surfaceId);
       lastReadyFrameRef.current = frame;
       lastReadyAuthorityRef.current = {
@@ -578,7 +575,7 @@ export const useVariationPreviewSurface = ({
       surfaceId,
       renderKey,
       frame,
-      look: activeLook,
+      looks: variation.looks,
     }).then((outcome) => {
       if (!active || currentRenderKeyRef.current !== renderKey || !frameCanvasRef.current) return;
       const selected = selectPreviewOutcomeFrame(

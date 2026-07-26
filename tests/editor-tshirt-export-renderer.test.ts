@@ -536,7 +536,10 @@ test('preserves transparent red RGB through enlargement and repeats seeded pixel
         name: 'Distressed',
         layers: [imageLayer('edge-layer', 'edge', { name: 'Transparent red edge' })],
         selectedLayerId: 'edge-layer',
-        looks: [createDefaultLook('vintage-ink', 0x98765432)],
+        looks: [
+          createDefaultLook('monochrome'),
+          createDefaultLook('vintage-ink', 0x98765432),
+        ],
       },
     },
   );

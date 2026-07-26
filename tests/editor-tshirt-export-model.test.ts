@@ -120,6 +120,13 @@ test('fingerprint changes for preset, placement, layer, Look, and asset identity
     ...input,
     variation: { ...variation, looks: [createDefaultLook('vintage-ink')] },
   }), fingerprint);
+  const orderedLooks = [createDefaultLook('monochrome'), createDefaultLook('duotone')];
+  const orderedFingerprint = createTShirtExportFingerprint({
+    ...input, variation: { ...variation, looks: orderedLooks },
+  });
+  assert.notEqual(createTShirtExportFingerprint({
+    ...input, variation: { ...variation, looks: [...orderedLooks].reverse() },
+  }), orderedFingerprint);
   const replacement = createEditorAsset('project-a', new Blob(['pixels']), {
     name: 'replacement.png', width: asset.width, height: asset.height,
   });

@@ -332,6 +332,16 @@ test('render keys use stable design identity and exclude replacement object URLs
   }), assetsById, {
     'asset-a': { url: 'blob:first', image: image('first') },
   }).result!;
+  const orderedLooks = compose(variation([baseLayer], {
+    looks: [createDefaultLook('monochrome'), createDefaultLook('duotone')],
+  }), assetsById, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+  }).result!;
+  const reorderedLooks = compose(variation([baseLayer], {
+    looks: [createDefaultLook('duotone'), createDefaultLook('monochrome')],
+  }), assetsById, {
+    'asset-a': { url: 'blob:first', image: image('first') },
+  }).result!;
   const preparedLayer = imageLayer('layer-a', 'asset-a', {
     backgroundRemoval: {
       ...createDefaultBackgroundRemoval(),
@@ -363,6 +373,7 @@ test('render keys use stable design identity and exclude replacement object URLs
     assert.notEqual(changed.renderKey, first.renderKey);
   }
   assert.doesNotMatch(first.renderKey, /blob:/);
+  assert.notEqual(orderedLooks.renderKey, reorderedLooks.renderKey);
 });
 
 const frame = (value: number): RgbaFrame => ({

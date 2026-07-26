@@ -13,7 +13,7 @@ import {
   type Size,
 } from './geometry';
 import {
-  applyVariationLook,
+  applyVariationLooks,
   MAX_EXPORT_LOOK_WORKING_BYTES,
 } from './lookProcessor';
 import type { ImageLayer, TraceLayer } from './model';
@@ -882,13 +882,13 @@ const applySavedLook = (
   let outputPixels: Uint8ClampedArray | null =
     new Uint8ClampedArray(sourcePixels.length);
   try {
-    const looked = applyVariationLook(
+    const looked = applyVariationLooks(
       {
         width: masterCanvas.width,
         height: masterCanvas.height,
         pixels: sourcePixels,
       },
-      snapshot.variation.looks[snapshot.variation.looks.length - 1] ?? { id: 'original', strength: 100 },
+      snapshot.variation.looks,
       {
         output: outputPixels,
         maxWorkingBytes: MAX_EXPORT_LOOK_WORKING_BYTES,
