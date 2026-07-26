@@ -69,7 +69,7 @@ export const CanvasBeforeAfter = ({
             aria-valuemax={100}
             aria-valuenow={Math.round(position)}
             className="group absolute top-1/2 z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize items-center justify-center rounded-full border border-emerald-300 bg-[#101820] text-emerald-300 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#101820]"
-            style={{ left: `${position}%` }}
+            style={{ left: `clamp(22px, ${position}%, calc(100% - 22px))` }}
             onKeyDown={(event) => {
               const direction = event.key === 'ArrowLeft' || event.key === 'ArrowDown'
                 ? -1

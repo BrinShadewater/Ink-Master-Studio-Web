@@ -2174,6 +2174,18 @@ test('Before and after divider stays synchronized across pointer and keyboard co
   await page.mouse.up();
   await expect.poll(async () => Number(await range.inputValue())).toBeGreaterThan(41);
 
+  const stage = divider.locator('..');
+  for (const endpoint of ['0', '100']) {
+    await range.fill(endpoint);
+    const stageBounds = await stage.boundingBox();
+    const endpointBounds = await divider.boundingBox();
+    if (!stageBounds || !endpointBounds) throw new Error('Comparison endpoint bounds are unavailable.');
+    expect(endpointBounds.x).toBeGreaterThanOrEqual(stageBounds.x);
+    expect(endpointBounds.x + endpointBounds.width).toBeLessThanOrEqual(
+      stageBounds.x + stageBounds.width,
+    );
+  }
+
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileBounds = await divider.boundingBox();
   const mobileRangeBounds = await range.boundingBox();
