@@ -61,7 +61,9 @@ import {
 import {
   canvasPointToCropPoint,
   getZoomedDesignRect,
+  moveCropRectWithKeyboard,
   resizeCropRect,
+  resizeCropRectWithKeyboard,
   resolveCanvasZoom,
 } from '../components/editor/EditorCanvas';
 import {
@@ -661,6 +663,26 @@ test('crop handles resize independently and retain the opposite crop corner', ()
   );
 });
 
+test('keyboard crop controls support precise and larger movement steps', () => {
+  const crop = { x: 0.2, y: 0.25, width: 0.5, height: 0.4 };
+  assert.deepEqual(
+    moveCropRectWithKeyboard(crop, 'ArrowRight'),
+    { x: 0.21, y: 0.25, width: 0.5, height: 0.4 },
+  );
+  assert.deepEqual(
+    moveCropRectWithKeyboard(crop, 'ArrowUp', true),
+    { x: 0.2, y: 0.2, width: 0.5, height: 0.4 },
+  );
+  assert.deepEqual(
+    resizeCropRectWithKeyboard(crop, 'top-left', 'ArrowRight'),
+    { x: 0.21, y: 0.25, width: 0.49, height: 0.4 },
+  );
+  assert.deepEqual(
+    resizeCropRectWithKeyboard(crop, 'bottom-right', 'ArrowDown', true),
+    { x: 0.2, y: 0.25, width: 0.5, height: 0.45 },
+  );
+});
+
 const createCompareVariations = (count: number): DesignVariation[] => {
   const source = createEditorAsset('project-compare-shell', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -698,6 +720,8 @@ const renderCompareBoard = (
 test('Compare Board exposes stable selection, background, zoom, and edit controls', () => {
   const markup = renderCompareBoard(3, ['variation-1', 'variation-2'], 'dark');
 
+  assert.match(markup, /<h2[^>]*>Compare<\/h2>/);
+  assert.doesNotMatch(markup, /<h1[^>]*>Compare<\/h1>/);
   assert.match(markup, /aria-label="Compare variations"/);
   for (let index = 1; index <= 3; index += 1) {
     assert.match(markup, new RegExp(`type="checkbox"[^>]*value="variation-${index}"`));

@@ -1517,6 +1517,47 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
   }
 });
 
+test('moves selected artwork and crop bounds with the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 900, 'keyboard-canvas.png');
+
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  await canvas.focus();
+  await canvas.press('ArrowRight');
+  await expect.poll(async () => (await readPersistedEditorState(page, 'keyboard-canvas'))?.x)
+    .toBeGreaterThan(0.5);
+  const preciseX = (await readPersistedEditorState(page, 'keyboard-canvas'))?.x ?? 0.5;
+
+  await canvas.press('Shift+ArrowRight');
+  await expect.poll(async () => (await readPersistedEditorState(page, 'keyboard-canvas'))?.x)
+    .toBeGreaterThan(preciseX);
+
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  const topLeft = page.getByRole('button', {
+    name: 'Resize crop from top left. Use the Arrow keys. Hold Shift for a larger step.',
+    exact: true,
+  });
+  await topLeft.focus();
+  await topLeft.press('ArrowRight');
+  await expect.poll(async () => {
+    const composition = await readPersistedComposition(page, 'keyboard-canvas');
+    return composition?.layers[0]?.crop;
+  }).toEqual({ x: 0.01, y: 0, width: 0.99, height: 1 });
+
+  await cropFrame.focus();
+  await cropFrame.press('ArrowLeft');
+  await expect.poll(async () => {
+    const composition = await readPersistedComposition(page, 'keyboard-canvas');
+    return composition?.layers[0]?.crop;
+  }).toEqual({ x: 0, y: 0, width: 0.99, height: 1 });
+});
+
 test('keeps the editor usable at 390 by 844 and captures the mobile layout', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
