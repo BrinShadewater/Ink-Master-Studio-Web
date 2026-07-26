@@ -5,6 +5,7 @@ import {
   duplicateTShirtProduct,
   findTShirtProduct,
   normalizeProductPlacement,
+  normalizeTShirtPrintMethod,
   normalizeTShirtProductVariants,
 } from '../editor/productModel';
 
@@ -90,8 +91,14 @@ test('repairs malformed product ids and values without sharing caller state', ()
   assert.deepEqual(input, snapshot);
   assert.deepEqual(products.map(({ id }) => id), ['generated-1', 'product-b', 'generated-2']);
   assert.equal(products[0].mockupSlug, 'black');
+  assert.equal(products[0].printMethod, 'dtg');
   products[0].placement.x = 1;
   assert.equal(input[0].placement.x, 0.2);
+});
+
+test('normalizes known print methods and defaults unsupported values to DTG', () => {
+  assert.equal(normalizeTShirtPrintMethod('vinyl'), 'vinyl');
+  assert.equal(normalizeTShirtPrintMethod('embroidery'), 'dtg');
 });
 
 test('throws when a normalized variation has no linked product', () => {

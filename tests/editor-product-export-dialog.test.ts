@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProductExportDialog } from '../components/editor/ProductExportDialog';
+import { ProductExportDialog, getProductExportSummary } from '../components/editor/ProductExportDialog';
 import { createEditorAsset, createEditorProject } from '../editor/model';
 import { findTShirtProduct } from '../editor/productModel';
 
@@ -22,6 +22,9 @@ test('Product export dialog presents the fixed production and proof PNG presets'
     onClose: () => undefined,
   }));
   assert.match(markup, /Print-ready PNG/);
+  assert.match(markup, /Production summary/);
+  assert.match(markup, /Garment/);
+  assert.match(markup, /DTG/);
   assert.match(markup, /Exporting a PNG keeps your cleaned raster artwork and transparency intact/);
   assert.match(markup, /Printify Full Front/);
   assert.match(markup, /4500 x 5400 px, 300 DPI, 15 x 18 in/);
@@ -31,5 +34,11 @@ test('Product export dialog presents the fixed production and proof PNG presets'
   assert.match(markup, /15 x 18 in/);
   assert.match(markup, /3000 x 3600 px, 300 DPI, 10 x 12 in/);
   assert.match(markup, /Create PNG/);
+  assert.doesNotMatch(markup, /Download mockup proof/);
   assert.match(markup, /role="radiogroup"/);
+  assert.deepEqual(getProductExportSummary(
+    findTShirtProduct(project.productVariants, variation.id), variation, 'printify-full-front',
+  ), {
+    garment: 'Black', method: 'DTG', artwork: 'Original', printSize: '15 x 18 in', placement: '72% scale at 50% x / 50% y',
+  });
 });

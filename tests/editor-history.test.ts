@@ -791,6 +791,19 @@ test('records shirt color as one discrete no-op-aware product edit', () => {
   assert.equal(findTShirtProduct(history.present.productVariants, variationId).mockupSlug, 'black');
 });
 
+test('records a print method as one discrete no-op-aware product edit', () => {
+  let history = makeHistory();
+  const variationId = history.present.activeVariationId;
+  history = reduceEditorHistory(history, { type: 'set-product-print-method', printMethod: 'vinyl' });
+  const changed = history;
+  history = reduceEditorHistory(history, { type: 'set-product-print-method', printMethod: 'vinyl' });
+
+  assert.equal(history, changed);
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).printMethod, 'vinyl');
+  history = reduceEditorHistory(history, { type: 'undo' });
+  assert.equal(findTShirtProduct(history.present.productVariants, variationId).printMethod, 'dtg');
+});
+
 test('duplicates and deletes independent linked products with their variations', () => {
   let history = makeHistory();
   const variationA = history.present.activeVariationId;

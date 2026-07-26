@@ -28,6 +28,19 @@ const paletteDefaults = [
   '#f59e0b',
 ];
 
+const traceGoals: Array<{ label: string; description: string; settings: Partial<TraceSettings> }> = [
+  {
+    label: 'Full-color vector',
+    description: 'Preserve the source palette and fine illustration detail.',
+    settings: { colors: 48, detail: 72, smoothing: 24, blur: 0, palette: [] },
+  },
+  {
+    label: 'Print simplified',
+    description: 'Use fewer colors and smoother shapes for print-friendly artwork.',
+    settings: { colors: 6, detail: 58, smoothing: 55, blur: 1, palette: paletteDefaults },
+  },
+];
+
 const commandButtonClass =
   'h-9 border border-neutral-700 px-3 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40';
 
@@ -46,6 +59,10 @@ export const TraceInspector = ({
   );
   const updatePalette = (palette: string[]) =>
     workflow.updateSettings({ ...workflow.settings, palette }, 'trace-palette');
+  const applyPreset = (settings: Partial<TraceSettings>) => {
+    workflow.updateSettings({ ...workflow.settings, ...settings }, 'trace-preset');
+    workflow.endSettingsEdit();
+  };
 
   return (
     <>
@@ -65,14 +82,19 @@ export const TraceInspector = ({
 
       <div className="grid gap-5 p-4">
         <p className="text-xs leading-5 text-neutral-500">Vectorize creates editable SVG paths from an image. “Trace” is the technical name for the same process.</p>
-        <div className="grid grid-cols-2 gap-2" aria-label="Vectorize preset">
-          {[
-            ['Logo / 2-color', { colors: 2, detail: 72, smoothing: 62, blur: 0 }],
-            ['Limited palette', { colors: 8, detail: 62, smoothing: 42, blur: 0 }],
-            ['Full color', { colors: 48, detail: 72, smoothing: 24, blur: 0 }],
-            ['Screen print', { colors: 6, detail: 58, smoothing: 55, blur: 1 }],
-          ].map(([label, settings]) => <button key={label as string} type="button" disabled={workflow.status === 'processing'} className="min-h-11 border border-neutral-700 bg-neutral-950 px-2 text-left text-xs font-medium text-neutral-200 transition hover:border-emerald-400 disabled:opacity-40" onClick={() => { workflow.updateSettings({ ...workflow.settings, ...(settings as Partial<TraceSettings>), palette: [] }, 'trace-preset'); workflow.endSettingsEdit(); }}>{label as string}</button>)}
-        </div>
+        <section className="grid gap-2" aria-labelledby="trace-goal-title">
+          <div>
+            <h3 id="trace-goal-title" className="text-xs font-medium text-neutral-300">Vector goal</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">Choose full fidelity for art or a simplified path for limited-color printing.</p>
+          </div>
+          <div className="grid gap-2" aria-label="Vectorize preset">
+            {traceGoals.map((goal) => <button key={goal.label} type="button" disabled={workflow.status === 'processing'} className="grid gap-1 border border-neutral-700 bg-neutral-950 p-3 text-left text-xs transition hover:border-emerald-400 disabled:opacity-40" onClick={() => applyPreset(goal.settings)}><span className="font-medium text-neutral-100">{goal.label}</span><span className="leading-5 text-neutral-500">{goal.description}</span></button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-2" aria-label="Vectorize quick preset">
+            <button type="button" disabled={workflow.status === 'processing'} className="min-h-10 border border-neutral-700 bg-neutral-950 px-2 text-left text-xs font-medium text-neutral-200 transition hover:border-emerald-400 disabled:opacity-40" onClick={() => applyPreset({ colors: 2, detail: 72, smoothing: 62, blur: 0, palette: ['#111111', '#ffffff'] })}>Logo / 2-color</button>
+            <button type="button" disabled={workflow.status === 'processing'} className="min-h-10 border border-neutral-700 bg-neutral-950 px-2 text-left text-xs font-medium text-neutral-200 transition hover:border-emerald-400 disabled:opacity-40" onClick={() => applyPreset({ colors: 8, detail: 62, smoothing: 42, blur: 0, palette: [] })}>Limited palette</button>
+          </div>
+        </section>
         <RangeControl
           id="editor-trace-colors"
           label="Colors"

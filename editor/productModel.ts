@@ -22,12 +22,15 @@ export interface ProductPlacement {
 }
 
 export type ProductPreviewMode = 'rgb' | 'print';
+export const TSHIRT_PRINT_METHODS = ['dtg', 'dtf', 'vinyl'] as const;
+export type TShirtPrintMethod = typeof TSHIRT_PRINT_METHODS[number];
 
 export interface TShirtProductVariant {
   id: string;
   variationId: string;
   type: 'tshirt';
   mockupSlug: TShirtMockupSlug;
+  printMethod: TShirtPrintMethod;
   placement: ProductPlacement;
   colorVariationIds: Partial<Record<TShirtMockupSlug, string>>;
 }
@@ -61,11 +64,17 @@ const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 
 const mockupSlugs = new Set<string>(TSHIRT_MOCKUP_SLUGS);
+const printMethods = new Set<string>(TSHIRT_PRINT_METHODS);
 
 export const normalizeTShirtMockupSlug = (value: unknown): TShirtMockupSlug =>
   typeof value === 'string' && mockupSlugs.has(value)
     ? value as TShirtMockupSlug
     : 'black';
+
+export const normalizeTShirtPrintMethod = (value: unknown): TShirtPrintMethod =>
+  typeof value === 'string' && printMethods.has(value)
+    ? value as TShirtPrintMethod
+    : 'dtg';
 
 export const normalizeProductPlacement = (value: unknown): ProductPlacement => {
   const source = isRecord(value) ? value : {};
@@ -93,6 +102,7 @@ export const createDefaultTShirtProduct = (
   variationId,
   type: 'tshirt',
   mockupSlug: 'black',
+  printMethod: 'dtg',
   placement: { ...DEFAULT_PRODUCT_PLACEMENT },
   colorVariationIds: {},
 });
@@ -165,6 +175,7 @@ export const normalizeTShirtProductVariants = (
       variationId: candidate.variationId,
       type: 'tshirt',
       mockupSlug: normalizeTShirtMockupSlug(candidate.mockupSlug),
+      printMethod: normalizeTShirtPrintMethod(candidate.printMethod),
       placement: normalizeProductPlacement(candidate.placement),
       colorVariationIds: normalizeColorVariationIds(candidate.colorVariationIds, variationIds),
     });

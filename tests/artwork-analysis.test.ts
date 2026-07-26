@@ -19,6 +19,15 @@ test("detects meaningful transparency coverage", () => {
   assert.equal(analysis.transparencyCoverage, 0.25);
 });
 
+test("measures broad partial transparency separately from transparent pixels", () => {
+  const data = pixels(4, 4, [20, 20, 20, 255]);
+  for (let i = 0; i < 4; i += 1) data[i * 4 + 3] = 128;
+
+  const analysis = analyzePixelData(data, 4, 4, 1200, 1200);
+
+  assert.equal(analysis.partialTransparencyCoverage, 0.25);
+});
+
 test("detects a uniform light edge background", () => {
   const data = pixels(5, 5, [255, 255, 255, 255]);
   const center = (2 * 5 + 2) * 4;

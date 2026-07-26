@@ -16,7 +16,11 @@ import { EditorToolbar } from '../components/editor/EditorToolbar';
 import {
   ProductInspector,
   createCenterProductPlacementCommand,
+  createProductPlacementPresetCommand,
   createResetProductPlacementCommand,
+  getGarmentContrastCoverage,
+  getPrintLensFindings,
+  getPrintMethodGuidance,
   getProductReadinessEstimate,
 } from '../components/editor/ProductInspector';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
@@ -402,17 +406,24 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   assert.match(markup, /id="product-position-y"[^>]*min="0"[^>]*max="100"/);
   assert.match(markup, /id="product-scale"[^>]*min="10"[^>]*max="150"/);
   assert.match(markup, /id="product-rotation"[^>]*min="-180"[^>]*max="180"/);
-  assert.match(markup, />Center artwork<\/button>/);
-  assert.match(markup, />Fit print area<\/button>/);
+  assert.match(markup, />Standard front<\/button>/);
+  assert.match(markup, />Left chest<\/button>/);
+  assert.match(markup, />Oversized front<\/button>/);
   assert.match(markup, />Reset<\/button>/);
   assert.match(markup, /aria-label="Artwork for Black"/);
   assert.match(markup, /aria-label="Mockup color mode"/);
   assert.match(markup, />Print intent<\/button>/);
+  assert.match(markup, /aria-label="Print method"/);
 
   assert.deepEqual(createCenterProductPlacementCommand(product), {
     type: 'set-product-placement',
     placement: { ...product.placement, x: 0.5, y: 0.5 },
     historyGroup: 'product-center',
+  });
+  assert.deepEqual(createProductPlacementPresetCommand('left-chest'), {
+    type: 'set-product-placement',
+    placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
+    historyGroup: 'product-preset:left-chest',
   });
   assert.deepEqual(createResetProductPlacementCommand(), {
     type: 'set-product-placement',
@@ -423,6 +434,51 @@ test('product inspector exposes the complete shirt catalog and bounded placement
     getProductReadinessEstimate(project.variations[0], product, { [source.id]: source }),
     { sourceSide: 80, scale: 40.5, status: 'enhance' },
   );
+  assert.deepEqual(getPrintMethodGuidance('vinyl', 2), {
+    status: 'ready', label: 'Good fit', detail: 'This palette is suitable for a simple cut-vinyl treatment.',
+  });
+  assert.equal(getPrintMethodGuidance('vinyl', 4).status, 'review');
+  assert.deepEqual(getGarmentContrastCoverage({
+    width: 100, height: 100, hasTransparency: true, transparencyCoverage: 0.2,
+    edgeBackground: { isUniform: false, color: '#000000', tone: 'dark', confidence: 0 },
+    printQuality: { dpi: 300, status: 'good', label: 'Print Ready' }, palette: ['#111111'],
+    dominantTone: 'dark', contrastRisk: { darkGarment: true, lightGarment: false }, vectorSuitability: 'strong', warnings: [],
+  }), {
+    suitableCount: 2,
+    atRisk: ['Black', 'Burgundy', 'Cardinal', 'Charcoal', 'Forest green', 'Military green', 'Navy', 'Red', 'Royal blue'],
+    recommendation: 'Best on lighter garment colors.',
+  });
+  assert.deepEqual(getPrintLensFindings(
+    { sourceSide: 100, scale: 3, status: 'enhance' },
+    {
+      width: 100, height: 100, hasTransparency: false, transparencyCoverage: 0,
+      edgeBackground: { isUniform: true, color: '#FFFFFF', tone: 'light', confidence: 0.95 },
+      printQuality: { dpi: 50, status: 'poor', label: 'Too Low' }, palette: ['#111111', '#EEEEEE', '#FF0000'],
+      dominantTone: 'mid', contrastRisk: { darkGarment: false, lightGarment: false }, vectorSuitability: 'possible', warnings: [],
+    },
+    false,
+    getPrintMethodGuidance('vinyl', 3),
+    'vinyl',
+    false,
+  ).map(({ id, severity }) => ({ id, severity })), [
+    { id: 'resolution', severity: 'fix' },
+    { id: 'background', severity: 'review' },
+    { id: 'method', severity: 'review' },
+  ]);
+  assert.ok(getPrintLensFindings(
+    { sourceSide: 2000, scale: 1, status: 'ready' },
+    {
+      width: 2000, height: 2000, hasTransparency: true, transparencyCoverage: 0.1,
+      partialTransparencyCoverage: 0.08,
+      edgeBackground: { isUniform: false, color: '#000000', tone: 'dark', confidence: 0 },
+      printQuality: { dpi: 300, status: 'good', label: 'Print Ready' }, palette: ['#111111'],
+      dominantTone: 'dark', contrastRisk: { darkGarment: false, lightGarment: false }, vectorSuitability: 'strong', warnings: [],
+    },
+    false,
+    getPrintMethodGuidance('dtg', 1),
+    'dtg',
+    true,
+  ).some((finding) => finding.id === 'transparent-fade'));
 });
 
 test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {
@@ -533,7 +589,9 @@ test('trace inspector exposes bounded controls, palette, retry, and source resto
 
   assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="64"[^>]*step="1"/);
   assert.match(markup, /aria-label="Vectorize preset"/);
-  assert.match(markup, />Full color</);
+  assert.match(markup, /Vector goal/);
+  assert.match(markup, /Full-color vector/);
+  assert.match(markup, /Print simplified/);
   assert.match(markup, /id="editor-trace-detail"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-smoothing"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-blur"[^>]*min="0"[^>]*max="5"[^>]*step="1"/);
