@@ -2135,6 +2135,40 @@ test('Product placement presets stay simple in Basic and persist after reload', 
   await expect(page.getByLabel('Scale', { exact: true })).toHaveValue('32');
 });
 
+test('Before and after divider stays synchronized across pointer and keyboard controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 900, 'compare-divider.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Finish comparison', exact: true })).toBeVisible();
+
+  const divider = page.getByRole('slider', { name: 'Before and after divider', exact: true });
+  const range = page.getByLabel('Before and after position', { exact: true });
+  await expect(divider).toHaveAttribute('aria-valuenow', '50');
+  await divider.focus();
+  await divider.press('ArrowRight');
+  await expect(range).toHaveValue('51');
+  await divider.press('Shift+ArrowLeft');
+  await expect(range).toHaveValue('41');
+
+  const bounds = await divider.boundingBox();
+  if (!bounds) throw new Error('Before and after divider bounds are unavailable.');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 120, bounds.y + bounds.height / 2);
+  await page.mouse.up();
+  await expect.poll(async () => Number(await range.inputValue())).toBeGreaterThan(41);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileBounds = await divider.boundingBox();
+  const mobileRangeBounds = await range.boundingBox();
+  if (!mobileBounds || !mobileRangeBounds) throw new Error('Mobile comparison controls are unavailable.');
+  expect(mobileBounds.width).toBeGreaterThanOrEqual(44);
+  expect(mobileBounds.height).toBeGreaterThanOrEqual(44);
+  expect(mobileRangeBounds.x + mobileRangeBounds.width).toBeLessThanOrEqual(390);
+});
+
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
