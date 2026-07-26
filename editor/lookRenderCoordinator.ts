@@ -1,5 +1,9 @@
-import type { VariationLook } from './lookModel';
-import type { RgbaFrame } from './lookProcessor';
+import { normalizeVariationLooks, type VariationLookStack } from './lookModel';
+import {
+  estimateVariationLooksWorkingBytes,
+  MAX_EXPORT_LOOK_WORKING_BYTES,
+  type RgbaFrame,
+} from './lookProcessor';
 
 const DEFAULT_MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const FAILURE_MESSAGE = 'Look preview failed.' as const;
@@ -10,14 +14,14 @@ export interface LookRenderRequest {
   width: number;
   height: number;
   pixels: ArrayBuffer;
-  look: VariationLook;
+  looks: VariationLookStack;
 }
 
 export interface LookRenderInput {
   surfaceId: string;
   renderKey: string;
   frame: RgbaFrame;
-  look: VariationLook;
+  looks: VariationLookStack;
 }
 
 export type LookRenderOutcome =
@@ -38,7 +42,7 @@ export interface LookWorkerLike {
 interface OwnedRenderInput {
   renderKey: string;
   frame: RgbaFrame;
-  look: VariationLook;
+  looks: VariationLookStack;
 }
 
 interface PendingRender {
@@ -72,7 +76,7 @@ const cloneFrame = (frame: RgbaFrame): RgbaFrame => ({
 const cloneInput = (input: LookRenderInput): OwnedRenderInput => ({
   renderKey: input.renderKey,
   frame: cloneFrame(input.frame),
-  look: { ...input.look } as VariationLook,
+  looks: normalizeVariationLooks(input.looks),
 });
 
 const normalizeCacheBudget = (value: number | undefined) => {
@@ -232,6 +236,11 @@ export class LookRenderCoordinator {
 
     try {
       pending.input = cloneInput(input);
+      if (estimateVariationLooksWorkingBytes(
+        pending.input.frame.width,
+        pending.input.frame.height,
+        pending.input.looks,
+      ) > MAX_EXPORT_LOOK_WORKING_BYTES) throw new Error('Look preview is too large.');
     } catch {
       queueMicrotask(() => this.fail(pending));
       return promise;
@@ -325,7 +334,7 @@ export class LookRenderCoordinator {
         width: input.frame.width,
         height: input.frame.height,
         pixels: pixels.buffer,
-        look: { ...input.look } as VariationLook,
+        looks: normalizeVariationLooks(input.looks),
       };
       this.worker.postMessage(request, [request.pixels]);
     } catch {

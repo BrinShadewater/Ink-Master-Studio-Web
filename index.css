@@ -7,7 +7,6 @@ html {
 }
 
 body {
-  min-width: 320px;
   margin: 0;
   background: #0d1d24;
   color: #f2f4f7;
@@ -24,18 +23,9 @@ body {
   color: #fbfcfe;
 }
 
-@keyframes landing-particle-drift {
-  0% { transform: translate3d(0, 0, 0); }
-  50% { transform: translate3d(32px, -86px, 0); }
-  100% { transform: translate3d(-12px, -180px, 0); }
-}
-
-.landing-particle {
-  animation-name: landing-particle-drift;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-particle { animation: none; }
+.landing-grid {
+  background-image:
+    linear-gradient(#2a3d4d 1px, transparent 1px),
+    linear-gradient(90deg, #2a3d4d 1px, transparent 1px);
+  background-size: 68px 68px;
 }

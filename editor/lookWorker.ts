@@ -1,5 +1,5 @@
-import { normalizeVariationLook, type VariationLook } from './lookModel';
-import { applyVariationLook } from './lookProcessor';
+import { normalizeVariationLooks, type VariationLookStack } from './lookModel';
+import { applyVariationLooks } from './lookProcessor';
 import type { LookRenderRequest } from './lookRenderCoordinator';
 
 const FAILURE_MESSAGE = 'Look preview failed.' as const;
@@ -31,29 +31,23 @@ const getIdentity = (value: unknown): RequestIdentity | undefined => {
   return { requestId: Number(value.requestId), renderKey: value.renderKey };
 };
 
-const isNormalizedLook = (value: unknown): value is VariationLook => {
-  if (!isRecord(value)) return false;
-  const normalized = normalizeVariationLook(value);
-  const inputKeys = Object.keys(value);
-  const normalizedKeys = Object.keys(normalized);
-  return inputKeys.length === normalizedKeys.length && normalizedKeys.every((key) =>
-    Object.hasOwn(value, key) && Object.is(value[key], normalized[key as keyof VariationLook]));
-};
+const isNormalizedLooks = (value: unknown): value is VariationLookStack =>
+  Array.isArray(value) && JSON.stringify(value) === JSON.stringify(normalizeVariationLooks(value));
 
 const isValidRequest = (value: unknown): value is LookRenderRequest => {
   if (!isRecord(value) || !getIdentity(value)) return false;
-  const { width, height, pixels, look } = value;
+  const { width, height, pixels, looks } = value;
   if (
     !Number.isInteger(width) || Number(width) <= 0 ||
     !Number.isInteger(height) || Number(height) <= 0 ||
     Number(width) > Math.floor(MAX_TYPED_ARRAY_LENGTH / 4 / Number(height)) ||
     !(pixels instanceof ArrayBuffer) ||
     pixels.byteLength !== Number(width) * Number(height) * 4 ||
-    !isNormalizedLook(look)
+    !isNormalizedLooks(looks)
   ) {
     return false;
   }
-  const expectedKeys = ['requestId', 'renderKey', 'width', 'height', 'pixels', 'look'];
+  const expectedKeys = ['requestId', 'renderKey', 'width', 'height', 'pixels', 'looks'];
   return Object.keys(value).length === expectedKeys.length &&
     expectedKeys.every((key) => Object.hasOwn(value, key));
 };
@@ -66,11 +60,11 @@ scope.addEventListener('message', (event) => {
 
   try {
     if (!isValidRequest(event.data)) throw new Error(FAILURE_MESSAGE);
-    const result = applyVariationLook({
+    const result = applyVariationLooks({
       width: event.data.width,
       height: event.data.height,
       pixels: new Uint8ClampedArray(event.data.pixels),
-    }, event.data.look);
+    }, event.data.looks);
     const message = {
       requestId: identity.requestId,
       renderKey: identity.renderKey,

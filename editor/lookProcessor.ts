@@ -1,4 +1,9 @@
-import type { LookById, VariationLook } from './lookModel';
+import {
+  normalizeVariationLooks,
+  type LookById,
+  type VariationLook,
+  type VariationLookStack,
+} from './lookModel';
 
 export interface RgbaFrame {
   width: number;
@@ -95,6 +100,19 @@ export const estimateVariationLookWorkingBytes = (
     workingBytes += width * height * distanceElementBytes(width, height);
   }
   return workingBytes;
+};
+
+export const estimateVariationLooksWorkingBytes = (
+  width: number,
+  height: number,
+  looks: VariationLookStack,
+): number => {
+  const normalized = normalizeVariationLooks(looks);
+  const rgbaBytes = width * height * 4;
+  if (normalized.length === 0) return rgbaBytes * 2;
+  const largestSingleEstimate = Math.max(...normalized.map((look) =>
+    estimateVariationLookWorkingBytes(width, height, look)));
+  return largestSingleEstimate + (normalized.length > 1 ? rgbaBytes : 0);
 };
 
 const trackAllocation = (
@@ -682,4 +700,45 @@ export const applyVariationLook = (
     processPixelLocalLook(frame, look, output, amount);
   }
   return { width: frame.width, height: frame.height, pixels: output };
+};
+
+export const applyVariationLooks = (
+  frame: RgbaFrame,
+  looks: VariationLookStack,
+  options: LookProcessingOptions = {},
+): RgbaFrame => {
+  validateFrame(frame);
+  validateOutput(frame, options.output);
+  const normalized = normalizeVariationLooks(looks);
+  const estimatedBytes = estimateVariationLooksWorkingBytes(frame.width, frame.height, normalized);
+  if (options.maxWorkingBytes !== undefined && estimatedBytes > options.maxWorkingBytes) {
+    throw new Error(TOO_LARGE_ERROR);
+  }
+  if (normalized.length === 0) {
+    const output = createOutput(frame, options);
+    output.set(frame.pixels);
+    return { width: frame.width, height: frame.height, pixels: output };
+  }
+
+  const finalOutput = options.output ?? createOutput(frame, options);
+  let scratch: Uint8ClampedArray | undefined;
+  if (normalized.length > 1) {
+    trackAllocation(options, {
+      kind: 'output-rgba',
+      arrayType: 'Uint8ClampedArray',
+      length: frame.pixels.length,
+      bytes: frame.pixels.byteLength,
+    });
+    scratch = new Uint8ClampedArray(frame.pixels.length);
+  }
+
+  let current = frame;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const target = (normalized.length - index) % 2 === 0 ? scratch! : finalOutput;
+    current = applyVariationLook(current, normalized[index], {
+      output: target,
+      allocationTracker: options.allocationTracker,
+    });
+  }
+  return current;
 };

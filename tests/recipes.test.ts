@@ -10,6 +10,7 @@ const analysis = {
   height: 5100,
   hasTransparency: false,
   transparencyCoverage: 0,
+  partialTransparencyCoverage: 0,
   edgeBackground: {
     isUniform: true,
     color: "#101010",

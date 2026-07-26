@@ -38,6 +38,7 @@ interface PersistedPhase2BProjectSnapshot {
     layers: Array<Record<string, unknown>>;
     selectedLayerId: string;
     look: LookRecipeSnapshot;
+    looks: LookRecipeSnapshot[];
   }>;
   productVariants: TShirtProductSnapshot[];
 }
@@ -57,7 +58,10 @@ interface TShirtProductSnapshot {
     | 'navy'
     | 'orange'
     | 'red'
-    | 'royal-blue';
+    | 'royal-blue'
+    | 'white';
+  printMethod: 'dtg' | 'dtf' | 'vinyl';
+  colorVariationIds: Record<string, string>;
   placement: {
     x: number;
     y: number;
@@ -89,6 +93,7 @@ interface LookWorkerHarnessSnapshot {
     renderKey: string;
     maxDimension: number;
     look: LookRecipeSnapshot;
+    looks: LookRecipeSnapshot[];
   }>;
 }
 
@@ -150,18 +155,20 @@ const installLookWorkerHarness = async (page: Page) => {
           return;
         }
         const record = message as Record<string, unknown>;
-        const look = record.look;
-        if (!look || typeof look !== 'object' || typeof record.renderKey !== 'string') {
+        const looks = record.looks;
+        if (!Array.isArray(looks) || typeof record.renderKey !== 'string') {
           this.nativeWorker.postMessage(message, transfer);
           return;
         }
-        const recipe = JSON.parse(JSON.stringify(look)) as LookRecipeSnapshot;
+        const recipes = JSON.parse(JSON.stringify(looks)) as LookRecipeSnapshot[];
+        const recipe = recipes[recipes.length - 1] ?? { id: 'original', strength: 100 };
         const maxDimension = Math.max(Number(record.width) || 0, Number(record.height) || 0);
         requests.push({
           requestId: Number(record.requestId),
           renderKey: record.renderKey,
           maxDimension,
           look: recipe,
+          looks: recipes,
         });
         const ruleIndex = rules.findIndex((rule) => (
           rule.lookId === recipe.id &&
@@ -427,6 +434,32 @@ const uploadTransparentFixture = async (
   });
 };
 
+const uploadPickedColorsFixture = async (page: Page, name: string) => {
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 400;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+    context.fillStyle = '#0000ff';
+    context.fillRect(0, 0, 600, 400);
+    context.fillStyle = '#ff0000';
+    context.fillRect(120, 100, 120, 200);
+    context.fillStyle = '#00ff00';
+    context.fillRect(360, 100, 120, 200);
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (result) => result ? resolve(result) : reject(new Error('Picked color fixture failed.')),
+      'image/png',
+    ));
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  });
+  await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer: Buffer.from(bytes),
+  });
+};
+
 const createPhase2CFixture = async (page: Page, size: number): Promise<Buffer> => {
   const bytes = await page.evaluate(async (fixtureSize) => {
     const canvas = document.createElement('canvas');
@@ -596,7 +629,8 @@ const readPersistedLook = async (page: Page, projectName: string) => page.evalua
           (candidate: { id: string }) => candidate.id === project.activeVariationId,
         );
         database.close();
-        resolve(variation?.look ? structuredClone(variation.look) as LookRecipeSnapshot : null);
+        const look = variation?.looks?.[variation.looks.length - 1];
+        resolve(look ? structuredClone(look) as LookRecipeSnapshot : null);
       };
     };
   })
@@ -619,7 +653,18 @@ const readPersistedPhase2BProject = async (
       request.onsuccess = () => {
         const project = request.result.find((candidate) => candidate.name === name);
         database.close();
-        resolve(project ? structuredClone(project) as PersistedPhase2BProjectSnapshot : null);
+        if (!project) {
+          resolve(null);
+          return;
+        }
+        const snapshot = structuredClone(project);
+        snapshot.variations = snapshot.variations.map((variation: {
+          looks: LookRecipeSnapshot[];
+        }) => ({
+          ...variation,
+          look: variation.looks[variation.looks.length - 1] ?? { id: 'original', strength: 100 },
+        }));
+        resolve(snapshot as PersistedPhase2BProjectSnapshot);
       };
     };
   })
@@ -651,9 +696,9 @@ const readPersistedProjectBytes = async (
         resolve(project ? {
           updatedAt: project.updatedAt,
           bytes: [...new TextEncoder().encode(JSON.stringify(project))],
-          variations: project.variations.map((variation: { name: string; look: { id: string } }) => ({
+          variations: project.variations.map((variation: { name: string; looks: Array<{ id: string }> }) => ({
             name: variation.name,
-            lookId: variation.look.id,
+            lookId: variation.looks[variation.looks.length - 1]?.id ?? 'original',
           })),
         } : null);
       };
@@ -718,6 +763,8 @@ interface PersistedPhase2CWorkspaceSnapshot {
     id: string;
     role: 'prepared-image' | 'cleanup-corrections' | 'trace-svg' | null;
     mimeType: string;
+    width: number;
+    height: number;
     blobDigest: string;
     text: string | null;
     preparedSamples: {
@@ -913,6 +960,8 @@ const readPersistedPhase2CWorkspace = async (
         id: asset.id,
         role: asset.role ?? null,
         mimeType: asset.mimeType,
+        width: asset.width,
+        height: asset.height,
         blobDigest: [...digestBytes].map(
           (byte) => byte.toString(16).padStart(2, '0'),
         ).join(''),
@@ -930,6 +979,52 @@ const readPersistedPhase2CWorkspace = async (
     assets,
   } satisfies PersistedPhase2CWorkspaceSnapshot;
 }, projectName);
+
+const readPreparedAlphaSamples = async (
+  page: Page,
+  projectName: string,
+  points: Array<{ x: number; y: number }>,
+) => page.evaluate(async ({ name, samples }) => {
+  const records = await new Promise<{ projects: any[]; assets: any[] }>((resolve, reject) => {
+    const request = indexedDB.open('inkmaster-studio');
+    request.onerror = () => reject(request.error ?? new Error('Could not open IndexedDB.'));
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction(['editor-projects', 'editor-assets']);
+      const projects = transaction.objectStore('editor-projects').getAll();
+      const assets = transaction.objectStore('editor-assets').getAll();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not read editor workspace.'));
+      transaction.oncomplete = () => {
+        database.close();
+        resolve({ projects: projects.result, assets: assets.result });
+      };
+    };
+  });
+  const project = records.projects.find((candidate) => candidate.name === name);
+  const variation = project?.variations.find(
+    (candidate: { id: string }) => candidate.id === project.activeVariationId,
+  );
+  const image = variation?.layers.find((candidate: { type: string }) => candidate.type === 'image');
+  const asset = records.assets.find(
+    (candidate) => candidate.id === image?.backgroundRemoval?.preparedAssetId,
+  );
+  if (!asset?.blob) return null;
+  const bitmap = await createImageBitmap(asset.blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Could not inspect prepared artwork.');
+  context.drawImage(bitmap, 0, 0);
+  const result = samples.map((point) => context.getImageData(
+    Math.round(point.x * (bitmap.width - 1)),
+    Math.round(point.y * (bitmap.height - 1)),
+    1,
+    1,
+  ).data[3]);
+  bitmap.close();
+  return result;
+}, { name: projectName, samples: points });
 
 const readPersistedPhase3AWorkspace = async (
   page: Page,
@@ -1074,6 +1169,169 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   await expectCanvasPainted(canvas);
   return readCanvasPixels(canvas);
 };
+
+const verifyOrderedLookStackFlow = async (
+  page: Page,
+  viewport: { width: number; height: number },
+  projectName: string,
+) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize(viewport);
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  await page.getByRole('button', { name: 'Distressed Print', exact: true }).click();
+  await setLookRange(page, 'Duotone strength', 64);
+  await setLookRange(page, 'Distressed Print strength', 52);
+  await page.getByRole('button', { name: 'Move Distressed Print earlier', exact: true }).click();
+
+  const readLooks = async () => (await readPersistedPhase2BProject(page, projectName))
+    ?.variations[0].looks.map(({ id, strength }) => ({ id, strength }));
+  await expect.poll(readLooks).toEqual([
+    { id: 'distressed-print', strength: 52 },
+    { id: 'duotone', strength: 64 },
+  ]);
+  await page.keyboard.press('Control+z');
+  await expect.poll(readLooks).toEqual([
+    { id: 'duotone', strength: 64 },
+    { id: 'distressed-print', strength: 52 },
+  ]);
+  await page.keyboard.press('Control+y');
+  await expect.poll(readLooks).toEqual([
+    { id: 'distressed-print', strength: 52 },
+    { id: 'duotone', strength: 64 },
+  ]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect(page.getByLabel('Distressed Print strength range', { exact: true })).toHaveValue('52');
+  await expect(page.getByLabel('Duotone strength range', { exact: true })).toHaveValue('64');
+  await expect.poll(readLooks).toEqual([
+    { id: 'distressed-print', strength: 52 },
+    { id: 'duotone', strength: 64 },
+  ]);
+
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  const compare = page.getByRole('region', { name: 'Compare Board', exact: true });
+  await expect(compare.locator('canvas[data-look-preview="true"]')).toHaveCount(2);
+  await compare.getByRole('button', { name: 'Close Compare', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expectCanvasPainted(page.getByLabel('Product artwork', { exact: true }));
+  await page.getByRole('button', { name: 'Create print-ready PNG', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
+  await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
+  await expect(dialog.getByText('Proof ready', { exact: true })).toBeVisible({ timeout: 150_000 });
+  await dialog.getByRole('button', { name: 'Close export', exact: true }).click();
+};
+
+test('Look stacks remain ordered across preview and export on desktop', async ({ page }) => {
+  await verifyOrderedLookStackFlow(page, { width: 1440, height: 900 }, 'look-stack-desktop');
+});
+
+test('Look stacks remain ordered across preview and export on mobile', async ({ page }) => {
+  await verifyOrderedLookStackFlow(page, { width: 390, height: 844 }, 'look-stack-mobile');
+});
+
+test('schema 7 preserves legacy Look Product state and picks', async ({ page }) => {
+  const projectName = 'schema-7-legacy-preservation';
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 320, 240, `${projectName}.png`);
+  await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
+
+  await page.evaluate(async (name) => {
+    await new Promise<void>((resolve, reject) => {
+      const openRequest = indexedDB.open('inkmaster-studio');
+      openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+      openRequest.onsuccess = () => {
+        const database = openRequest.result;
+        const transaction = database.transaction('editor-projects', 'readwrite');
+        const store = transaction.objectStore('editor-projects');
+        const request = store.getAll();
+        request.onerror = () => reject(request.error ?? new Error('Could not read editor projects.'));
+        request.onsuccess = () => {
+          const project = request.result.find((candidate) => candidate.name === name);
+          if (!project) {
+            reject(new Error('Seed project not found.'));
+            return;
+          }
+          project.schemaVersion = 6;
+          const variation = project.variations[0];
+          delete variation.looks;
+          variation.look = {
+            id: 'duotone', strength: 65, shadowColor: '#112233', highlightColor: '#ddeeff', balance: 12,
+          };
+          variation.layers[0].backgroundRemoval = {
+            ...variation.layers[0].backgroundRemoval,
+            mode: 'picked',
+            picks: [
+              { color: '#112233', point: { x: 0.2, y: 0.3 } },
+              { color: '#ddeeff', point: { x: 0.7, y: 0.8 } },
+            ],
+          };
+          project.productVariants[0].mockupSlug = 'white';
+          project.productVariants[0].placement = { x: 0.37, y: 0.61, scale: 0.82, rotation: 9 };
+          store.put(project);
+        };
+        transaction.onerror = () => reject(transaction.error ?? new Error('Could not seed schema 6 project.'));
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+      };
+    });
+  }, projectName);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  const projectNameInput = page.getByLabel('Project name', { exact: true });
+  await expect(projectNameInput).toHaveValue(projectName);
+  await projectNameInput.fill(`${projectName} temp`);
+  await projectNameInput.press('Enter');
+  await projectNameInput.fill(projectName);
+  await projectNameInput.press('Enter');
+  await expect.poll(async () => page.evaluate(async (name) => {
+    return new Promise<any>((resolve, reject) => {
+      const openRequest = indexedDB.open('inkmaster-studio');
+      openRequest.onerror = () => reject(openRequest.error ?? new Error('Could not open IndexedDB.'));
+      openRequest.onsuccess = () => {
+        const database = openRequest.result;
+        const request = database.transaction('editor-projects').objectStore('editor-projects').getAll();
+        request.onerror = () => reject(request.error ?? new Error('Could not read editor projects.'));
+        request.onsuccess = () => {
+          const project = request.result.find((candidate) => candidate.name === name);
+          database.close();
+          resolve(project ? {
+            schemaVersion: project.schemaVersion,
+            looks: project.variations[0].looks,
+            product: project.productVariants[0],
+            picks: project.variations[0].layers[0].backgroundRemoval.picks,
+          } : null);
+        };
+      };
+    });
+  }, projectName)).toEqual({
+    schemaVersion: 7,
+    looks: [{
+      id: 'duotone', strength: 65, shadowColor: '#112233', highlightColor: '#ddeeff', balance: 12,
+    }],
+    product: expect.objectContaining({
+      mockupSlug: 'white', placement: { x: 0.37, y: 0.61, scale: 0.82, rotation: 9 },
+    }),
+    picks: [
+      { color: '#112233', point: { x: 0.2, y: 0.3 } },
+      { color: '#ddeeff', point: { x: 0.7, y: 0.8 } },
+    ],
+  });
+});
 
 test('composes ordered image and text layers with persistence on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1388,7 +1646,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
     };
   });
   expect(desktopLayout.canvasWidth).toBeGreaterThan(900);
-  expect(desktopLayout.inspectorWidth).toBe(280);
+  expect(desktopLayout.inspectorWidth).toBe(304);
   expect(desktopLayout.canvasRight).toBeLessThanOrEqual(desktopLayout.inspectorLeft + 1);
 
   await page.screenshot({
@@ -1435,6 +1693,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 test('keeps undo and redo independent while alternating between variations', async ({ page }) => {
   await page.goto('/editor');
   await uploadFixture(page, 1200, 800, 'history-scope.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByLabel('X position').fill('0.7');
   await page.getByLabel('X position').blur();
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
@@ -1497,6 +1756,7 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
     { width: 900, height: 1600, name: 'drag-portrait.png' },
   ]) {
     await uploadFixture(page, fixture.width, fixture.height, fixture.name);
+    await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
     await expect(page.getByLabel('Project name')).toHaveValue(path.parse(fixture.name).name);
     await expect(page.getByRole('button', { name: `Select layer ${fixture.name}` }))
       .toHaveAttribute('aria-pressed', 'true');
@@ -1517,17 +1777,108 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
   }
 });
 
+test('moves selected artwork and crop bounds with the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 900, 'keyboard-canvas.png');
+
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+  await canvas.focus();
+  await expect(page.getByText('Arrow keys move. Shift moves farther.', { exact: true })).toBeVisible();
+  await expect.poll(async () => canvas.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
+  await canvas.press('ArrowRight');
+  await expect.poll(async () => (await readPersistedEditorState(page, 'keyboard-canvas'))?.x)
+    .toBeGreaterThan(0.5);
+  const preciseX = (await readPersistedEditorState(page, 'keyboard-canvas'))?.x ?? 0.5;
+
+  await canvas.press('Shift+ArrowRight');
+  await expect.poll(async () => (await readPersistedEditorState(page, 'keyboard-canvas'))?.x)
+    .toBeGreaterThan(preciseX);
+
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  const topLeft = page.getByRole('button', {
+    name: 'Resize crop from top left. Use the Arrow keys. Hold Shift for a larger step.',
+    exact: true,
+  });
+  await topLeft.focus();
+  await topLeft.press('ArrowRight');
+  await expect.poll(async () => {
+    const composition = await readPersistedComposition(page, 'keyboard-canvas');
+    return composition?.layers[0]?.crop;
+  }).toEqual({ x: 0.01, y: 0, width: 0.99, height: 1 });
+
+  await cropFrame.focus();
+  await expect(cropFrame.getByText('Arrow keys move. Shift moves farther.', { exact: true })).toBeVisible();
+  await expect.poll(async () => cropFrame.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
+  await cropFrame.press('ArrowLeft');
+  await expect.poll(async () => {
+    const composition = await readPersistedComposition(page, 'keyboard-canvas');
+    return composition?.layers[0]?.crop;
+  }).toEqual({ x: 0, y: 0, width: 0.99, height: 1 });
+});
+
+test('crop ratios resize the window without stretching artwork', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 800, 'crop-ratio.png');
+
+  await expect.poll(async () => (await readPersistedComposition(page, 'crop-ratio'))?.layers.length)
+    .toBe(1);
+  const before = await readPersistedComposition(page, 'crop-ratio');
+  const beforeTransform = before?.layers[0]?.transform;
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '1:1', exact: true }).click();
+
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  const frameBox = await cropFrame.boundingBox();
+  if (!frameBox) throw new Error('Crop frame bounds are unavailable.');
+  expect(Math.abs(frameBox.width / frameBox.height - 1)).toBeLessThan(0.02);
+
+  await expect.poll(async () => {
+    const persisted = await readPersistedComposition(page, 'crop-ratio');
+    const persistedCrop = persisted?.layers[0]?.crop;
+    return persistedCrop
+      ? Math.abs((persistedCrop.width * 1200) / (persistedCrop.height * 800) - 1)
+      : Number.POSITIVE_INFINITY;
+  }).toBeLessThan(0.000001);
+  const after = await readPersistedComposition(page, 'crop-ratio');
+  const crop = after?.layers[0]?.crop;
+  if (!crop) throw new Error('Persisted crop is unavailable.');
+  expect(after?.layers[0]?.transform).toEqual(beforeTransform);
+
+  await page.getByRole('button', { name: 'Reset crop', exact: true }).click();
+  await expect.poll(async () => (await readPersistedComposition(page, 'crop-ratio'))?.layers[0]?.crop)
+    .toEqual({ x: 0, y: 0, width: 1, height: 1 });
+});
+
 test('keeps the editor usable at 390 by 844 and captures the mobile layout', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'mobile.png');
 
+  const workflowContext = page.locator('aside[aria-label="Inspector"] > div[aria-live="polite"]');
+  await expect(workflowContext.getByText('Step 2 of 3 · Prepare', { exact: true })).toBeVisible();
+  await expect(workflowContext).toContainText('Crop if framing needs work');
+
   const select = page.getByRole('button', { name: 'Select' });
   const crop = page.getByRole('button', { name: 'Crop' });
-  const adjust = page.getByRole('button', { name: 'Adjust' });
+  const product = page.getByRole('button', { name: 'Product' });
+  const layers = page.getByRole('button', { name: 'Layers' });
+  const more = page.getByRole('button', { name: 'More tools' });
   await expect(select).toBeVisible();
   await expect(crop).toBeVisible();
-  await expect(adjust).toBeVisible();
+  await expect(product).toBeVisible();
+  await expect(layers).toBeVisible();
+  await expect(more).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adjust' })).toHaveCount(0);
   await expect(page.getByLabel('Variation name')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate variation' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeVisible();
@@ -1553,12 +1904,36 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.inspector.top + 1);
   expect(layout.inspector.bottom).toBeLessThanOrEqual(layout.toolbar.top + 1);
 
-  const toolBoxes = await Promise.all([select, crop, adjust].map((button) => button.boundingBox()));
+  const toolBoxes = await Promise.all([select, crop, product, layers, more].map((button) => button.boundingBox()));
   for (const box of toolBoxes) {
-    expect(box?.width).toBe(40);
-    expect(box?.height).toBe(40);
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
   }
   expect(new Set(toolBoxes.map((box) => box?.y)).size).toBe(1);
+
+  await page.getByRole('button', { name: 'Collapse' }).click();
+  const expandInspector = page.getByRole('button', { name: 'Expand' });
+  await expect(expandInspector).toHaveAttribute('aria-expanded', 'false');
+  const collapsedLayout = await page.evaluate(() => {
+    const canvas = document.querySelector('canvas[aria-label="Design canvas"]');
+    const inspector = document.querySelector('aside[aria-label="Inspector"]');
+    const toolbar = document.querySelector('nav[aria-label="Editor tools"]');
+    if (!(canvas instanceof HTMLElement) || !(inspector instanceof HTMLElement) || !(toolbar instanceof HTMLElement)) {
+      throw new Error('Missing mobile editor region');
+    }
+    const canvasBounds = canvas.getBoundingClientRect();
+    const inspectorBounds = inspector.getBoundingClientRect();
+    const toolbarBounds = toolbar.getBoundingClientRect();
+    return {
+      canvasHeight: canvasBounds.height,
+      inspectorHeight: inspectorBounds.height,
+      inspectorBottom: inspectorBounds.bottom,
+      toolbarTop: toolbarBounds.top,
+    };
+  });
+  expect(collapsedLayout.canvasHeight).toBeGreaterThan(layout.canvas.height);
+  expect(collapsedLayout.inspectorHeight).toBe(56);
+  expect(collapsedLayout.inspectorBottom).toBeLessThanOrEqual(collapsedLayout.toolbarTop + 1);
 
   await page.screenshot({
     path: artifactPath('mobile-390x844.png'),
@@ -1566,9 +1941,264 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   });
 });
 
+test('Basic keeps Product visible and specialists behind More', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 900, 1200, 'basic-workflow.png');
+
+  const toolbar = page.getByRole('navigation', { name: 'Editor tools' });
+  const primaryCommands = toolbar.getByRole('button');
+  await expect(primaryCommands).toHaveCount(5);
+  await expect(primaryCommands.nth(0)).toHaveAccessibleName('Select');
+  await expect(primaryCommands.nth(1)).toHaveAccessibleName('Crop');
+  await expect(primaryCommands.nth(2)).toHaveAccessibleName('Product');
+  await expect(primaryCommands.nth(3)).toHaveAccessibleName('Layers');
+  await expect(primaryCommands.nth(4)).toHaveAccessibleName('More tools');
+
+  const productBounds = await primaryCommands.nth(2).boundingBox();
+  const toolbarBounds = await toolbar.boundingBox();
+  expect(productBounds).not.toBeNull();
+  expect(toolbarBounds).not.toBeNull();
+  expect(productBounds!.x).toBeGreaterThanOrEqual(toolbarBounds!.x);
+  expect(productBounds!.x + productBounds!.width).toBeLessThanOrEqual(
+    toolbarBounds!.x + toolbarBounds!.width,
+  );
+  await expect(toolbar).toHaveJSProperty('scrollLeft', 0);
+
+  await toolbar.getByRole('button', { name: 'More tools' }).click();
+  await page.getByRole('menuitem', { name: 'Remove background' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Remove background' })).toBeEnabled();
+  await toolbar.getByRole('button', { name: 'Product' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();
+  await expect(toolbar.getByRole('button', { name: 'Layers' })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Compare' }).click();
+  await expect(page.getByRole('region', { name: 'Compare Board' })).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Compare Board' })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();
+  await toolbar.getByRole('button', { name: 'Crop' }).click();
+  await expect(toolbar.getByRole('button', { name: 'Crop' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#editor-product-mode-disabled-reason')).toHaveCount(0);
+});
+
+test('top bar groups stay readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 900, 1200, 'top-bar-groups.png');
+  await expect(page.getByLabel('Project name')).toHaveValue('top-bar-groups');
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const layout = await page.evaluate(() => {
+      const header = document.querySelector('header');
+      const groups = [...document.querySelectorAll<HTMLElement>('[data-topbar-group]')];
+      if (!(header instanceof HTMLElement) || groups.length !== 3) {
+        throw new Error('Top bar groups are unavailable.');
+      }
+      const bounds = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+      };
+      return {
+        header: bounds(header),
+        groups: groups.map((group) => ({ name: group.dataset.topbarGroup, ...bounds(group) })),
+      };
+    });
+
+    for (const group of layout.groups) {
+      expect(group.left, `${viewport.width} ${group.name} left`).toBeGreaterThanOrEqual(layout.header.left - 1);
+      expect(group.right, `${viewport.width} ${group.name} right`).toBeLessThanOrEqual(layout.header.right + 1);
+      expect(group.top, `${viewport.width} ${group.name} top`).toBeGreaterThanOrEqual(layout.header.top - 1);
+      expect(group.bottom, `${viewport.width} ${group.name} bottom`).toBeLessThanOrEqual(layout.header.bottom + 1);
+    }
+    for (let first = 0; first < layout.groups.length; first += 1) {
+      for (let second = first + 1; second < layout.groups.length; second += 1) {
+        const a = layout.groups[first];
+        const b = layout.groups[second];
+        const overlapWidth = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const overlapHeight = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        expect(overlapWidth * overlapHeight, `${viewport.width} ${a.name} overlaps ${b.name}`).toBeLessThanOrEqual(1);
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByRole('button', { name: 'Export' }).getByText('Export', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open local projects' }).getByText('Projects', { exact: true })).toBeVisible();
+});
+
+test('Product canvas supports keyboard placement and resize', async ({ page }) => {
+  const projectName = 'product-keyboard';
+  await page.goto('/editor');
+  await uploadFixture(page, 1000, 1000, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  const placement = page.getByRole('button', { name: 'Product artwork placement', exact: true });
+  const resize = page.getByRole('button', { name: 'Resize product artwork', exact: true });
+  await placement.focus();
+  await expect(page.getByText('Arrow keys move. Shift moves farther. Focus Resize to change size.')).toBeVisible();
+  await placement.press('ArrowRight');
+  await placement.press('Shift+ArrowDown');
+  await resize.focus();
+  await resize.press('ArrowRight');
+
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.51, y: 0.55, scale: 0.73, rotation: 0 });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.51, y: 0.55, scale: 0.73, rotation: 0 });
+});
+
+test('Product Basic leads with readiness and White persists', async ({ page }) => {
+  const projectName = 'product-white';
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1800, 1800, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  const readiness = inspector.getByRole('heading', { name: /Ready at this size|Check sharpness at this size|Artwork needs more resolution/ });
+  const shirtColor = inspector.getByRole('heading', { name: 'Shirt color', exact: true });
+  await expect(readiness).toBeVisible();
+  await expect(shirtColor).toBeVisible();
+  const readinessBox = await readiness.boundingBox();
+  const colorBox = await shirtColor.boundingBox();
+  expect(readinessBox!.y).toBeLessThan(colorBox!.y);
+  await expect(inspector.getByLabel('Artwork for Black')).toHaveCount(0);
+  await expect(inspector.getByLabel('Mockup color mode')).toHaveCount(0);
+  await expect(inspector.getByLabel('X position', { exact: true })).toHaveCount(0);
+
+  await inspector.getByRole('button', { name: 'White', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].mockupSlug;
+  }).toBe('white');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(inspector.getByRole('heading', { name: 'Artwork checks', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('combobox', { name: 'Artwork for White' })).toBeVisible();
+  await expect(inspector.getByLabel('Mockup color mode')).toBeVisible();
+  await expect(inspector.getByLabel('X position', { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('img', { name: 'White T-shirt', exact: true })).toBeVisible();
+  await expect(readiness).toBeVisible();
+});
+
+test('Product placement presets stay simple in Basic and persist after reload', async ({ page }) => {
+  const projectName = 'product-presets';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: 'Standard front', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Left chest', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Oversized front', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Left chest', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].placement;
+  }).toEqual({ x: 0.28, y: 0.27, scale: 0.32, rotation: 0 });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Oversized front', exact: true })).toBeVisible();
+  await expect(page.getByLabel('X position', { exact: true })).toHaveValue('28');
+  await expect(page.getByLabel('Y position', { exact: true })).toHaveValue('27');
+  await expect(page.getByLabel('Scale', { exact: true })).toHaveValue('32');
+  await page.getByRole('radio', { name: 'DTF transfer', exact: true }).check();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase3AWorkspace(page, projectName);
+    return workspace?.productVariants[0].printMethod;
+  }).toBe('dtf');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'DTF transfer', exact: true })).toBeChecked();
+});
+
+test('Before and after divider stays synchronized across pointer and keyboard controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 900, 'compare-divider.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Finish comparison', exact: true })).toBeVisible();
+
+  const divider = page.getByRole('slider', { name: 'Before and after divider', exact: true });
+  const range = page.getByLabel('Before and after position', { exact: true });
+  await expect(divider).toHaveAttribute('aria-valuenow', '50');
+  await divider.focus();
+  await divider.press('ArrowRight');
+  await expect(range).toHaveValue('51');
+  await divider.press('Shift+ArrowLeft');
+  await expect(range).toHaveValue('41');
+
+  const bounds = await divider.boundingBox();
+  if (!bounds) throw new Error('Before and after divider bounds are unavailable.');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 120, bounds.y + bounds.height / 2);
+  await page.mouse.up();
+  await expect.poll(async () => Number(await range.inputValue())).toBeGreaterThan(41);
+
+  const stage = divider.locator('..');
+  for (const endpoint of ['0', '100']) {
+    await range.fill(endpoint);
+    const stageBounds = await stage.boundingBox();
+    const endpointBounds = await divider.boundingBox();
+    if (!stageBounds || !endpointBounds) throw new Error('Comparison endpoint bounds are unavailable.');
+    expect(endpointBounds.x).toBeGreaterThanOrEqual(stageBounds.x);
+    expect(endpointBounds.x + endpointBounds.width).toBeLessThanOrEqual(
+      stageBounds.x + stageBounds.width,
+    );
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileBounds = await divider.boundingBox();
+  const mobileRangeBounds = await range.boundingBox();
+  if (!mobileBounds || !mobileRangeBounds) throw new Error('Mobile comparison controls are unavailable.');
+  expect(mobileBounds.width).toBeGreaterThanOrEqual(44);
+  expect(mobileBounds.height).toBeGreaterThanOrEqual(44);
+  expect(mobileRangeBounds.x + mobileRangeBounds.width).toBeLessThanOrEqual(390);
+});
+
 test('releases the mobile layer focus trap when resizing to desktop', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
+  await uploadFixture(page, 640, 480, 'focus-trap.png');
 
   await page.getByRole('button', { name: 'Layers' }).click();
   await expect(page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]')).toHaveCount(1);
@@ -1688,7 +2318,7 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
-  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await select.click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('X position', { exact: true }).fill('0.7');
@@ -1723,7 +2353,6 @@ test('edits text layers and keeps image tools reachable across selection fallbac
     return {
       pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
       inspectorOverflows: inspector.scrollWidth > inspector.clientWidth + 1,
-      inspectorScrolls: inspector.scrollHeight > inspector.clientHeight,
       canvasBottom: canvasBounds.bottom,
       inspectorTop: inspectorBounds.top,
       inspectorBottom: inspectorBounds.bottom,
@@ -1732,7 +2361,6 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   });
   expect(mobileLayout.pageOverflows).toBe(false);
   expect(mobileLayout.inspectorOverflows).toBe(false);
-  expect(mobileLayout.inspectorScrolls).toBe(true);
   expect(mobileLayout.canvasBottom).toBeLessThanOrEqual(mobileLayout.inspectorTop + 1);
   expect(mobileLayout.inspectorBottom).toBeLessThanOrEqual(mobileLayout.toolbarTop + 1);
   await page.getByLabel('X position', { exact: true }).scrollIntoViewIfNeeded();
@@ -1803,8 +2431,9 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'retry-save.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.5);
-  await page.waitForTimeout(500);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
 
   await page.evaluate(() => {
     const originalPut = IDBObjectStore.prototype.put;
@@ -1820,7 +2449,7 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
 
   await page.getByLabel('X position').fill('0.65');
   await page.getByLabel('X position').blur();
-  await expect(page.getByRole('status').filter({ hasText: 'Local save failed' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Save failed' })).toBeVisible();
   const retry = page.getByRole('button', { name: 'Retry save' });
   await expect(retry).toBeVisible();
   const retryBounds = await retry.boundingBox();
@@ -1928,11 +2557,12 @@ test('@task5-review commits complete Look controls and separates native color hi
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-control-history.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
-  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
-  await page.getByText('More', { exact: true }).click();
-
-  await page.getByLabel('Strength range', { exact: true }).fill('64');
+  const duotone = page.getByRole('button', { name: 'Duotone', exact: true });
+  await duotone.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(duotone).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Duotone strength range', { exact: true }).fill('64');
   await expect.poll(() => readPersistedLook(page, 'look-control-history')).toEqual({
     id: 'duotone',
     strength: 64,
@@ -1966,9 +2596,9 @@ test('@task5-review commits complete Look controls and separates native color hi
   await expect(shadowColor).toHaveValue('#111827');
   await undo.click();
   await expect(page.getByLabel('Balance range', { exact: true })).toHaveValue('0');
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('64');
+  await expect(page.getByLabel('Duotone strength range', { exact: true })).toHaveValue('64');
   await undo.click();
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('100');
+  await expect(page.getByLabel('Duotone strength range', { exact: true })).toHaveValue('100');
 
   const highlightColor = page.getByLabel('Highlight color', { exact: true });
   await highlightColor.evaluate((input) => {
@@ -1978,7 +2608,6 @@ test('@task5-review commits complete Look controls and separates native color hi
   });
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
-  await page.getByText('More', { exact: true }).click();
   await page.getByLabel('Highlight color', { exact: true }).fill('#abcdef');
   await undo.click();
   await expect(page.getByLabel('Highlight color', { exact: true })).toHaveValue('#123456');
@@ -1998,38 +2627,42 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-failure-authority.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
   const originalCanvas = await readCanvasPixels(canvas);
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
-  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalCanvas);
-  const lastReadyCanvas = await readCanvasPixels(canvas);
+  const monochrome = page.getByRole('button', { name: 'Monochrome', exact: true });
+  await monochrome.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(monochrome).toHaveAttribute('aria-pressed', 'true');
+  const afterCanvas = page.getByLabel('After artwork', { exact: true });
+  await expect.poll(() => readCanvasPixels(afterCanvas)).not.toBe(originalCanvas);
+  const lastReadyCanvas = await readCanvasPixels(afterCanvas);
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('80');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('80');
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).toBe(lastReadyCanvas);
   await invokeLookWorkerHarness(page, 'failHeld');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry Look preview' })).toBeVisible();
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).toBe(lastReadyCanvas);
 
   const recipeBeforeRetry = await readPersistedLook(page, 'look-failure-authority');
   await page.getByRole('button', { name: 'Retry Look preview' }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(lastReadyCanvas);
+  await expect.poll(() => readCanvasPixels(afterCanvas)).not.toBe(lastReadyCanvas);
   await expect.poll(() => readPersistedLook(page, 'look-failure-authority')).toEqual(recipeBeforeRetry);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('70');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('70');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('60');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('60');
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await page.getByLabel('Strength range', { exact: true }).fill('50');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('50');
   await expect.poll(async () => {
     const requests = (await getLookWorkerHarness(page)).requests;
     return requests.some(({ look, maxDimension }) => look.strength === 50 && maxDimension > 240);
@@ -2039,7 +2672,7 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('40');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('40');
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await invokeLookWorkerHarness(page, 'delayNextImage');
   await uploadFixture(page, 800, 1000, 'look-composition-unavailable.png');
@@ -2047,7 +2680,7 @@ test('@task5-review keeps preview failure authority keyed through pending, Retry
   await expect.poll(async () => (await getLookWorkerHarness(page)).delayedImages).toBe(1);
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
   await invokeLookWorkerHarness(page, 'releaseDelayedImage');
-  await expectCanvasPainted(canvas);
+  await expectCanvasPainted(afterCanvas);
 });
 
 test('@task5-review disposes the browser worker and pending surfaces on navigation', async ({ page }) => {
@@ -2055,6 +2688,7 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'look-worker-cleanup.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await enqueueLookWorkerRule(page, {
     action: 'hold',
     lookId: 'monochrome',
@@ -2067,9 +2701,11 @@ test('@task5-review disposes the browser worker and pending surfaces on navigati
   await invokeLookWorkerHarness(page, 'failHeld');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
+  const monochrome = page.getByRole('button', { name: 'Monochrome', exact: true });
+  await monochrome.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(monochrome).toHaveAttribute('aria-pressed', 'true');
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await page.getByLabel('Strength range', { exact: true }).fill('75');
+  await page.getByLabel('Monochrome strength range', { exact: true }).fill('75');
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
   await expect.poll(async () => {
     const snapshot = await getLookWorkerHarness(page);
@@ -2359,8 +2995,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await renameActiveVariation(page, 'Duotone Poster');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Duotone', exact: true }).click();
-  await setLookRange(page, 'Strength', 79);
-  await page.getByText('More', { exact: true }).click();
+  await setLookRange(page, 'Duotone strength', 79);
   await setLookColor(page, 'Shadow color', '#172554');
   await setLookColor(page, 'Highlight color', '#fde047');
   const duotoneBeforeBalance = await readCanvasPixels(canvas);
@@ -2370,8 +3005,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
   await renameActiveVariation(page, 'Halftone Screen');
   await page.getByRole('button', { name: 'Graphic Halftone', exact: true }).click();
-  await setLookRange(page, 'Strength', 84);
-  await page.getByText('More', { exact: true }).click();
+  await setLookRange(page, 'Graphic Halftone strength', 84);
   await setLookRange(page, 'Cell size', 14);
   await setLookRange(page, 'Angle', 32);
   await setLookColor(page, 'Foreground color', '#172554');
@@ -2383,9 +3017,8 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.getByRole('button', { name: 'Duplicate variation' }).click();
   await renameActiveVariation(page, 'Distressed Press');
   await page.getByRole('button', { name: 'Distressed Print', exact: true }).click();
-  await setLookRange(page, 'Strength', 92);
-  await page.getByText('More', { exact: true }).click();
-  await setLookRange(page, 'Wear', 57);
+  await setLookRange(page, 'Distressed Print strength', 92);
+  await setLookRange(page, 'Distress', 57);
   await setLookRange(page, 'Texture scale', 8);
   const distressedBeforeEdgeBreakup = await readCanvasPixels(canvas);
   await setLookRange(page, 'Edge breakup', 43);
@@ -2433,7 +3066,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const projectBeforeReload = await readPersistedPhase2BProject(page, projectName);
   const projectBytesBeforeReload = await readPersistedProjectBytes(page, projectName);
   expect(projectBeforeReload).toMatchObject({
-    schemaVersion: 5,
+    schemaVersion: 7,
     name: projectName,
     sourceMetadata: { name: `${projectName}.png`, mimeType: 'image/png', width: 1200, height: 900 },
   });
@@ -2521,14 +3154,14 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');
   await uploadTransparentFixture(page, 720, 960, `${projectName}.png`);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
   await renameActiveVariation(page, 'Vintage Study');
 
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Vintage Ink', exact: true }).click();
-  await setLookRange(page, 'Strength', 73);
-  await page.getByText('More', { exact: true }).click();
+  await setLookRange(page, 'Vintage Ink strength', 73);
   const beforeGrain = await readCanvasPixels(canvas);
   await setLookRange(page, 'Grain', 61);
   await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeGrain);
@@ -2544,8 +3177,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Vintage Ink', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('Strength range', { exact: true })).toHaveValue('73');
-  await page.getByText('More', { exact: true }).click();
+  await expect(page.getByLabel('Vintage Ink strength range', { exact: true })).toHaveValue('73');
   await expect(page.getByLabel('Grain range', { exact: true })).toHaveValue('61');
 
   const editorLayout = await page.evaluate(() => {
@@ -2731,9 +3363,9 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   const firstReadyPng = await readCanvasPixels(canvas);
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
-  await setLookRange(page, 'Strength', 82);
+  await setLookRange(page, 'Monochrome strength', 82);
   await expect.poll(async () => (await getLookWorkerHarness(page)).held).toBe(1);
-  await setLookRange(page, 'Strength', 63);
+  await setLookRange(page, 'Monochrome strength', 63);
   await expect.poll(async () => (await getLookWorkerHarness(page)).requests.some(
     ({ look, maxDimension }) => look.id === 'monochrome' && look.strength === 63 && maxDimension > 240,
   )).toBe(true);
@@ -2745,7 +3377,7 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
-  await setLookRange(page, 'Strength', 47);
+  await setLookRange(page, 'Monochrome strength', 47);
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry Look preview', exact: true })).toBeVisible();
   await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
@@ -2761,6 +3393,111 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeRetry);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
+});
+
+test('crop preserves completed background removal', async ({ page }) => {
+  const projectName = 'crop-preserves-cleanup';
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadPhase2CFixture(page, 320, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByLabel('Enable background removal', { exact: true }).check();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.backgroundRemoval?.preparedAssetId ?? null;
+  }).not.toBeNull();
+
+  const before = await readPersistedPhase2CWorkspace(page, projectName);
+  if (!before) throw new Error('Prepared cleanup workspace is unavailable.');
+  const sourceAsset = before.assets.find(({ id }) => id === before.sourceAssetId);
+  const image = before.variation.layers.find(({ type }) => type === 'image');
+  const preparedId = image?.backgroundRemoval?.preparedAssetId;
+  const preparedAsset = before.assets.find(({ id }) => id === preparedId);
+  if (!sourceAsset || !preparedAsset || !preparedId) throw new Error('Prepared cleanup asset is unavailable.');
+  expect(preparedAsset.width / preparedAsset.height).toBe(sourceAsset.width / sourceAsset.height);
+  const preparedDigest = preparedAsset.blobDigest;
+  const visibleBeforeCrop = await readCanvasPixels(canvas);
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '4:5', exact: true }).click();
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  await cropFrame.focus();
+  await cropFrame.press('ArrowRight');
+  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(visibleBeforeCrop);
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const currentImage = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return currentImage?.crop?.x ?? 0;
+  }).toBeGreaterThan(0);
+  await page.waitForTimeout(700);
+
+  const after = await readPersistedPhase2CWorkspace(page, projectName);
+  const afterImage = after?.variation.layers.find(({ type }) => type === 'image');
+  const afterPrepared = after?.assets.find(({ id }) => id === preparedId);
+  expect(afterImage?.backgroundRemoval?.preparedAssetId).toBe(preparedId);
+  expect(afterPrepared?.blobDigest).toBe(preparedDigest);
+});
+
+test('picked background colors accumulate and persist', async ({ page }) => {
+  const projectName = 'cumulative-picked-colors';
+  const samples = [
+    { x: 0.3, y: 0.5 },
+    { x: 0.7, y: 0.5 },
+    { x: 0.05, y: 0.5 },
+  ];
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadPickedColorsFixture(page, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Pick color', exact: true }).click();
+  const red = await sourcePointOnCanvas(canvas, samples[0].x, samples[0].y);
+  await page.mouse.click(red.x, red.y);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Pick color', exact: true }).click();
+  const green = await sourcePointOnCanvas(canvas, samples[1].x, samples[1].y);
+  await page.mouse.click(green.x, green.y);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.backgroundRemoval?.picks?.map(({ color }: { color: string }) => color);
+  }).toEqual(['#ff0000', '#00ff00']);
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Remove picked color/ })).toHaveCount(2);
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '16:9', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.crop;
+  }).not.toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
 });
 
 test('@phase2c-acceptance prepares, traces, persists, compares, and exports one owner design', async ({ page }) => {
@@ -2789,7 +3526,8 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     mimeType: 'image/png',
   });
 
-  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
   await page.getByLabel('Enable background removal', { exact: true }).check();
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
@@ -2800,6 +3538,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Pick color', exact: true }).click();
   const pickedPoint = await sourcePointOnCanvas(canvas, 0.08, 0.08);
   await page.mouse.click(pickedPoint.x, pickedPoint.y);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect(page.getByLabel('Tolerance', { exact: true })).toBeEnabled();
   await setEditorRange(page, 'Tolerance', 31);
   await setEditorRange(page, 'Edge feather', 2);
@@ -2809,7 +3548,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     return {
       enabled: image?.backgroundRemoval?.enabled,
       mode: image?.backgroundRemoval?.mode,
-      picked: Boolean(image?.backgroundRemoval?.pickedPoint),
+      picked: (image?.backgroundRemoval?.picks?.length ?? 0) > 0,
       tolerance: image?.backgroundRemoval?.tolerance,
       feather: image?.backgroundRemoval?.edgeFeather,
       prepared: Boolean(image?.backgroundRemoval?.preparedAssetId),
@@ -2907,7 +3646,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
-  await page.getByRole('radio', { name: 'Adv', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await setEditorRange(page, 'Detail', 72);
   await setEditorRange(page, 'Smoothing', 48);
   await page.getByRole('button', { name: 'Add palette color', exact: true }).click();
@@ -3003,6 +3742,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
   await expect(page.getByLabel('Project name', { exact: true })).toHaveValue(projectName);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
   const afterReload = await readPersistedPhase2CWorkspace(page, projectName);
   expect(afterReload?.variation).toEqual(beforeReload.variation);
@@ -3146,11 +3886,8 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await page.getByRole('button', { name: 'Erase background', exact: true }).click();
   const brushPoint = await sourcePointOnCanvas(canvas, 0.3, 0.55);
   await page.mouse.move(brushPoint.x, brushPoint.y);
-  await expect.poll(() => canvas.evaluate((element) => {
-    const cursor = element.nextElementSibling;
-    return cursor instanceof HTMLElement && cursor.getBoundingClientRect().width > 0;
-  })).toBe(true);
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.locator('[data-background-brush-cursor="true"]')).toBeVisible();
+  await page.keyboard.press('Control+z');
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
     return workspace?.variation.layers
@@ -3180,7 +3917,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
   const initial = await readPersistedPhase3AWorkspace(page, projectName);
   if (!initial) throw new Error('Initial Phase 3A workspace was not persisted.');
-  expect(initial.schemaVersion).toBe(5);
+  expect(initial.schemaVersion).toBe(7);
   const originalLayerBytes = JSON.stringify(initial.variations[0].layers);
 
   await page.getByRole('button', { name: 'Product', exact: true }).click();
@@ -3399,14 +4136,28 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
 });
 
 test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the product editor', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
+  await page.addInitScript(() => {
+    const original = URL.revokeObjectURL.bind(URL);
+    const target = window as typeof window & { __revokedProofUrls: string[] };
+    target.__revokedProofUrls = [];
+    URL.revokeObjectURL = (url) => {
+      target.__revokedProofUrls.push(url);
+      original(url);
+    };
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/editor');
-  await uploadTransparentFixture(page, 640, 640, 'phase-3b-export.png');
+  await uploadTransparentFixture(page, 4000, 4000, 'phase-3b-export.png');
   await page.getByRole('button', { name: 'Product', exact: true }).click();
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Create print-ready PNG', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
   await expect(dialog).toBeVisible();
+  const closeExport = dialog.getByRole('button', { name: 'Close export', exact: true });
+  const createPng = dialog.getByRole('button', { name: 'Create PNG', exact: true });
+  await expect.poll(async () => (await closeExport.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await closeExport.boundingBox())?.width).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await createPng.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
   await expect(dialog).toContainText('Proof only');
   await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
@@ -3418,15 +4169,127 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   await expect(dialog).toContainText('Transparency');
   await expect(dialog).toContainText('Proof only. Do not send this preset to production.');
   const downloadPromise = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const downloadPng = dialog.getByRole('button', { name: 'Download PNG', exact: true });
+  await expect.poll(async () => (await downloadPng.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await downloadPng.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-draft-proof\.png$/);
   const downloadPath = await download.path();
   if (!downloadPath) throw new Error('The generated PNG download is unavailable.');
   const content = readFileSync(downloadPath);
   expect([...content.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const createProof = dialog.getByRole('button', { name: 'Create mockup proof', exact: true });
+  await expect.poll(async () => (await createProof.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await createProof.click();
+  const proofImage = dialog.getByRole('img', { name: /mockup proof/ });
+  await expect(proofImage).toBeVisible();
+  await expect(dialog).toContainText('Proof only. This mockup estimates placement and garment color. Use the PNG for production.');
+
+  const proofDownloadPromise = page.waitForEvent('download');
+  const downloadProof = dialog.getByRole('button', { name: 'Download mockup proof', exact: true });
+  await expect.poll(async () => (await downloadProof.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await downloadProof.click();
+  const proofDownload = await proofDownloadPromise;
+  expect(proofDownload.suggestedFilename()).toMatch(/-mockup-proof\.png$/);
+  const proofPath = await proofDownload.path();
+  if (!proofPath) throw new Error('The mockup proof download is unavailable.');
+  const proofBytes = readFileSync(proofPath);
+  expect([...proofBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const firstProofUrl = await proofImage.getAttribute('src');
+  if (!firstProofUrl) throw new Error('The first mockup proof URL is unavailable.');
+  await dialog.getByRole('radio', { name: /Standard Tee/ }).check();
+  await expect(proofImage).toHaveCount(0);
+  await expect(downloadProof).toHaveCount(0);
+  await expect.poll(async () => page.evaluate(() => (
+    window as typeof window & { __revokedProofUrls: string[] }
+  ).__revokedProofUrls)).toContain(firstProofUrl);
+
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
+  await expect(dialog.getByText('Ready to print', { exact: true })).toBeVisible({ timeout: 150_000 });
+  await dialog.getByRole('button', { name: 'Create mockup proof', exact: true }).click();
+  await expect(proofImage).toBeVisible();
+  const secondProofUrl = await proofImage.getAttribute('src');
+  if (!secondProofUrl) throw new Error('The second mockup proof URL is unavailable.');
   await page.screenshot({
     path: phase3bArtifactPath('tshirt-png-receipt-1440x900.png'),
     animations: 'disabled',
   });
+  await closeExport.click();
+  await expect.poll(async () => page.evaluate(() => (
+    window as typeof window & { __revokedProofUrls: string[] }
+  ).__revokedProofUrls)).toContain(secondProofUrl);
+});
+
+test('Product export uses the garment-assigned variation for PNG and proof', async ({ page }) => {
+  test.setTimeout(300_000);
+  const projectName = 'assigned-product-proof';
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
+
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await renameActiveVariation(page, 'White proof artwork');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original' });
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('button', { name: 'White', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Artwork for White', exact: true }).selectOption({ label: 'White proof artwork' });
+
+  await expect.poll(async () => {
+    const project = await readPersistedPhase2BProject(page, projectName);
+    const original = project?.variations.find(({ name }) => name === 'Original');
+    const assigned = project?.variations.find(({ name }) => name === 'White proof artwork');
+    const product = project?.productVariants.find(({ variationId }) => variationId === original?.id);
+    return {
+      assignmentMatches: Boolean(assigned?.id) && product?.colorVariationIds.white === assigned?.id,
+      looks: assigned?.looks.map(({ id }) => id),
+    };
+  }).toEqual({
+    assignmentMatches: true,
+    looks: ['duotone'],
+  });
+
+  await page.getByRole('button', { name: 'Create print-ready PNG', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
+  const summary = dialog.getByRole('heading', { name: 'Production summary', exact: true }).locator('..');
+  await expect(summary).toContainText('White proof artwork');
+  await expect(summary).not.toContainText('Original');
+  await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
+  await expect(dialog.getByText('Proof ready', { exact: true })).toBeVisible({ timeout: 150_000 });
+
+  const pngDownloadPromise = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const pngDownload = await pngDownloadPromise;
+  const pngPath = await pngDownload.path();
+  if (!pngPath) throw new Error('The assigned artwork PNG download is unavailable.');
+  expect([...readFileSync(pngPath).subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  await dialog.getByRole('button', { name: 'Create mockup proof', exact: true }).click();
+  await expect(dialog.getByRole('img', { name: 'White mockup proof', exact: true })).toBeVisible();
+  const proofDownloadPromise = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download mockup proof', exact: true }).click();
+  const proofDownload = await proofDownloadPromise;
+  const proofPath = await proofDownload.path();
+  if (!proofPath) throw new Error('The assigned artwork proof download is unavailable.');
+  expect([...readFileSync(proofPath).subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  await dialog.getByRole('button', { name: 'Close export', exact: true }).click();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  const assignedArtwork = page.getByRole('combobox', { name: 'Artwork for White', exact: true });
+  await expect(assignedArtwork).toHaveValue(/.+/);
+  await expect(assignedArtwork.locator('option:checked')).toHaveText('White proof artwork');
+  await expect.poll(async () => {
+    const project = await readPersistedPhase2BProject(page, projectName);
+    return project?.variations.find(({ name }) => name === 'White proof artwork')?.looks.map(({ id }) => id);
+  }).toEqual(['duotone']);
 });

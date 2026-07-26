@@ -58,7 +58,7 @@ export interface ArtworkAnalysis {
   height: number;
   hasTransparency: boolean;
   transparencyCoverage: number;
-  partialTransparencyCoverage?: number;
+  partialTransparencyCoverage: number;
   edgeBackground: {
     isUniform: boolean;
     color: string;

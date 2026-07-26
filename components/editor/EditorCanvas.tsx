@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent,
+  type WheelEvent,
+} from 'react';
 import { hitTestDesignLayers } from '../../editor/compositor';
 import {
   CANONICAL_DESIGN_SIZE,
@@ -34,7 +42,7 @@ const emptyVariation: DesignVariation = {
   name: 'Empty',
   layers: [],
   selectedLayerId: '',
-  look: { id: 'original', strength: 100 },
+  looks: [],
 };
 
 const EDITOR_CANVAS_SURFACE_ID = 'editor-main-preview';
@@ -145,6 +153,53 @@ export const resizeCropRect = (
   };
 };
 
+const cropKeyboardStep = (largeStep: boolean) => largeStep ? 0.05 : 0.01;
+
+export const canvasKeyboardFocusClasses = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300';
+export const cropKeyboardFocusClasses = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white';
+
+export const moveCropRectWithKeyboard = (
+  crop: CropRect,
+  key: string,
+  largeStep = false,
+): CropRect => {
+  const step = cropKeyboardStep(largeStep);
+  const delta = key === 'ArrowLeft'
+    ? { x: -step, y: 0 }
+    : key === 'ArrowRight'
+      ? { x: step, y: 0 }
+      : key === 'ArrowUp'
+        ? { x: 0, y: -step }
+        : key === 'ArrowDown'
+          ? { x: 0, y: step }
+          : null;
+  if (!delta) return crop;
+  return {
+    ...crop,
+    x: Number(clamp(crop.x + delta.x, 0, 1 - crop.width).toFixed(6)),
+    y: Number(clamp(crop.y + delta.y, 0, 1 - crop.height).toFixed(6)),
+  };
+};
+
+export const resizeCropRectWithKeyboard = (
+  crop: CropRect,
+  handle: CropHandle,
+  key: string,
+  largeStep = false,
+): CropRect => {
+  const step = cropKeyboardStep(largeStep);
+  const delta = key === 'ArrowLeft'
+    ? { x: -step, y: 0 }
+    : key === 'ArrowRight'
+      ? { x: step, y: 0 }
+      : key === 'ArrowUp'
+        ? { x: 0, y: -step }
+        : key === 'ArrowDown'
+          ? { x: 0, y: step }
+          : null;
+  return delta ? resizeCropRect(crop, handle, delta) : crop;
+};
+
 export const canvasPointToCropPoint = (
   point: Point,
   viewport: Size,
@@ -170,6 +225,14 @@ export const canvasPointToCropPoint = (
     y: Number(Math.max(0, Math.min(1, y)).toFixed(6)),
   };
 };
+
+export const cropPointToSourcePoint = (
+  point: NormalizedPoint,
+  crop: CropRect,
+): NormalizedPoint => ({
+  x: Number(Math.max(0, Math.min(1, crop.x + point.x * crop.width)).toFixed(6)),
+  y: Number(Math.max(0, Math.min(1, crop.y + point.y * crop.height)).toFixed(6)),
+});
 
 export const EditorCanvas = ({
   variation,
@@ -226,8 +289,9 @@ export const EditorCanvas = ({
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   };
 
-  const selectedImage = activeVariation.layers.find((candidate) =>
-    candidate.id === activeVariation.selectedLayerId && candidate.type === 'image') as ImageLayer | undefined;
+  const selectedLayer = activeVariation.layers.find((candidate) =>
+    candidate.id === activeVariation.selectedLayerId);
+  const selectedImage = selectedLayer?.type === 'image' ? selectedLayer : undefined;
 
   const getBackgroundPoint = (point: Point): NormalizedPoint | null => {
     if (!selectedImage) return null;
@@ -235,12 +299,13 @@ export const EditorCanvas = ({
     if (!source) return null;
     const designPoint = displayPointToDesignPoint(point, zoomedDesignRect);
     if (!designPoint) return null;
-    return canvasPointToCropPoint(
+    const cropPoint = canvasPointToCropPoint(
       designPoint,
       CANONICAL_DESIGN_SIZE,
       source,
       selectedImage,
     );
+    return cropPoint ? cropPointToSourcePoint(cropPoint, selectedImage.crop) : null;
   };
 
   const cropFrame = useMemo(() => {
@@ -286,7 +351,7 @@ export const EditorCanvas = ({
   };
 
   const beginCropPointer = (
-    event: PointerEvent<HTMLDivElement>,
+    event: PointerEvent<HTMLElement>,
     mode: CropPointerState['mode'],
     handle?: CropHandle,
   ) => {
@@ -306,7 +371,7 @@ export const EditorCanvas = ({
     };
   };
 
-  const moveCrop = (event: PointerEvent<HTMLDivElement>) => {
+  const moveCrop = (event: PointerEvent<HTMLElement>) => {
     const drag = cropPointerRef.current;
     if (!drag || drag.pointerId !== event.pointerId || !selectedImage || !onCropChange) return;
     const delta = toCropDelta(drag, { x: event.clientX, y: event.clientY });
@@ -320,11 +385,41 @@ export const EditorCanvas = ({
     onCropChange(selectedImage.id, nextCrop, drag.mode === 'resize' ? 'canvas-crop-resize' : 'canvas-crop-move');
   };
 
-  const finishCrop = (event: PointerEvent<HTMLDivElement>) => {
+  const finishCrop = (event: PointerEvent<HTMLElement>) => {
     if (!cropPointerRef.current || cropPointerRef.current.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     cropPointerRef.current = null;
     onTransformEnd();
+  };
+
+  const finishKeyboardChange = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!event.key.startsWith('Arrow')) return;
+    onTransformEnd();
+  };
+
+  const handleCropMoveKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!selectedImage || !onCropChange || !event.key.startsWith('Arrow')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onCropChange(
+      selectedImage.id,
+      moveCropRectWithKeyboard(selectedImage.crop, event.key, event.shiftKey),
+      'canvas-crop-keyboard-move',
+    );
+  };
+
+  const handleCropResizeKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    handle: CropHandle,
+  ) => {
+    if (!selectedImage || !onCropChange || !event.key.startsWith('Arrow')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onCropChange(
+      selectedImage.id,
+      resizeCropRectWithKeyboard(selectedImage.crop, handle, event.key, event.shiftKey),
+      `canvas-crop-keyboard-${handle}`,
+    );
   };
 
   const appendStrokePoint = (stroke: StrokeState, point: NormalizedPoint) => {
@@ -498,6 +593,30 @@ export const EditorCanvas = ({
     setZoom((current) => resolveCanvasZoom(current, event.deltaY));
   };
 
+  const handleCanvasKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    if (
+      tool !== 'select' ||
+      backgroundMode !== 'idle' ||
+      !selectedLayer ||
+      !event.key.startsWith('Arrow') ||
+      zoomedDesignRect.scale <= 0
+    ) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 10 : 1;
+    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+    const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+    onTransformChange(
+      selectedLayer.id,
+      moveTransformByViewportDelta(
+        selectedLayer.transform,
+        dx / zoomedDesignRect.scale,
+        dy / zoomedDesignRect.scale,
+        CANONICAL_DESIGN_SIZE,
+      ),
+      'canvas-keyboard-move',
+    );
+  };
+
   useEffect(() => {
     if (backgroundMode === 'idle') {
       strokeRef.current = null;
@@ -516,10 +635,18 @@ export const EditorCanvas = ({
 
   return (
     <div className="relative h-full min-h-0 w-full bg-[#101820]">
+      {variation?.selectedLayerId ? (
+        <p id="editor-canvas-keyboard-help" className="sr-only">
+          Use the Arrow keys to move the selected layer. Hold Shift for a larger step.
+        </p>
+      ) : null}
       <canvas
         ref={canvasRef}
         aria-label="Design canvas"
-        className="block h-full min-h-0 w-full cursor-grab touch-none active:cursor-grabbing"
+        aria-describedby={variation?.selectedLayerId ? 'editor-canvas-keyboard-help' : undefined}
+        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
+        className={`peer block h-full min-h-0 w-full cursor-grab touch-none active:cursor-grabbing ${canvasKeyboardFocusClasses}`}
+        tabIndex={variation ? 0 : -1}
         data-selected-layer-id={variation?.selectedLayerId || undefined}
         data-background-mode={backgroundMode}
         style={{ background: 'transparent' }}
@@ -531,41 +658,64 @@ export const EditorCanvas = ({
         onPointerUp={finishPointer}
         onPointerCancel={cancelPointer}
         onWheel={handleWheel}
+        onKeyDown={handleCanvasKeyDown}
+        onKeyUp={finishKeyboardChange}
+        onBlur={onTransformEnd}
       />
+      {variation?.selectedLayerId ? (
+        <p className="pointer-events-none absolute bottom-3 left-1/2 z-30 hidden -translate-x-1/2 bg-neutral-950/90 px-3 py-2 text-xs font-medium text-white shadow-lg peer-focus-visible:block">
+          Arrow keys move. Shift moves farther.
+        </p>
+      ) : null}
       {tool === 'crop' && selectedImage && cropFrame ? (
         <div
-          aria-label="Crop frame. Drag inside to reposition, or drag a corner to resize."
-          className="absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)]"
+          aria-label="Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step."
+          className={`group absolute z-20 cursor-move border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(4,10,15,0.56)] ${cropKeyboardFocusClasses}`}
+          role="group"
+          tabIndex={0}
           style={{
             left: cropFrame.center.x,
             top: cropFrame.center.y,
             width: cropFrame.width,
             height: cropFrame.height,
             transform: `translate(-50%, -50%) rotate(${selectedImage.transform.rotation}deg) scale(${selectedImage.transform.flipX ? -1 : 1}, ${selectedImage.transform.flipY ? -1 : 1})`,
-            backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(110,231,183,.8) 33.2%, rgba(110,231,183,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(110,231,183,.8) 66.2%, rgba(110,231,183,.8) 66.8%, transparent 66.8%)',
+            backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(114,217,213,.8) 33.2%, rgba(114,217,213,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(114,217,213,.8) 66.2%, rgba(114,217,213,.8) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(114,217,213,.8) 33.2%, rgba(114,217,213,.8) 33.8%, transparent 33.8%, transparent 66.2%, rgba(114,217,213,.8) 66.2%, rgba(114,217,213,.8) 66.8%, transparent 66.8%)',
           }}
           onPointerDown={(event) => beginCropPointer(event, 'move')}
           onPointerMove={moveCrop}
           onPointerUp={finishCrop}
           onPointerCancel={finishCrop}
+          onKeyDown={handleCropMoveKeyDown}
+          onKeyUp={finishKeyboardChange}
+          onBlur={onTransformEnd}
         >
           <span className="absolute -top-7 left-0 bg-emerald-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">Drag or resize</span>
+          <span className="pointer-events-none absolute bottom-2 left-1/2 hidden -translate-x-1/2 whitespace-nowrap bg-neutral-950/90 px-3 py-2 text-xs font-medium text-white shadow-lg group-focus-visible:block">
+            Arrow keys move. Shift moves farther.
+          </span>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((handle) => (
-            <div
+            <button
               key={handle}
-              aria-label={`Resize crop from ${handle.replace('-', ' ')}`}
-              className={`absolute h-3 w-3 border-2 border-neutral-950 bg-emerald-400 ${handle === 'top-left' ? '-left-2 -top-2 cursor-nwse-resize' : handle === 'top-right' ? '-right-2 -top-2 cursor-nesw-resize' : handle === 'bottom-left' ? '-bottom-2 -left-2 cursor-nesw-resize' : '-bottom-2 -right-2 cursor-nwse-resize'}`}
+              type="button"
+              aria-label={`Resize crop from ${handle.replace('-', ' ')}. Use the Arrow keys. Hold Shift for a larger step.`}
+              className={`absolute grid h-11 w-11 place-items-center bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${handle === 'top-left' ? '-left-[23px] -top-[23px] cursor-nwse-resize' : handle === 'top-right' ? '-right-[23px] -top-[23px] cursor-nesw-resize' : handle === 'bottom-left' ? '-bottom-[23px] -left-[23px] cursor-nesw-resize' : '-bottom-[23px] -right-[23px] cursor-nwse-resize'}`}
               onPointerDown={(event) => beginCropPointer(event, 'resize', handle)}
               onPointerMove={moveCrop}
               onPointerUp={finishCrop}
               onPointerCancel={finishCrop}
-            />
+              onKeyDown={(event) => handleCropResizeKeyDown(event, handle)}
+              onKeyUp={finishKeyboardChange}
+              onBlur={onTransformEnd}
+            >
+              <span aria-hidden="true" className="h-3 w-3 border-2 border-neutral-950 bg-emerald-400" />
+            </button>
           ))}
         </div>
       ) : null}
       {brushCursor && (backgroundMode === 'erase' || backgroundMode === 'restore') ? (
         <div
           aria-hidden="true"
+          data-background-brush-cursor="true"
           className="pointer-events-none absolute rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.8)]"
           style={{
             width: Math.max(2, backgroundBrushSize * Math.max(viewport.size.width, viewport.size.height) / 1000),

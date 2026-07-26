@@ -6,17 +6,27 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
+    name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the engines floor in package.json. 24 is what contributors are
+        # actually running locally, and the two have diverged before.
+        node: [22, 24]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build
-        run: npm run build
+      # `npm test` runs typecheck, then the production build, then the
+      # node:test and tsx:test suites. It supersedes a standalone build step,
+      # so building separately would only duplicate work.
+      - name: Typecheck, build and test
+        run: npm test

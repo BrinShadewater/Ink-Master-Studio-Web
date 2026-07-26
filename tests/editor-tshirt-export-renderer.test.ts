@@ -360,7 +360,7 @@ const snapshot = (
     name: 'Original',
     layers,
     selectedLayerId: layers[0]?.id ?? '',
-    look: createDefaultLook('original', 0x12345678),
+    looks: [],
   },
   placement: { x: 0.3, y: 0.6, scale: 0.8, rotation: 30 },
   assets,
@@ -479,6 +479,13 @@ test('renders authoritative raster, text, and sanitized trace content on the pre
   assert.equal(records.resizeCalls[0].source.context.filter,
     'brightness(120%) contrast(90%) saturate(135%)');
   assert.equal(records.resizeCalls[1].source.context.filter, 'none');
+  const preparedBitmap = records.bitmaps.find((candidate) =>
+    candidate.width === 400 && candidate.height === 420);
+  assert.ok(preparedBitmap);
+  const preparedSourceDraw = records.draws.find(({ image }) =>
+    image === preparedBitmap as unknown as CanvasImageSource);
+  assert.ok(preparedSourceDraw);
+  assert.deepEqual(preparedSourceDraw.args, [80, 42, 200, 294, 0, 0, 200, 294]);
 
   assert.ok(records.texts.some(({ canvas, text, font }) =>
     canvas === master && text === 'I' && font === '72px Arial'));
@@ -529,7 +536,10 @@ test('preserves transparent red RGB through enlargement and repeats seeded pixel
         name: 'Distressed',
         layers: [imageLayer('edge-layer', 'edge', { name: 'Transparent red edge' })],
         selectedLayerId: 'edge-layer',
-        look: createDefaultLook('vintage-ink', 0x98765432),
+        looks: [
+          createDefaultLook('monochrome'),
+          createDefaultLook('vintage-ink', 0x98765432),
+        ],
       },
     },
   );

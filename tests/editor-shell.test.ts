@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -15,12 +16,8 @@ import {
 import { EditorToolbar } from '../components/editor/EditorToolbar';
 import {
   ProductInspector,
-  createCenterProductPlacementCommand,
   createProductPlacementPresetCommand,
   createResetProductPlacementCommand,
-  getGarmentContrastCoverage,
-  getPrintLensFindings,
-  getPrintMethodGuidance,
   getProductReadinessEstimate,
 } from '../components/editor/ProductInspector';
 import { BackgroundRemovalInspector } from '../components/editor/BackgroundRemovalInspector';
@@ -40,6 +37,7 @@ import {
   controlBounds,
   cropToEdgePercentages,
   edgePercentagesToCrop,
+  getInspectorWorkflowContext,
 } from '../components/editor/EditorInspector';
 import {
   createFontSizeDraftState,
@@ -64,8 +62,13 @@ import {
 } from '../components/editor/EditorApp';
 import {
   canvasPointToCropPoint,
+  cropPointToSourcePoint,
+  canvasKeyboardFocusClasses,
+  cropKeyboardFocusClasses,
   getZoomedDesignRect,
+  moveCropRectWithKeyboard,
   resizeCropRect,
+  resizeCropRectWithKeyboard,
   resolveCanvasZoom,
 } from '../components/editor/EditorCanvas';
 import {
@@ -132,7 +135,7 @@ const createLayerPanelVariation = (): DesignVariation => {
     name: 'Original',
     layers: [bottom, top],
     selectedLayerId: top.id,
-    look: { id: 'original', strength: 100 },
+    looks: [],
   };
 };
 
@@ -236,15 +239,22 @@ test('mobile toolbar exposes a stable Layers command', () => {
 
   assert.match(markup, /aria-label="Layers"/);
   assert.match(markup, /aria-label="Layers"[^>]*title="Layers"/);
+  assert.match(markup, />Layers<\/span>/);
 });
 
 test('top bar exposes export as a project command', () => {
   const enabled = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.doesNotMatch(enabled, /aria-label="Export"[^>]*disabled=""/);
   assert.match(enabled, /aria-label="Export"[\s\S]*?lucide-download/);
+  assert.match(enabled, /aria-label="Export"[\s\S]*?>Export<\/span>/);
+  assert.match(enabled, /aria-label="Open local projects"[\s\S]*?>Projects<\/span>/);
+  for (const group of ['project', 'variation', 'commands']) {
+    assert.match(enabled, new RegExp(`data-topbar-group="${group}"`));
+  }
   const disabled = renderToStaticMarkup(createElement(EditorTopBar, {
     ...topBarProps,
     projectId: null,
+    mode: 'advanced',
   }));
   assert.match(disabled, /aria-label="Export"[^>]*disabled=""/);
 });
@@ -253,15 +263,44 @@ test('top bar defaults to Basic and exposes Advanced editor mode', () => {
   const markup = renderToStaticMarkup(createElement(EditorTopBar, topBarProps));
   assert.match(markup, /aria-label="Editor mode"/);
   assert.match(markup, /aria-checked="true"[^>]*>Basic/);
-  assert.match(markup, /aria-checked="false"[^>]*>Adv/);
+  assert.match(markup, /aria-label="Advanced"[^>]*aria-checked="false"/);
 });
 
-test('easy mode keeps Looks available and hides Compare', () => {
-  const easy = renderToStaticMarkup(createElement(EditorToolbar, {
-    tool: 'select', mode: 'easy', onToolChange: () => undefined, onOpenLayers: () => undefined,
+test('empty Basic top bar keeps only project-start commands', () => {
+  const markup = renderToStaticMarkup(createElement(EditorTopBar, {
+    ...topBarProps,
+    projectId: null,
+    mode: 'easy',
   }));
-  assert.match(easy, /aria-label="Looks"/);
+  assert.match(markup, /aria-label="Import artwork"/);
+  assert.match(markup, /aria-label="Open local projects"/);
+  assert.doesNotMatch(markup, /aria-label="Project name"/);
+  assert.doesNotMatch(markup, /aria-label="Export"/);
+  assert.doesNotMatch(markup, /aria-label="Variation"/);
+});
+
+test('empty Advanced top bar does not report a saved project', () => {
+  const markup = renderToStaticMarkup(createElement(EditorTopBar, {
+    ...topBarProps,
+    projectId: null,
+    mode: 'advanced',
+  }));
+  assert.doesNotMatch(markup, /Saved locally/);
+  assert.doesNotMatch(markup, /role="status"/);
+});
+
+test('Basic toolbar keeps the guided workflow visible with Looks available for finishing', () => {
+  const easy = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select', mode: 'easy', hasProject: true, hasImageLayer: true,
+    onToolChange: () => undefined, onOpenLayers: () => undefined,
+  }));
+  const labels = [...easy.matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(labels.slice(0, 6), ['Select', 'Crop', 'Looks', 'Product', 'Layers', 'More tools']);
+  for (const label of ['Adjust', 'Enhance resolution', 'Remove background', 'Trace']) {
+    assert.doesNotMatch(easy, new RegExp(`aria-label="${label}"[^>]*data-primary-tool`));
+  }
   assert.doesNotMatch(easy, /aria-label="Compare"/);
+
   const advanced = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'select', mode: 'advanced', onToolChange: () => undefined, onOpenLayers: () => undefined,
   }));
@@ -333,7 +372,7 @@ test('export menu presents blockers or enables a vector-only SVG download', () =
   );
 });
 
-test('toolbar exposes the Looks tool with the Palette icon and stable mobile target', () => {
+test('toolbar exposes the Looks tool with a visible mobile label and stable target', () => {
   const markup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'looks',
     onToolChange: () => undefined,
@@ -342,18 +381,22 @@ test('toolbar exposes the Looks tool with the Palette icon and stable mobile tar
 
   assert.match(markup, /aria-label="Looks"[^>]*aria-pressed="true"/);
   assert.match(markup, /aria-label="Looks"[\s\S]*?lucide-palette/);
+  assert.match(markup, /aria-label="Looks"[\s\S]*?>Looks<\/span>/);
   const looksButton = markup.match(/<button[^>]*aria-label="Looks"[^>]*>/)?.[0] ?? '';
-  assert.match(looksButton, /class="[^"]*h-10 w-10/);
+  assert.match(looksButton, /class="[^"]*h-14 w-14/);
+  assert.match(looksButton, /md:h-14 md:w-\[72px\]/);
   for (const group of ['Arrange', 'Prepare artwork', 'Finish and preview']) {
     assert.match(markup, new RegExp(`role="group"[^>]*aria-label="${group}"`));
   }
 });
 
-test('toolbar exposes Product only for an open project and constrains conflicting modes', () => {
+test('Product mode leaves navigation and Layers enabled', () => {
   const productMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
     tool: 'product',
     layerType: 'image',
+    hasImageLayer: true,
     hasProject: true,
+    mode: 'easy',
     onToolChange: () => undefined,
     onOpenLayers: () => undefined,
     variationCount: 2,
@@ -361,10 +404,12 @@ test('toolbar exposes Product only for an open project and constrains conflictin
 
   assert.match(productMarkup, /aria-label="Product"[^>]*aria-pressed="true"/);
   assert.match(productMarkup, /aria-label="Product"[\s\S]*?lucide-shirt/);
-  assert.match(productMarkup, /Product mode/);
-  assert.match(productMarkup, /aria-label="Select"[^>]*(?!disabled)/);
-  for (const label of ['Crop', 'Adjust', 'Remove background', 'Trace', 'Looks', 'Compare', 'Layers']) {
-    assert.match(productMarkup, new RegExp(`aria-label="${label}"[^>]*disabled=""`));
+  assert.doesNotMatch(productMarkup, /editor-product-mode-disabled-reason/);
+  for (const label of ['Select', 'Crop', 'Product', 'Layers', 'More tools']) {
+    assert.doesNotMatch(
+      productMarkup.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? '',
+      /disabled=""/,
+    );
   }
 
   const emptyMarkup = renderToStaticMarkup(createElement(EditorToolbar, {
@@ -374,6 +419,21 @@ test('toolbar exposes Product only for an open project and constrains conflictin
     onOpenLayers: () => undefined,
   }));
   assert.match(emptyMarkup, /aria-label="Product"[^>]*disabled=""/);
+});
+
+test('an active Basic specialist occupies the preparation slot', () => {
+  const markup = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'remove-background',
+    mode: 'easy',
+    hasProject: true,
+    hasImageLayer: true,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+
+  assert.match(markup, /data-primary-tool="remove-background"/);
+  assert.match(markup, /aria-label="Product"/);
+  assert.doesNotMatch(markup, /aria-label="Crop"[^>]*data-primary-tool/);
 });
 
 test('product inspector exposes the complete shirt catalog and bounded placement controls', () => {
@@ -397,7 +457,7 @@ test('product inspector exposes the complete shirt catalog and bounded placement
 
   assert.match(markup, /<h2[^>]*>Product<\/h2>/);
   assert.match(markup, />Black<\/span>/);
-  assert.equal(markup.match(/data-product-swatch="true"/g)?.length, 11);
+  assert.equal(markup.match(/data-product-swatch="true"/g)?.length, 12);
   for (const mockup of TSHIRT_MOCKUPS) {
     assert.match(markup, new RegExp(`aria-label="${mockup.name}"[^>]*title="${mockup.name}"`));
   }
@@ -413,17 +473,16 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   assert.match(markup, /aria-label="Artwork for Black"/);
   assert.match(markup, /aria-label="Mockup color mode"/);
   assert.match(markup, />Print intent<\/button>/);
-  assert.match(markup, /aria-label="Print method"/);
 
-  assert.deepEqual(createCenterProductPlacementCommand(product), {
-    type: 'set-product-placement',
-    placement: { ...product.placement, x: 0.5, y: 0.5 },
-    historyGroup: 'product-center',
-  });
   assert.deepEqual(createProductPlacementPresetCommand('left-chest'), {
     type: 'set-product-placement',
     placement: { x: 0.28, y: 0.27, scale: 0.32, rotation: 0 },
     historyGroup: 'product-preset:left-chest',
+  });
+  assert.deepEqual(createProductPlacementPresetCommand('right-chest'), {
+    type: 'set-product-placement',
+    placement: { x: 0.72, y: 0.27, scale: 0.32, rotation: 0 },
+    historyGroup: 'product-preset:right-chest',
   });
   assert.deepEqual(createResetProductPlacementCommand(), {
     type: 'set-product-placement',
@@ -432,53 +491,56 @@ test('product inspector exposes the complete shirt catalog and bounded placement
   });
   assert.deepEqual(
     getProductReadinessEstimate(project.variations[0], product, { [source.id]: source }),
-    { sourceSide: 80, scale: 40.5, status: 'enhance' },
+    { smallestSourceEdge: 80, scale: 40.5, status: 'enhance' },
   );
-  assert.deepEqual(getPrintMethodGuidance('vinyl', 2), {
-    status: 'ready', label: 'Good fit', detail: 'This palette is suitable for a simple cut-vinyl treatment.',
+});
+
+test('Product Basic leads with readiness and keeps precision in Advanced', () => {
+  const source = createEditorAsset('project-product-ready', new Blob(['source']), {
+    name: 'ready.png', width: 8333, height: 8333,
   });
-  assert.equal(getPrintMethodGuidance('vinyl', 4).status, 'review');
-  assert.deepEqual(getGarmentContrastCoverage({
-    width: 100, height: 100, hasTransparency: true, transparencyCoverage: 0.2,
-    edgeBackground: { isUniform: false, color: '#000000', tone: 'dark', confidence: 0 },
-    printQuality: { dpi: 300, status: 'good', label: 'Print Ready' }, palette: ['#111111'],
-    dominantTone: 'dark', contrastRisk: { darkGarment: true, lightGarment: false }, vectorSuitability: 'strong', warnings: [],
-  }), {
-    suitableCount: 2,
-    atRisk: ['Black', 'Burgundy', 'Cardinal', 'Charcoal', 'Forest green', 'Military green', 'Navy', 'Red', 'Royal blue'],
-    recommendation: 'Best on lighter garment colors.',
-  });
-  assert.deepEqual(getPrintLensFindings(
-    { sourceSide: 100, scale: 3, status: 'enhance' },
-    {
-      width: 100, height: 100, hasTransparency: false, transparencyCoverage: 0,
-      edgeBackground: { isUniform: true, color: '#FFFFFF', tone: 'light', confidence: 0.95 },
-      printQuality: { dpi: 50, status: 'poor', label: 'Too Low' }, palette: ['#111111', '#EEEEEE', '#FF0000'],
-      dominantTone: 'mid', contrastRisk: { darkGarment: false, lightGarment: false }, vectorSuitability: 'possible', warnings: [],
-    },
-    false,
-    getPrintMethodGuidance('vinyl', 3),
-    'vinyl',
-    false,
-  ).map(({ id, severity }) => ({ id, severity })), [
-    { id: 'resolution', severity: 'fix' },
-    { id: 'background', severity: 'review' },
-    { id: 'method', severity: 'review' },
-  ]);
-  assert.ok(getPrintLensFindings(
-    { sourceSide: 2000, scale: 1, status: 'ready' },
-    {
-      width: 2000, height: 2000, hasTransparency: true, transparencyCoverage: 0.1,
-      partialTransparencyCoverage: 0.08,
-      edgeBackground: { isUniform: false, color: '#000000', tone: 'dark', confidence: 0 },
-      printQuality: { dpi: 300, status: 'good', label: 'Print Ready' }, palette: ['#111111'],
-      dominantTone: 'dark', contrastRisk: { darkGarment: false, lightGarment: false }, vectorSuitability: 'strong', warnings: [],
-    },
-    false,
-    getPrintMethodGuidance('dtg', 1),
-    'dtg',
-    true,
-  ).some((finding) => finding.id === 'transparent-fade'));
+  const project = createEditorProject('Product ready', source);
+  const product = findTShirtProduct(project.productVariants, project.activeVariationId);
+  const props = {
+    product,
+    mockupStatus: 'ready' as const,
+    mockupError: null,
+    artworkError: null,
+    artworkVariation: project.variations[0],
+    assetsById: { [source.id]: source },
+    dispatch: () => undefined,
+    onRetry: () => undefined,
+    onReturnToDesign: () => undefined,
+    onExport: () => undefined,
+  };
+  const basic = renderToStaticMarkup(createElement(ProductInspector, { ...props, mode: 'easy' }));
+  assert.ok(basic.indexOf('Ready at this size') < basic.indexOf('Shirt color'));
+  assert.match(basic, /The export uses less than the available artwork resolution/);
+  assert.match(basic, />Create print-ready PNG<\/button>/);
+  assert.doesNotMatch(basic, /Artwork checks|Artwork for Black|Mockup color mode|product-position-x|product-scale/);
+  assert.doesNotMatch(basic, /Largest source edge|Estimated scale|Print Lens/);
+  assert.doesNotMatch(basic, /aria-label="Print method"/);
+  assert.doesNotMatch(basic, /DTF transfer/);
+  assert.doesNotMatch(basic, /Cut vinyl/);
+  assert.match(basic, />Standard front<\/button>/);
+  assert.match(basic, />Left chest<\/button>/);
+  assert.doesNotMatch(basic, />Oversized front<\/button>/);
+  assert.doesNotMatch(basic, />Center artwork<\/button>/);
+  assert.doesNotMatch(basic, />Fit print area<\/button>/);
+
+  const advanced = renderToStaticMarkup(createElement(ProductInspector, { ...props, mode: 'advanced' }));
+  assert.match(advanced, /Artwork checks/);
+  assert.match(advanced, /aria-label="Artwork for Black"/);
+  assert.match(advanced, /aria-label="Mockup color mode"/);
+  assert.match(advanced, /id="product-position-x"/);
+  assert.match(advanced, /id="product-scale"/);
+  assert.match(advanced, />Standard front<\/button>/);
+  assert.match(advanced, />Left chest<\/button>/);
+  assert.match(advanced, />Oversized front<\/button>/);
+  assert.match(advanced, /aria-label="Print method"/);
+  assert.match(advanced, />DTG</);
+  assert.match(advanced, />DTF transfer</);
+  assert.match(advanced, />Cut vinyl</);
 });
 
 test('product inspector exposes shirt and artwork recovery without hiding placement controls', () => {
@@ -589,9 +651,7 @@ test('trace inspector exposes bounded controls, palette, retry, and source resto
 
   assert.match(markup, /id="editor-trace-colors"[^>]*min="2"[^>]*max="64"[^>]*step="1"/);
   assert.match(markup, /aria-label="Vectorize preset"/);
-  assert.match(markup, /Vector goal/);
-  assert.match(markup, /Full-color vector/);
-  assert.match(markup, /Print simplified/);
+  assert.match(markup, />Full color</);
   assert.match(markup, /id="editor-trace-detail"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-smoothing"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
   assert.match(markup, /id="editor-trace-blur"[^>]*min="0"[^>]*max="5"[^>]*step="1"/);
@@ -608,6 +668,14 @@ test('background removal inspector exposes the bounded focused workflow', () => 
   const layer = createEditorProject('Background inspector', source).variations[0].layers[0];
   assert.equal(layer.type, 'image');
   if (layer.type !== 'image') throw new Error('Expected image layer.');
+  layer.backgroundRemoval = {
+    ...layer.backgroundRemoval,
+    mode: 'picked',
+    picks: [
+      { color: '#ff0000', point: { x: 0.2, y: 0.3 } },
+      { color: '#00ff00', point: { x: 0.7, y: 0.6 } },
+    ],
+  };
   const markup = renderToStaticMarkup(createElement(BackgroundRemovalInspector, {
     layer,
     status: 'failed',
@@ -619,6 +687,8 @@ test('background removal inspector exposes the bounded focused workflow', () => 
     onBrushModeChange: () => undefined,
     onBrushSizeChange: () => undefined,
     onClearCorrections: async () => undefined,
+    onRemovePick: () => undefined,
+    onClearPicks: () => undefined,
     onDone: () => undefined,
   }));
 
@@ -630,6 +700,10 @@ test('background removal inspector exposes the bounded focused workflow', () => 
   assert.match(markup, /Background removal failed\./);
   assert.match(markup, />Retry</);
   assert.match(markup, />Clear corrections</);
+  assert.match(markup, /Picked colors/);
+  assert.match(markup, /aria-label="Remove picked color 1"/);
+  assert.match(markup, /aria-label="Remove picked color 2"/);
+  assert.match(markup, />Clear picked colors</);
   assert.match(markup, />Reset background</);
   assert.match(markup, />Done</);
 });
@@ -692,6 +766,43 @@ test('crop handles resize independently and retain the opposite crop corner', ()
   );
 });
 
+test('background corrections map crop-local canvas points into immutable source coordinates', () => {
+  assert.deepEqual(
+    cropPointToSourcePoint(
+      { x: 0.5, y: 0.25 },
+      { x: 0.2, y: 0.1, width: 0.4, height: 0.6 },
+    ),
+    { x: 0.4, y: 0.25 },
+  );
+});
+
+test('keyboard crop controls support precise and larger movement steps', () => {
+  const crop = { x: 0.2, y: 0.25, width: 0.5, height: 0.4 };
+  assert.deepEqual(
+    moveCropRectWithKeyboard(crop, 'ArrowRight'),
+    { x: 0.21, y: 0.25, width: 0.5, height: 0.4 },
+  );
+  assert.deepEqual(
+    moveCropRectWithKeyboard(crop, 'ArrowUp', true),
+    { x: 0.2, y: 0.2, width: 0.5, height: 0.4 },
+  );
+  assert.deepEqual(
+    resizeCropRectWithKeyboard(crop, 'top-left', 'ArrowRight'),
+    { x: 0.21, y: 0.25, width: 0.49, height: 0.4 },
+  );
+  assert.deepEqual(
+    resizeCropRectWithKeyboard(crop, 'bottom-right', 'ArrowDown', true),
+    { x: 0.2, y: 0.25, width: 0.5, height: 0.45 },
+  );
+});
+
+test('design canvas and crop frame expose visible keyboard focus styles', () => {
+  assert.match(canvasKeyboardFocusClasses, /focus-visible:ring-2/);
+  assert.match(canvasKeyboardFocusClasses, /focus-visible:ring-inset/);
+  assert.match(cropKeyboardFocusClasses, /focus-visible:ring-2/);
+  assert.match(cropKeyboardFocusClasses, /focus-visible:ring-inset/);
+});
+
 const createCompareVariations = (count: number): DesignVariation[] => {
   const source = createEditorAsset('project-compare-shell', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -729,6 +840,8 @@ const renderCompareBoard = (
 test('Compare Board exposes stable selection, background, zoom, and edit controls', () => {
   const markup = renderCompareBoard(3, ['variation-1', 'variation-2'], 'dark');
 
+  assert.match(markup, /<h2[^>]*>Compare<\/h2>/);
+  assert.doesNotMatch(markup, /<h1[^>]*>Compare<\/h1>/);
   assert.match(markup, /aria-label="Compare variations"/);
   for (let index = 1; index <= 3; index += 1) {
     assert.match(markup, new RegExp(`type="checkbox"[^>]*value="variation-${index}"`));
@@ -906,7 +1019,12 @@ test('duplicating selected text from Adjust normalizes the duplicate to Select',
 
 const renderLooksInspector = (
   lookId: LookId,
-  options: { error?: string | null; seed?: number } = {},
+  options: {
+    error?: string | null;
+    seed?: number;
+    looks?: DesignVariation['looks'];
+    mode?: 'easy' | 'advanced';
+  } = {},
 ) => {
   const source = createEditorAsset('project-looks-inspector', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
@@ -915,20 +1033,21 @@ const renderLooksInspector = (
   const variation = {
     ...project.variations[0],
     id: 'variation-looks-inspector',
-    look: createDefaultLook(lookId, options.seed ?? 7),
+    looks: options.looks ?? (lookId === 'original' ? [] : [createDefaultLook(lookId, options.seed ?? 7)]),
   };
   return renderToStaticMarkup(createElement(LooksInspector, {
     variation,
     assetsById: { [source.id]: source },
     imagesById: {},
     coordinator: {} as LookRenderCoordinator,
+    mode: options.mode,
     dispatch: () => undefined,
     error: options.error ?? null,
     onRetry: () => undefined,
   }));
 };
 
-test('Looks inspector renders nine actual selected-state previews and complete commands', () => {
+test('Looks inspector renders nine add previews and complete stack commands', () => {
   const markup = renderLooksInspector('distressed-print', {
     error: 'Look preview failed.',
     seed: 19,
@@ -939,14 +1058,18 @@ test('Looks inspector renders nine actual selected-state previews and complete c
   for (const id of LOOK_IDS) {
     assert.match(markup, new RegExp(`data-look-id="${id}"`));
   }
-  assert.match(markup, /data-look-id="distressed-print"[^>]*aria-pressed="true"/);
-  assert.match(markup, />Preset strength</);
+  assert.match(markup, />Applied finishes</);
+  assert.match(markup, /aria-label="Edit Distressed Print"/);
+  assert.match(markup, />Distressed Print strength</);
+  assert.match(markup, /aria-label="Move Distressed Print earlier"/);
+  assert.match(markup, /aria-label="Move Distressed Print later"/);
+  assert.match(markup, /aria-label="Remove Distressed Print"/);
   assert.match(markup, />Finish presets</);
-  assert.doesNotMatch(markup, />Before \/ after</);
+  assert.doesNotMatch(markup, />Original \/ finishes</);
   assert.match(markup, />Worn print texture and broken edges\.</);
   assert.match(markup, /<label[^>]*>Distress</);
-  assert.match(markup, /<summary[^>]*>More<\/summary>/);
-  assert.match(markup, /aria-label="Reset Look"/);
+  assert.doesNotMatch(markup, />More</);
+  assert.match(markup, /aria-label="Use Original"/);
   assert.match(markup, /aria-label="Reroll texture"/);
   assert.match(markup, /Look preview failed\./);
   assert.match(markup, /aria-label="Retry Look preview"/);
@@ -1024,8 +1147,8 @@ test('Look controls expose stable numeric bounds for every documented recipe par
     Array<[string, number, number]>,
   ]>) {
     const markup = renderLooksInspector(lookId);
-    assert.match(markup, /id="editor-look-strength"[^>]*type="range"[^>]*min="0"[^>]*max="100"/);
-    assert.match(markup, /id="editor-look-strength-number"[^>]*type="number"[^>]*min="0"[^>]*max="100"/);
+    assert.match(markup, new RegExp(`id="editor-look-${lookId}-strength"[^>]*type="range"[^>]*min="0"[^>]*max="100"`));
+    assert.match(markup, new RegExp(`id="editor-look-${lookId}-strength-number"[^>]*type="number"[^>]*min="0"[^>]*max="100"`));
     for (const [parameter, minimum, maximum] of controls) {
       assert.match(markup, new RegExp(
         `id="editor-look-${parameter}"[^>]*type="range"[^>]*min="${minimum}"[^>]*max="${maximum}"`,
@@ -1035,6 +1158,23 @@ test('Look controls expose stable numeric bounds for every documented recipe par
       ));
     }
   }
+});
+
+test('Basic keeps stack order and strength while Advanced reveals recipe controls', () => {
+  const looks = [createDefaultLook('duotone'), createDefaultLook('distressed-print', 9)];
+  const basic = renderLooksInspector('distressed-print', { looks, mode: 'easy' });
+  assert.match(basic, /aria-label="Edit Duotone"/);
+  assert.match(basic, /aria-label="Edit Distressed Print"/);
+  assert.match(basic, /aria-label="Move Duotone later"/);
+  assert.match(basic, /aria-label="Remove Distressed Print"/);
+  assert.match(basic, />Distressed Print strength</);
+  assert.doesNotMatch(basic, /<label[^>]*>Distress</);
+  assert.doesNotMatch(basic, />More</);
+  assert.match(basic, /Recommended next: Open Product/);
+
+  const advanced = renderLooksInspector('distressed-print', { looks, mode: 'advanced' });
+  assert.match(advanced, /<label[^>]*>Distress</);
+  assert.match(advanced, /aria-label="Reroll texture"/);
 });
 
 test('Duotone and Halftone expose native swatches and Halftone background modes', () => {
@@ -1142,12 +1282,40 @@ test('top bar exposes variation management and a live retryable save failure', (
     ...topBarProps,
     saveStatus: 'error',
   }));
-  assert.match(markup, /aria-label="Variant name"/);
+  assert.match(markup, /aria-label="Variation name"/);
   assert.match(markup, /aria-label="Duplicate variation"/);
   assert.match(markup, /aria-label="Delete variation"/);
   assert.match(markup, /aria-live="polite"/);
-  assert.match(markup, /Project save failed/);
+  assert.match(markup, /Save failed/);
   assert.match(markup, /aria-label="Retry save"/);
+});
+
+test('Basic toolbar omits unavailable image tools until artwork provides context', () => {
+  const empty = renderToStaticMarkup(createElement(EditorToolbar, {
+    tool: 'select',
+    mode: 'easy',
+    hasProject: true,
+    hasImageLayer: false,
+    onToolChange: () => undefined,
+    onOpenLayers: () => undefined,
+  }));
+  for (const label of ['Crop', 'Adjust', 'Enhance resolution', 'Remove background', 'Trace', 'Looks']) {
+    assert.doesNotMatch(empty, new RegExp(`aria-label="${label}"`));
+  }
+  assert.match(empty, /aria-label="Select"/);
+  assert.match(empty, /aria-label="Product"/);
+  assert.match(empty, /aria-label="Layers"/);
+  assert.match(empty, /aria-label="More tools"/);
+});
+
+test('top bar keeps routine save state out of the project chrome', () => {
+  for (const saveStatus of ['saving', 'saved'] as const) {
+    const markup = renderToStaticMarkup(createElement(EditorTopBar, { ...topBarProps, saveStatus }));
+    assert.doesNotMatch(markup, /Saved in this browser|Saving in this browser|role="status"/);
+  }
+  const failed = renderToStaticMarkup(createElement(EditorTopBar, { ...topBarProps, saveStatus: 'error' }));
+  assert.match(failed, /Save failed/);
+  assert.match(failed, /role="status"[^>]*aria-live="polite"/);
 });
 
 test('top bar disables variation deletion when only one variation remains', () => {
@@ -1172,7 +1340,11 @@ test('inspector controls keep deterministic bounds and normalized crop dimension
   );
 });
 
-const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' = 'select') => {
+const renderInspector = (
+  layer: DesignLayer,
+  tool: 'select' | 'crop' | 'adjust' = 'select',
+  mode: 'easy' | 'advanced' = 'advanced',
+) => {
   const source = createEditorAsset('project-inspector', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
   });
@@ -1187,9 +1359,126 @@ const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' 
     coordinator: {} as LookRenderCoordinator,
     lookError: null,
     onRetryLook: () => undefined,
+    mode,
     dispatch: () => undefined,
   }));
 };
+
+const renderInspectorModeTool = (
+  tool: 'select' | 'crop' | 'adjust' | 'enhance' | 'remove-background' | 'trace',
+  mode: 'easy' | 'advanced',
+) => {
+  const source = createEditorAsset(`project-mode-${tool}-${mode}`, new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Mode matrix', source);
+  const layer = project.variations[0].layers[0];
+  if (layer.type !== 'image') throw new Error('Expected image layer.');
+  const traceSettings = createDefaultTraceSettings();
+  return renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer,
+    tool,
+    mode,
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    backgroundRemoval: {
+      status: 'idle', error: null, retry: () => undefined, pickColor: () => undefined,
+      commitStroke: async () => undefined, clearCorrections: async () => undefined,
+      removePick: () => undefined, clearPicks: () => undefined,
+    },
+    resolutionWorkflow: {
+      status: 'idle', error: null, beforeAssetId: null, enhance: async () => undefined,
+    },
+    traceWorkflow: {
+      status: 'idle', error: null, stale: true, canGenerate: true, settings: traceSettings,
+      updateSettings: () => undefined, endSettingsEdit: () => undefined,
+      generate: () => undefined, retry: () => undefined,
+    },
+    dispatch: () => undefined,
+  }));
+};
+
+test('Basic and Advanced reveal real controls while preserving guidance', () => {
+  const expectations = {
+    select: {
+      basicHidden: ['editor-position-x', 'editor-position-y', 'editor-scale', 'editor-rotation', 'editor-opacity', 'editor-flip-horizontal', 'editor-flip-vertical'],
+      advancedShown: ['editor-position-x', 'editor-position-y', 'editor-scale', 'editor-rotation', 'editor-opacity', 'editor-flip-horizontal', 'editor-flip-vertical'],
+    },
+    crop: { basicHidden: ['editor-crop-left'], advancedShown: ['editor-crop-left'] },
+    adjust: { basicShown: ['editor-brightness'], advancedShown: ['editor-brightness'] },
+    enhance: { basicText: '2x enhance', advancedText: '2x enhance' },
+    'remove-background': { basicHidden: ['editor-background-tolerance'], advancedShown: ['editor-background-tolerance'] },
+    trace: { basicHidden: ['editor-trace-detail'], advancedShown: ['editor-trace-detail'] },
+  } as const;
+
+  for (const [tool, expectation] of Object.entries(expectations)) {
+    const basic = renderInspectorModeTool(tool as keyof typeof expectations, 'easy');
+    const advanced = renderInspectorModeTool(tool as keyof typeof expectations, 'advanced');
+    assert.match(basic, /Recommended next:/, `${tool} Basic should retain guidance`);
+    assert.match(advanced, /Recommended next:/, `${tool} Advanced should retain guidance`);
+    for (const id of 'basicHidden' in expectation ? expectation.basicHidden : []) {
+      assert.doesNotMatch(basic, new RegExp(`id="${id}"`), `${tool} Basic should hide ${id}`);
+    }
+    for (const id of 'basicShown' in expectation ? expectation.basicShown : []) {
+      assert.match(basic, new RegExp(`id="${id}"`), `${tool} Basic should show ${id}`);
+    }
+    for (const id of 'advancedShown' in expectation ? expectation.advancedShown : []) {
+      assert.match(advanced, new RegExp(`id="${id}"`), `${tool} Advanced should show ${id}`);
+    }
+    if ('basicText' in expectation) assert.match(basic, new RegExp(expectation.basicText));
+    if ('advancedText' in expectation) assert.match(advanced, new RegExp(expectation.advancedText));
+  }
+});
+
+test('Basic inspector preserves the three-step workflow after import', () => {
+  const source = createEditorAsset('project-basic-workflow', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Basic workflow', source);
+  const layer = project.variations[0].layers[0];
+  const markup = renderInspector(layer, 'select', 'easy');
+
+  assert.match(markup, /Step 2 of 3/);
+  assert.match(markup, /Crop if framing needs work, then preview the result on Product/);
+  assert.match(markup, /aria-live="polite"/);
+  assert.deepEqual(
+    getInspectorWorkflowContext('easy', layer, 'product'),
+    {
+      stage: 'Step 3 of 3 · Preview and export',
+      recommendation: 'Review readiness, then export the production PNG.',
+    },
+  );
+});
+
+test('mobile inspector exposes an accessible collapsed state', () => {
+  const source = createEditorAsset('project-collapsed-inspector', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Collapsed inspector', source);
+  const markup = renderToStaticMarkup(createElement(EditorInspector, {
+    project,
+    variation: project.variations[0],
+    layer: project.variations[0].layers[0],
+    tool: 'select',
+    assetsById: { [source.id]: source },
+    imagesById: {},
+    coordinator: {} as LookRenderCoordinator,
+    lookError: null,
+    onRetryLook: () => undefined,
+    mobileExpanded: false,
+    dispatch: () => undefined,
+  }));
+
+  assert.match(markup, /aria-controls="editor-inspector-content"/);
+  assert.match(markup, /aria-expanded="false"/);
+  assert.match(markup, />Expand</);
+  assert.match(markup, /id="editor-inspector-content"[^>]*hidden md:block/);
+});
 
 test('text inspector exposes complete editable text and shared transform controls', () => {
   const layer = {
@@ -1284,6 +1573,11 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.equal(layer.type, 'image');
 
   const transformMarkup = renderInspector(layer);
+  assert.match(transformMarkup, /Print bench/);
+  assert.match(transformMarkup, /Place, size, rotate, and align the selected layer/);
+  assert.match(transformMarkup, /Recommended next:/);
+  assert.match(transformMarkup, /Crop if framing needs work, then preview the result on Product/);
+  assert.match(transformMarkup, /class="[^"]*h-11[^"]*"[^>]*>Reset/);
   assert.match(transformMarkup, /id="editor-position-x"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-position-y"[^>]*min="-2"[^>]*max="3"[^>]*step="0.01"/);
   assert.match(transformMarkup, /id="editor-scale"[^>]*min="5"[^>]*max="400"[^>]*step="1"/);
@@ -1291,6 +1585,11 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   assert.match(transformMarkup, /id="editor-opacity"[^>]*min="0"[^>]*max="100"[^>]*step="1"/);
 
   const cropMarkup = renderInspector(layer, 'crop');
+  assert.match(cropMarkup, /Reframe image artwork without changing the canvas size/);
+  assert.match(cropMarkup, /Recommended next:/);
+  assert.match(cropMarkup, />Reset crop</);
+  assert.doesNotMatch(cropMarkup, />Free</);
+  assert.equal(cropMarkup.match(/class="[^"]*h-11[^"]*"[^>]*>[^<]*<\/button>/g)?.length, 7);
   for (const edge of ['left', 'top', 'right', 'bottom']) {
     assert.match(cropMarkup, new RegExp(`id="editor-crop-${edge}"[^>]*min="0"[^>]*max="45"[^>]*step="1"`));
   }
@@ -1321,9 +1620,8 @@ test('Basic image inspector keeps placement direct-manipulation-first', () => {
     onRetryLook: () => undefined,
     dispatch: () => undefined,
   }));
-  assert.doesNotMatch(markup, /editor-position-x|editor-position-y|editor-scale/);
-  assert.match(markup, /editor-rotation/);
-  assert.match(markup, /editor-opacity/);
+  assert.doesNotMatch(markup, /editor-position-x|editor-position-y|editor-scale|editor-rotation|editor-opacity|editor-flip-horizontal|editor-flip-vertical/);
+  assert.match(markup, /Drag the artwork on the canvas to place it/);
 });
 
 test('project drawer closes only after the requested project opens successfully', async () => {
@@ -1382,4 +1680,15 @@ test('Shift-wheel zoom stays bounded and keeps the design centered', () => {
     height: 800,
     scale: 0.8,
   });
+});
+
+test('Product export uses the garment-assigned artwork variation', () => {
+  const source = readFileSync(
+    new URL('../components/editor/EditorApp.tsx', import.meta.url),
+    'utf8',
+  );
+  const dialogCall = source.match(/<ProductExportDialog[\s\S]*?\/>/)?.[0];
+  assert.ok(dialogCall, 'Expected the Product export dialog call.');
+  assert.match(dialogCall, /variation=\{productArtworkVariation\}/);
+  assert.doesNotMatch(dialogCall, /variation=\{variation\}/);
 });

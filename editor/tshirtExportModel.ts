@@ -151,7 +151,7 @@ export const createTShirtExportFingerprint = (
     variation: {
       id: input.variation.id,
       layers: input.variation.layers,
-      look: input.variation.look,
+      looks: input.variation.looks,
     },
     assets,
   };

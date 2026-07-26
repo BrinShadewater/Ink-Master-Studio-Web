@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import {
   MAX_EXPORT_LOOK_WORKING_BYTES,
   applyVariationLook,
+  applyVariationLooks,
   blendLookStrength,
   canonicalTextureValue,
   estimateVariationLookWorkingBytes,
+  estimateVariationLooksWorkingBytes,
   type LookAllocation,
   type RgbaFrame,
 } from '../editor/lookProcessor';
@@ -101,6 +103,32 @@ test('caller-owned output preserves every reviewed golden byte', () => {
     assert.equal(result.pixels, output, `${id} caller owns output`);
     assert.deepEqual([...output], defaultExpectedPixels[id], id);
   }
+});
+
+test('applies a Look stack in array order without mutating the caller frame', () => {
+  const looks = [
+    createDefaultLook('duotone'),
+    { ...createDefaultLook('monochrome'), strength: 60 },
+  ];
+  const before = new Uint8ClampedArray(frame.pixels);
+  const expected = applyVariationLook(applyVariationLook(frame, looks[0]), looks[1]);
+  const actual = applyVariationLooks(frame, looks);
+  assert.deepEqual(actual.pixels, expected.pixels);
+  assert.notDeepEqual(applyVariationLooks(frame, [...looks].reverse()).pixels, expected.pixels);
+  assert.deepEqual(frame.pixels, before);
+});
+
+test('estimates the peak of two owned stack buffers before allocation', () => {
+  const width = 4500;
+  const height = 4500;
+  const looks = [createDefaultLook('monochrome'), createDefaultLook('distressed-print')];
+  assert.ok(estimateVariationLooksWorkingBytes(width, height, looks) > MAX_EXPORT_LOOK_WORKING_BYTES);
+  const allocations: LookAllocation[] = [];
+  assert.throws(() => applyVariationLooks(frame, looks, {
+    maxWorkingBytes: frame.pixels.byteLength,
+    allocationTracker: (allocation) => allocations.push(allocation),
+  }), { message: 'Export artwork is too large for this browser.' });
+  assert.deepEqual(allocations, []);
 });
 
 test('4500-square clarity stays below the export bound without a full-frame Float64Array', () => {

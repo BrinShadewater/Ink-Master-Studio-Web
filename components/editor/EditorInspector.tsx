@@ -13,6 +13,8 @@ import type {
 import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
 import type { TShirtProductVariant } from '../../editor/productModel';
 import type { ProductPreviewMode } from '../../editor/productModel';
+import { fitCropToAspectRatio } from '../../editor/geometry';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { LooksInspector } from './LooksInspector';
 import {
   BackgroundRemovalInspector,
@@ -30,6 +32,7 @@ import {
 import { ProductInspector } from './ProductInspector';
 import { ResolutionInspector } from './ResolutionInspector';
 import type { ResolutionWorkflow } from './useResolutionWorkflow';
+import type { ReactNode } from 'react';
 
 export { controlBounds } from './TransformControls';
 
@@ -91,9 +94,12 @@ export interface EditorInspectorProps {
   productArtworkUrl?: string | null;
   onEnhanceProductArtwork?: () => void;
   onRemoveProductArtworkBackground?: () => void;
+  onProductExport?: () => void;
   onRetryProduct?: () => void;
   onReturnToDesign?: () => void;
   mode?: 'easy' | 'advanced';
+  mobileExpanded?: boolean;
+  onMobileExpandedChange?: (expanded: boolean) => void;
   dispatch: (command: EditorCommand) => void;
 }
 
@@ -108,7 +114,104 @@ const sectionTitle: Record<EditorTool, string> = {
   product: 'Product',
 };
 
-const resetButtonClass = 'h-8 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const toolPurpose: Record<EditorTool, string> = {
+  select: 'Place, size, rotate, and align the selected layer.',
+  crop: 'Reframe image artwork without changing the canvas size.',
+  adjust: 'Correct brightness, contrast, and saturation.',
+  enhance: 'Prepare small raster artwork for a larger print area.',
+  looks: 'Apply one consistent finish across this variation.',
+  'remove-background': 'Create transparent artwork for a clean garment print.',
+  trace: 'Convert suitable artwork into scalable vector shapes.',
+  product: 'Check placement and color on the selected garment.',
+};
+
+const basicRecommendations: Record<EditorTool, string> = {
+  select: 'Crop if framing needs work, then preview the result on Product.',
+  crop: 'Adjust only if the artwork needs correction, then open Product.',
+  adjust: 'Preview the corrected artwork on Product.',
+  enhance: 'Return to Product and check print readiness.',
+  looks: 'Open Product to check the finish on a garment.',
+  'remove-background': 'Preview the transparent artwork on Product.',
+  trace: 'Open Product to confirm garment placement.',
+  product: 'Review readiness, then export the production PNG.',
+};
+
+export const getInspectorWorkflowContext = (
+  _mode: 'easy' | 'advanced',
+  _layer: DesignLayer | null,
+  tool: EditorTool,
+) => ({
+  stage: tool === 'product' ? 'Step 3 of 3 · Preview and export' : 'Step 2 of 3 · Prepare',
+  recommendation: basicRecommendations[tool],
+});
+
+const InspectorFrame = ({
+  tool,
+  mode,
+  layer,
+  mobileExpanded,
+  onMobileExpandedChange,
+  children,
+}: {
+  tool: EditorTool;
+  mode: 'easy' | 'advanced';
+  layer: DesignLayer | null;
+  mobileExpanded: boolean;
+  onMobileExpandedChange: (expanded: boolean) => void;
+  children: ReactNode;
+}) => {
+  const workflow = getInspectorWorkflowContext(mode, layer, tool);
+  return (
+    <aside className={`flex min-h-0 flex-col overflow-hidden border-t border-neutral-800 bg-neutral-900 md:h-full md:border-l md:border-t-0 ${mobileExpanded ? 'h-60' : 'h-14'}`} aria-label="Inspector">
+      <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-3 py-1.5 md:hidden" aria-live="polite">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-studio-measure">
+              {mode === 'easy' ? workflow.stage : 'Advanced workspace'}
+            </p>
+            <p className="truncate text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+          </div>
+          <button
+            type="button"
+            className="flex h-11 shrink-0 items-center gap-1.5 border border-neutral-700 px-3 text-xs font-semibold text-neutral-200 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-controls="editor-inspector-content"
+            aria-expanded={mobileExpanded}
+            onClick={() => onMobileExpandedChange(!mobileExpanded)}
+          >
+            {mobileExpanded ? 'Collapse' : 'Expand'}
+            {mobileExpanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronUp aria-hidden="true" size={16} />}
+          </button>
+        </div>
+        {mobileExpanded ? (
+          <p className="mt-1 line-clamp-2 text-xs leading-4 text-neutral-300">
+            {workflow.recommendation ?? toolPurpose[tool]}
+          </p>
+        ) : null}
+      </div>
+      <div className="hidden shrink-0 border-b border-neutral-800 bg-neutral-950/55 px-4 py-2 md:block">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-studio-measure">Print bench</p>
+          <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+        </div>
+        <p className="mt-0.5 text-xs leading-4 text-neutral-400">{toolPurpose[tool]}</p>
+        {workflow.recommendation ? (
+          <p className="mt-1 border-t border-neutral-800 pt-1 text-xs leading-4 text-neutral-300">
+            <span className="font-semibold text-emerald-300">Recommended next: </span>
+            {workflow.recommendation}
+          </p>
+        ) : null}
+      </div>
+      <div
+        id="editor-inspector-content"
+        className={`min-h-0 flex-1 overflow-y-auto ${mobileExpanded ? '' : 'hidden md:block'}`}
+      >
+        {children}
+      </div>
+    </aside>
+  );
+};
+
+const resetButtonClass = 'h-11 border border-neutral-700 px-3 text-xs font-medium text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
 const ImageInspector = ({
   layer,
@@ -137,19 +240,10 @@ const ImageInspector = ({
   const cropEdges = cropToEdgePercentages(layer.crop);
   const applyAspectRatio = (ratio: number) => {
     if (!asset) return;
-    const sourceRatio = asset.width / asset.height;
-    let width = layer.crop.width;
-    let height = width * sourceRatio / ratio;
-    if (height > 1) {
-      height = Math.min(1, layer.crop.height);
-      width = Math.min(1, height * ratio / sourceRatio);
-    }
-    updateCrop({
-      x: Math.max(0, Math.min(1 - width, layer.crop.x + (layer.crop.width - width) / 2)),
-      y: Math.max(0, Math.min(1 - height, layer.crop.y + (layer.crop.height - height) / 2)),
-      width,
-      height,
-    }, 'inspector-crop-ratio');
+    updateCrop(
+      fitCropToAspectRatio(layer.crop, asset, ratio),
+      'inspector-crop-ratio',
+    );
     endHistoryGroup();
   };
 
@@ -183,12 +277,13 @@ const ImageInspector = ({
         {tool === 'select' ? (
           <div className="grid gap-4">
             {mode === 'advanced' ? <h3 className="text-xs font-semibold text-neutral-200">Precise placement</h3> : null}
+            {mode === 'easy' ? <p className="text-xs leading-5 text-neutral-500">Drag the artwork on the canvas to place it. Use Advanced when you need exact position, size, rotation, opacity, or flips.</p> : null}
             <TransformControls layer={layer} dispatch={dispatch} showNumericPlacement={mode === 'advanced'} />
           </div>
         ) : null}
 
         {tool === 'crop' ? (
-          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-8 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Reset crop']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-reset')}>{label as string}</button>)}</div>{mode === 'advanced' ? (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
             <RangeControl
               key={edge}
               id={`editor-crop-${edge}`}
@@ -202,7 +297,7 @@ const ImageInspector = ({
               )}
               onEnd={endHistoryGroup}
             />
-          ))}</>
+          )) : null}</>
         ) : null}
 
         {tool === 'adjust' ? (
@@ -254,14 +349,18 @@ export const EditorInspector = ({
   productArtworkUrl = null,
   onEnhanceProductArtwork = () => undefined,
   onRemoveProductArtworkBackground = () => undefined,
+  onProductExport = () => undefined,
   onRetryProduct = () => undefined,
   onReturnToDesign = () => undefined,
   mode = 'advanced',
+  mobileExpanded = true,
+  onMobileExpandedChange = () => undefined,
   dispatch,
 }: EditorInspectorProps) => {
+  const frameProps = { tool, mode, layer, mobileExpanded, onMobileExpandedChange };
   if (tool === 'product' && product) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame {...frameProps}>
         <ProductInspector
           product={product}
           mockupStatus={productMockupStatus}
@@ -275,42 +374,47 @@ export const EditorInspector = ({
           artworkUrl={productArtworkUrl}
           onEnhanceResolution={onEnhanceProductArtwork}
           onRemoveBackground={onRemoveProductArtworkBackground}
+          onExport={onProductExport}
+          mode={mode}
           dispatch={dispatch}
           onRetry={onRetryProduct}
           onReturnToDesign={onReturnToDesign}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   if (project && variation && tool === 'looks') {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame {...frameProps}>
         <LooksInspector
           key={variation.id}
           variation={variation}
           assetsById={assetsById}
           imagesById={imagesById}
           coordinator={coordinator}
+          mode={mode}
           dispatch={dispatch}
           error={lookError}
           onRetry={onRetryLook}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   if (!project || !layer) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 p-4 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
-        <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
-        <p className="mt-2 text-xs leading-5 text-neutral-500">Import artwork to edit.</p>
-      </aside>
+      <InspectorFrame {...frameProps}>
+        <div className="p-4">
+          <h2 className="text-sm font-semibold text-neutral-100">{sectionTitle[tool]}</h2>
+          <p className="mt-2 text-xs leading-5 text-neutral-400">Import artwork to edit.</p>
+        </div>
+      </InspectorFrame>
     );
   }
 
   if (tool === 'enhance' && layer.type === 'image' && resolutionWorkflow) {
-    return <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector"><ResolutionInspector workflow={resolutionWorkflow} /></aside>;
+    return <InspectorFrame {...frameProps}><ResolutionInspector workflow={resolutionWorkflow} mode={mode} /></InspectorFrame>;
   }
 
   if (
@@ -319,19 +423,19 @@ export const EditorInspector = ({
     (layer.type === 'image' || layer.type === 'trace')
   ) {
     return (
-      <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+      <InspectorFrame {...frameProps}>
         <TraceInspector
           traceLayer={layer.type === 'trace' ? layer : null}
           workflow={traceWorkflow}
           dispatch={dispatch}
           mode={mode}
         />
-      </aside>
+      </InspectorFrame>
     );
   }
 
   return (
-    <aside className="h-60 overflow-y-auto border-t border-neutral-800 bg-neutral-900 md:h-full md:min-h-0 md:border-l md:border-t-0" aria-label="Inspector">
+    <InspectorFrame {...frameProps}>
       {layer.type === 'text' ? (
         <>
           <div className="sticky top-0 z-10 flex h-12 items-center border-b border-neutral-800 bg-neutral-900 px-4">
@@ -352,7 +456,10 @@ export const EditorInspector = ({
             onBrushModeChange={onBackgroundBrushModeChange}
             onBrushSizeChange={onBackgroundBrushSizeChange}
             onClearCorrections={backgroundRemoval.clearCorrections}
+            onRemovePick={backgroundRemoval.removePick}
+            onClearPicks={backgroundRemoval.clearPicks}
             onDone={onBackgroundDone}
+            mode={mode}
           />
         ) : (
           <ImageInspector layer={layer} asset={assetsById[layer.assetId]} tool={tool} mode={mode} dispatch={dispatch} />
@@ -367,6 +474,6 @@ export const EditorInspector = ({
           </div>
         </>
       )}
-    </aside>
+    </InspectorFrame>
   );
 };

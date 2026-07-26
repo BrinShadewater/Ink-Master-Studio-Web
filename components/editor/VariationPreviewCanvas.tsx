@@ -16,7 +16,7 @@ import {
   type DecodedImageEntry,
 } from '../../editor/decodedImages';
 import type { Point, Size } from '../../editor/geometry';
-import { serializeVariationLook } from '../../editor/lookModel';
+import { serializeVariationLooks } from '../../editor/lookModel';
 import {
   type LookRenderCoordinator,
   type LookRenderOutcome,
@@ -28,7 +28,7 @@ import type {
   EditorAsset,
 } from '../../editor/model';
 
-export type PreviewBackground = '#1f1f1f' | '#27313d' | '#f5f5f3' | '#161616' | '#aeb9b7' | 'transparent';
+export type PreviewBackground = '#1d2430' | '#27313d' | '#f5f5f3' | '#151a22' | '#aeb9b7' | 'transparent';
 export type PreviewPixelBound = 240 | 800 | 1600;
 
 export interface VariationPreviewCanvasProps {
@@ -263,7 +263,7 @@ const createVariationRenderKey = (
       const asset = assetsById[assetId];
       return asset ? [assetId, asset.id, asset.width, asset.height] : [assetId, null];
     }),
-    look: JSON.parse(serializeVariationLook(variation.look)) as unknown,
+    looks: JSON.parse(serializeVariationLooks(variation.looks)) as unknown,
   });
   return `${variation.id}:${hashCanonicalValue(canonical)}:${canonical.length}`;
 };
@@ -547,7 +547,7 @@ export const useVariationPreviewSurface = ({
       maxPixelDimension,
     );
 
-    if (variation.look.id === 'original') {
+    if (variation.looks.length === 0) {
       coordinator.clearSurface(surfaceId);
       lastReadyFrameRef.current = frame;
       lastReadyAuthorityRef.current = {
@@ -575,7 +575,7 @@ export const useVariationPreviewSurface = ({
       surfaceId,
       renderKey,
       frame,
-      look: variation.look,
+      looks: variation.looks,
     }).then((outcome) => {
       if (!active || currentRenderKeyRef.current !== renderKey || !frameCanvasRef.current) return;
       const selected = selectPreviewOutcomeFrame(
@@ -628,7 +628,7 @@ export const useVariationPreviewSurface = ({
     retryGenerationRef.current = retryGeneration;
     const renderKey = currentRenderKeyRef.current;
     const unprocessedFrame = unprocessedFrameRef.current;
-    if (!renderKey || !unprocessedFrame || variation.look.id === 'original') return undefined;
+    if (!renderKey || !unprocessedFrame || variation.looks.length === 0) return undefined;
 
     updateFailureAuthority({ type: 'start', renderKey, retry: true });
     let active = true;
@@ -675,7 +675,7 @@ export const useVariationPreviewSurface = ({
     retryGeneration,
     surfaceId,
     updateFailureAuthority,
-    variation.look.id,
+    variation.looks,
     viewport,
     maxPixelDimension,
     zoom,

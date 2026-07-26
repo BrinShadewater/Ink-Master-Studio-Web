@@ -97,7 +97,7 @@ export const composeTraceFrame = (
   prepared: boolean,
 ): TraceFrameInput => {
   const sourceRect = prepared
-    ? { x: 0, y: 0, width: imageSize.width, height: imageSize.height }
+    ? getCroppedSourceRect(imageSize, sourceLayer.crop)
     : getCroppedSourceRect(sourceSize, sourceLayer.crop);
   if (!isUsableSize(sourceRect)) throw new Error('Could not prepare trace input.');
   const scale = Math.min(1, MAX_TRACE_EDGE / Math.max(sourceRect.width, sourceRect.height));

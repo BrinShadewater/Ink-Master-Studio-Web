@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import { DEFAULT_TSHIRT_PRINTABLE_REGION } from '../editor/productCatalog';
 import {
   containProductMockup,
+  moveProductPlacementWithKeyboard,
   moveProductPlacement,
+  resizeProductPlacementWithKeyboard,
   resizeProductPlacementFromPoint,
   resolveProductArtworkGeometry,
   resolveProductRegionRect,
@@ -93,4 +95,30 @@ test('bounds drag centers and resize scale through product normalization', () =>
     ).scale,
     1.5,
   );
+});
+
+test('moves Product placement with precise and larger keyboard steps', () => {
+  const placement = { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 };
+  assert.deepEqual(moveProductPlacementWithKeyboard(placement, 'ArrowRight', false), {
+    ...placement,
+    x: 0.51,
+  });
+  assert.deepEqual(moveProductPlacementWithKeyboard(placement, 'ArrowUp', true), {
+    ...placement,
+    y: 0.45,
+  });
+  assert.deepEqual(moveProductPlacementWithKeyboard(placement, 'Enter', false), placement);
+});
+
+test('resizes Product placement with precise and larger keyboard steps', () => {
+  const placement = { x: 0.5, y: 0.5, scale: 0.72, rotation: 0 };
+  assert.equal(
+    resizeProductPlacementWithKeyboard(placement, 'ArrowRight', false).scale,
+    0.73,
+  );
+  assert.equal(
+    resizeProductPlacementWithKeyboard(placement, 'ArrowDown', true).scale,
+    0.67,
+  );
+  assert.deepEqual(resizeProductPlacementWithKeyboard(placement, 'Enter', false), placement);
 });

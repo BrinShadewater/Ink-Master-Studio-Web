@@ -16,7 +16,10 @@ export interface BackgroundRemovalInspectorProps {
   onBrushModeChange: (mode: BackgroundBrushMode) => void;
   onBrushSizeChange: (size: number) => void;
   onClearCorrections: () => Promise<void>;
+  onRemovePick: (index: number) => void;
+  onClearPicks: () => void;
   onDone: () => void;
+  mode?: 'easy' | 'advanced';
 }
 
 const segmentedClass = (selected: boolean) =>
@@ -39,7 +42,10 @@ export const BackgroundRemovalInspector = ({
   onBrushModeChange,
   onBrushSizeChange,
   onClearCorrections,
+  onRemovePick,
+  onClearPicks,
   onDone,
+  mode = 'advanced',
 }: BackgroundRemovalInspectorProps) => {
   const settings = layer.backgroundRemoval;
   const processing = status === 'processing';
@@ -62,8 +68,8 @@ export const BackgroundRemovalInspector = ({
       </div>
       <div className="grid gap-5 p-4">
         <div className="flex items-center justify-between gap-3">
-          <div><p className="text-xs font-medium text-neutral-200">Background removal</p><p className="mt-1 text-[11px] leading-4 text-neutral-500">Makes the selected image transparent for clean garment previews.</p></div>
-          <button type="button" role="switch" aria-checked={settings.enabled} disabled={processing} onClick={() => update({ ...settings, enabled: !settings.enabled })} className={`relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-40 ${settings.enabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${settings.enabled ? 'left-6' : 'left-1'}`} /></button>
+          <div><p className="text-xs font-medium text-neutral-200">Background removal</p><p className="mt-1 text-xs leading-4 text-neutral-500">Makes the selected image transparent for clean garment previews.</p></div>
+          <button type="button" role="switch" aria-label="Enable background removal" aria-checked={settings.enabled} disabled={processing} onClick={() => update({ ...settings, enabled: !settings.enabled })} className={`relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-40 ${settings.enabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${settings.enabled ? 'left-6' : 'left-1'}`} /></button>
         </div>
 
         <div className="grid grid-cols-2 gap-2" aria-label="Background selection mode">
@@ -92,8 +98,24 @@ export const BackgroundRemovalInspector = ({
             Pick color
           </button>
         </div>
+        {settings.picks.length > 0 ? (
+          <section className="grid gap-2" aria-labelledby="picked-background-colors-title">
+            <h3 id="picked-background-colors-title" className="text-xs font-medium text-neutral-300">Picked colors</h3>
+            <div className="grid gap-2">
+              {settings.picks.map((pick, index) => (
+                <div key={`${pick.color}-${pick.point.x}-${pick.point.y}`} className="flex min-h-11 items-center justify-between gap-3 border border-neutral-800 bg-neutral-950 px-3 text-xs text-neutral-300">
+                  <span className="flex items-center gap-2 font-mono uppercase">
+                    <span aria-hidden="true" className="h-5 w-5 border border-neutral-600" style={{ backgroundColor: pick.color }} />
+                    {pick.color}
+                  </span>
+                  <button type="button" className="h-11 px-2 text-xs text-neutral-300 hover:text-white" aria-label={`Remove picked color ${index + 1}`} onClick={() => onRemovePick(index)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <RangeControl
+        {mode === 'advanced' ? <><RangeControl
           id="editor-background-tolerance"
           label="Tolerance"
           value={settings.tolerance}
@@ -150,6 +172,7 @@ export const BackgroundRemovalInspector = ({
           onChange={onBrushSizeChange}
           onEnd={() => undefined}
         />
+        </> : null}
 
         {status === 'processing' ? (
           <p className="text-xs text-neutral-400" role="status">Removing background...</p>
@@ -161,7 +184,15 @@ export const BackgroundRemovalInspector = ({
           </div>
         ) : null}
 
-        <div className="grid gap-2">
+        {mode === 'advanced' ? <div className="grid gap-2">
+          <button
+            type="button"
+            className={commandClass}
+            disabled={settings.picks.length === 0 || processing}
+            onClick={onClearPicks}
+          >
+            Clear picked colors
+          </button>
           <button
             type="button"
             className={commandClass}
@@ -182,7 +213,7 @@ export const BackgroundRemovalInspector = ({
           >
             Reset background
           </button>
-        </div>
+        </div> : null}
       </div>
     </>
   );

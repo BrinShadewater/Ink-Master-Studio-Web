@@ -9,6 +9,19 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        studio: {
+          canvas: '#0b121a',
+          page: '#0d1d24',
+          panel: '#151a22',
+          raised: '#1d2430',
+          board: '#263746',
+          border: '#36515f',
+          action: '#315f6c',
+          'action-hover': '#3d7781',
+          focus: '#9ac9ce',
+          measure: '#93aab5',
+          grid: '#2a3d4d',
+        },
         neutral: {
           50: '#fbfcfe',
           100: '#f2f4f7',

@@ -155,7 +155,7 @@ const renderImageLayer = (
 
   const drawRect = getLayerDrawRect(source, viewport, layer.transform, layer.crop);
   const cropRect = prepared && preparedMetadata
-    ? { x: 0, y: 0, width: preparedMetadata.width, height: preparedMetadata.height }
+    ? getCroppedSourceRect(preparedMetadata, layer.crop)
     : getCroppedSourceRect(source, layer.crop);
   if (drawRect.width <= 0 || drawRect.height <= 0 || cropRect.width <= 0 || cropRect.height <= 0) return;
 

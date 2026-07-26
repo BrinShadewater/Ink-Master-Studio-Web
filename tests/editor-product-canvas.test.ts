@@ -48,12 +48,29 @@ test('renders a labeled photographic shirt with undarkened transparent artwork a
   assert.match(markup, /aria-label="T-shirt product preview"/);
   assert.match(markup, /alt="Black T-shirt"/);
   assert.match(markup, /aria-label="Product artwork"/);
+  assert.match(markup, /aria-label="Product artwork placement"/);
   assert.match(markup, /aria-label="Resize product artwork"/);
+  assert.match(markup, /aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight/);
+  assert.match(markup, /h-11 w-11/);
+  assert.match(markup, /Arrow keys move\. Shift moves farther\./);
   assert.match(markup, /data-product-artwork="true"/);
   assert.match(markup, /data-product-print="garment-blended"/);
   assert.match(markup, /mix-blend-mode:normal/);
   assert.match(markup, /border-dashed border-teal-300\/35/);
   assert.match(markup, /bg-\[#718481\]/);
+});
+
+test('renders the transparent White shirt without dark-garment blending', () => {
+  const props = createProps();
+  const white = { ...props.product, mockupSlug: 'white' as const };
+  const markup = renderToStaticMarkup(createElement(ProductCanvas, {
+    ...props,
+    product: white,
+    displayedMockup: getTShirtMockup('white'),
+  }));
+  assert.match(markup, /alt="White T-shirt"/);
+  assert.match(markup, /src="\/landing-tee-white\.webp"/);
+  assert.match(markup, /mix-blend-mode:normal/);
 });
 
 test('announces initial loading and exposes recovery for initial shirt failure', () => {

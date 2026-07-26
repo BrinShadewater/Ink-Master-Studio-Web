@@ -8,6 +8,8 @@ import type { DecodedImageEntry } from '../../editor/decodedImages';
 import type { EditorCommand } from '../../editor/history';
 import {
   createImagePrepFingerprint,
+  appendBackgroundRemovalPick,
+  convertCleanupCorrectionsToSource,
   normalizeCleanupCorrectionDocument,
   type CleanupCorrectionDocument,
   type CleanupStroke,
@@ -25,7 +27,11 @@ import {
 } from '../../editor/model';
 import type { GeneratedAssetCommand } from '../../editor/useEditorWorkspace';
 
-const EMPTY_CORRECTIONS: CleanupCorrectionDocument = { schemaVersion: 1, strokes: [] };
+const EMPTY_CORRECTIONS: CleanupCorrectionDocument = {
+  schemaVersion: 2,
+  sourceCrop: { x: 0, y: 0, width: 1, height: 1 },
+  strokes: [],
+};
 const CORRECTION_MIME = 'application/vnd.inkmaster.cleanup+json';
 
 export interface BackgroundRemovalWorkflow {
@@ -35,6 +41,8 @@ export interface BackgroundRemovalWorkflow {
   pickColor: (point: NormalizedPoint) => void;
   commitStroke: (stroke: CleanupStroke) => Promise<void>;
   clearCorrections: () => Promise<void>;
+  removePick: (index: number) => void;
+  clearPicks: () => void;
 }
 
 export interface UseBackgroundRemovalWorkflowOptions {
@@ -60,7 +68,10 @@ const readCorrections = async (
   const asset = assetsById[correctionAssetId];
   if (!asset) return EMPTY_CORRECTIONS;
   try {
-    return normalizeCleanupCorrectionDocument(JSON.parse(await asset.blob.text()));
+    return convertCleanupCorrectionsToSource(
+      normalizeCleanupCorrectionDocument(JSON.parse(await asset.blob.text())),
+      layer.crop,
+    );
   } catch {
     return EMPTY_CORRECTIONS;
   }
@@ -218,25 +229,51 @@ export const useBackgroundRemovalWorkflow = ({
       currentLayer,
       currentLayer.backgroundRemoval.correctionAssetId ?? '',
     );
+    const pick = {
+      color: samplePickedColor(composed.frame, point),
+      point,
+    };
+    dispatch({
+      type: 'set-background-removal',
+      layerId: currentLayer.id,
+      settings: appendBackgroundRemovalPick({
+        ...currentLayer.backgroundRemoval,
+        enabled: true,
+        mode: 'picked',
+      }, pick),
+    });
+  }, [dispatch, project, sourceImage]);
+
+  const removePick = useCallback((index: number) => {
+    const currentLayer = layerRef.current;
+    if (!currentLayer || index < 0 || index >= currentLayer.backgroundRemoval.picks.length) return;
     dispatch({
       type: 'set-background-removal',
       layerId: currentLayer.id,
       settings: {
         ...currentLayer.backgroundRemoval,
-        enabled: true,
-        mode: 'picked',
-        pickedColor: samplePickedColor(composed.frame, point),
-        pickedPoint: point,
+        picks: currentLayer.backgroundRemoval.picks.filter((_, pickIndex) => pickIndex !== index),
       },
     });
-  }, [dispatch, project, sourceImage]);
+  }, [dispatch]);
+
+  const clearPicks = useCallback(() => {
+    const currentLayer = layerRef.current;
+    if (!currentLayer || currentLayer.backgroundRemoval.picks.length === 0) return;
+    dispatch({
+      type: 'set-background-removal',
+      layerId: currentLayer.id,
+      settings: { ...currentLayer.backgroundRemoval, picks: [] },
+    });
+  }, [dispatch]);
 
   const commitStroke = useCallback(async (stroke: CleanupStroke) => {
     const currentLayer = layerRef.current;
     if (!project || !currentLayer) return;
     const current = await readCorrections(currentLayer, assetsRef.current);
     const corrections = normalizeCleanupCorrectionDocument({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      sourceCrop: current.schemaVersion === 2 ? current.sourceCrop : currentLayer.crop,
       strokes: [...current.strokes, stroke],
     });
     const blob = new Blob([JSON.stringify(corrections)], { type: CORRECTION_MIME });
@@ -277,5 +314,7 @@ export const useBackgroundRemovalWorkflow = ({
     pickColor,
     commitStroke,
     clearCorrections,
+    removePick,
+    clearPicks,
   };
 };

@@ -136,7 +136,7 @@ export const TransformControls = ({
         onChange={(value) => updateTransform({ ...layer.transform, scale: value / 100 }, 'inspector-scale')}
         onEnd={endHistoryGroup}
       /> : null}
-      <RangeControl
+      {showNumericPlacement ? <RangeControl
         id="editor-rotation"
         label="Rotation"
         value={Math.round(layer.transform.rotation)}
@@ -144,8 +144,8 @@ export const TransformControls = ({
         bounds={controlBounds.rotation}
         onChange={(value) => updateTransform({ ...layer.transform, rotation: value }, 'inspector-rotation')}
         onEnd={endHistoryGroup}
-      />
-      <RangeControl
+      /> : null}
+      {showNumericPlacement ? <RangeControl
         id="editor-opacity"
         label="Opacity"
         value={Math.round(layer.opacity * 100)}
@@ -158,11 +158,12 @@ export const TransformControls = ({
           historyGroup: 'inspector-opacity',
         })}
         onEnd={endHistoryGroup}
-      />
-      <fieldset className="grid grid-cols-2 gap-3">
+      /> : null}
+      {showNumericPlacement ? <fieldset className="grid grid-cols-2 gap-3">
         <legend className="mb-2 text-xs font-medium text-neutral-300">Flip</legend>
-        <label className="flex h-10 items-center gap-2 border border-neutral-700 px-3 text-xs text-neutral-300">
+        <label htmlFor="editor-flip-horizontal" className="flex h-10 items-center gap-2 border border-neutral-700 px-3 text-xs text-neutral-300">
           <input
+            id="editor-flip-horizontal"
             type="checkbox"
             className="accent-emerald-500"
             checked={layer.transform.flipX}
@@ -170,8 +171,9 @@ export const TransformControls = ({
           />
           Horizontal
         </label>
-        <label className="flex h-10 items-center gap-2 border border-neutral-700 px-3 text-xs text-neutral-300">
+        <label htmlFor="editor-flip-vertical" className="flex h-10 items-center gap-2 border border-neutral-700 px-3 text-xs text-neutral-300">
           <input
+            id="editor-flip-vertical"
             type="checkbox"
             className="accent-emerald-500"
             checked={layer.transform.flipY}
@@ -179,7 +181,7 @@ export const TransformControls = ({
           />
           Vertical
         </label>
-      </fieldset>
+      </fieldset> : null}
     </>
   );
 };

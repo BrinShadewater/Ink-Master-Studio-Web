@@ -93,7 +93,7 @@ interface IconButtonProps {
   buttonRef?: Ref<HTMLButtonElement>;
 }
 
-const iconButtonClass = 'grid h-8 w-8 shrink-0 place-items-center text-neutral-400 transition hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent';
+const iconButtonClass = 'grid h-11 w-11 shrink-0 place-items-center text-neutral-400 transition hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent';
 
 const IconButton = ({
   label,
@@ -154,7 +154,7 @@ const LayerNameInput = ({ layer, onCommit, onFocus }: LayerNameInputProps) => {
 
   return (
     <input
-      className="h-8 min-w-0 bg-transparent px-1 text-sm text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+      className="h-11 min-w-0 bg-transparent px-1 text-sm text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
       aria-label={`Layer name: ${layer.name}`}
       value={state.draft}
       maxLength={120}
@@ -216,7 +216,7 @@ export const LayerPanel = ({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {!variation ? (
-          <p className="px-2 py-3 text-xs leading-5 text-neutral-500">Import artwork to create layers.</p>
+          <p className="px-2 py-3 text-xs leading-5 text-neutral-400">Import artwork to create layers.</p>
         ) : (
           <ul className="grid gap-1">
             {[...layers].reverse().map((layer) => {
@@ -236,11 +236,11 @@ export const LayerPanel = ({
                     setDraggedLayerId(null);
                   }}
                 >
-                  <div className="grid grid-cols-[24px_32px_minmax(0,1fr)_32px] items-center">
+                  <div className="grid grid-cols-[44px_44px_minmax(0,1fr)_44px] items-center">
                     <button
                       type="button"
                       draggable
-                      className="grid h-8 w-6 place-items-center cursor-grab text-neutral-500 hover:text-neutral-200 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+                      className="grid h-11 w-11 place-items-center cursor-grab text-neutral-500 hover:text-neutral-200 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
                       aria-label={`Drag ${layer.name} to reorder`}
                       title="Drag to reorder"
                       onDragStart={(event: DragEvent<HTMLButtonElement>) => {
@@ -278,7 +278,7 @@ export const LayerPanel = ({
                   </div>
 
                   {selected ? (
-                    <div className="flex h-9 items-center justify-end gap-1 border-t border-neutral-700 px-1" aria-label="Selected layer actions">
+                    <div className="flex h-11 items-center justify-end gap-1 border-t border-neutral-700 px-1" aria-label="Selected layer actions">
                       <IconButton
                         label="Move layer up"
                         icon={ArrowUp}

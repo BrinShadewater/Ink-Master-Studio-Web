@@ -93,7 +93,7 @@ const variation = (
   name: 'Vector',
   layers,
   selectedLayerId: traceLayer.id,
-  look,
+  looks: look.id === 'original' ? [] : [look],
 });
 
 const traceAsset = (

@@ -275,7 +275,7 @@ test('renders a valid prepared image with original crop geometry and falls back 
     assets,
   );
   assert.equal(preparedContext.draws[0].image, preparedImage);
-  assert.deepEqual(preparedContext.draws[0].args, [0, 0, 800, 400, -230, -115, 460, 230]);
+  assert.deepEqual(preparedContext.draws[0].args, [80, 80, 400, 200, -230, -115, 460, 230]);
   assert.equal(preparedContext.draws[0].filter, 'none');
 
   const fallbackContext = new RecordingContext();

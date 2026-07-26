@@ -28,7 +28,7 @@ const snapshot = (requestId: number, fingerprint: string): TShirtPngExportSnapsh
   presetId: 'standard-tee',
   variation: {
     id: 'variation', name: 'Original', selectedLayerId: 'layer', layers: [],
-    look: { id: 'original', strength: 100 },
+    looks: [],
   },
   placement: { x: 0.5, y: 0.5, scale: 1, rotation: 0 },
   assets: [{

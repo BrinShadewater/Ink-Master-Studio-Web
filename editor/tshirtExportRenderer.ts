@@ -13,7 +13,7 @@ import {
   type Size,
 } from './geometry';
 import {
-  applyVariationLook,
+  applyVariationLooks,
   MAX_EXPORT_LOOK_WORKING_BYTES,
 } from './lookProcessor';
 import type { ImageLayer, TraceLayer } from './model';
@@ -644,12 +644,7 @@ const renderRasterLayer = async (
     height: sourceAsset.height,
   };
   const cropRect = usesPreparedAsset
-    ? {
-        x: 0,
-        y: 0,
-        width: authoritativeAsset.width,
-        height: authoritativeAsset.height,
-      }
+    ? getCroppedSourceRect(authoritativeAsset, layer.crop)
     : getCroppedSourceRect(sourceSize, layer.crop);
   const drawRect = getLayerDrawRect(
     sourceSize,
@@ -887,13 +882,13 @@ const applySavedLook = (
   let outputPixels: Uint8ClampedArray | null =
     new Uint8ClampedArray(sourcePixels.length);
   try {
-    const looked = applyVariationLook(
+    const looked = applyVariationLooks(
       {
         width: masterCanvas.width,
         height: masterCanvas.height,
         pixels: sourcePixels,
       },
-      snapshot.variation.look,
+      snapshot.variation.looks,
       {
         output: outputPixels,
         maxWorkingBytes: MAX_EXPORT_LOOK_WORKING_BYTES,

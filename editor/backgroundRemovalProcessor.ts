@@ -1,6 +1,7 @@
 import {
   normalizeBackgroundRemoval,
   normalizeCleanupCorrectionDocument,
+  convertCleanupCorrectionsToSource,
   type BackgroundRemovalSettings,
   type CleanupCorrectionDocument,
   type NormalizedPoint,
@@ -391,7 +392,10 @@ export const applyBackgroundRemoval = (
 ): RgbaFrame => {
   validateFrame(input.frame);
   const settings = normalizeBackgroundRemoval(input.settings);
-  const corrections = normalizeCleanupCorrectionDocument(input.corrections);
+  const corrections = convertCleanupCorrectionsToSource(
+    normalizeCleanupCorrectionDocument(input.corrections),
+    { x: 0, y: 0, width: 1, height: 1 },
+  );
   const sourcePixels = input.frame.pixels;
   const output = new Uint8ClampedArray(sourcePixels);
   const removed = new Uint8Array(input.frame.width * input.frame.height);
@@ -400,13 +404,15 @@ export const applyBackgroundRemoval = (
     const boundary = getBoundaryIndices(input.frame.width, input.frame.height);
     const references = getBackgroundReferences(input.frame, boundary);
     const maximumDistance = settings.tolerance / 100 * MAX_OKLAB_DISTANCE;
-    floodMatchingPixels(
-      input.frame,
-      boundary,
-      references,
-      maximumDistance * maximumDistance,
-      removed,
-    );
+    if (settings.mode === 'auto') {
+      floodMatchingPixels(
+        input.frame,
+        boundary,
+        references,
+        maximumDistance * maximumDistance,
+        removed,
+      );
+    }
 
     // Dark backdrops commonly remain inside closed counters in lettering. When the
     // sampled border is entirely dark, remove matching pixels globally; Restore
@@ -420,8 +426,9 @@ export const applyBackgroundRemoval = (
       );
     }
 
-    if (settings.mode === 'picked' && settings.pickedPoint) {
-      const pickedIndex = pointToPixelIndex(input.frame, settings.pickedPoint);
+    if (settings.mode === 'picked') {
+      for (const pick of settings.picks) {
+      const pickedIndex = pointToPixelIndex(input.frame, pick.point);
       if (sourcePixels[pickedIndex * 4 + 3] > 0) {
         const pickedReference = colorAt(input.frame, pickedIndex);
         floodMatchingPixels(
@@ -439,6 +446,7 @@ export const applyBackgroundRemoval = (
             removed,
           );
         }
+      }
       }
     }
 

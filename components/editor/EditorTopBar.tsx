@@ -95,33 +95,36 @@ export const normalizeVariationNameDraft = (draft: string) => draft.trim() || 'O
 
 interface IconButtonProps {
   label: string;
+  visibleLabel?: string;
   icon: LucideIcon;
   onClick: () => void;
   disabled?: boolean;
   buttonRef?: RefObject<HTMLButtonElement | null>;
 }
 
-const iconButtonClass = 'grid h-9 w-9 shrink-0 place-items-center rounded-md border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent';
+const iconButtonClass = 'grid h-11 w-11 shrink-0 place-items-center rounded-md border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent';
 
-const IconButton = ({ label, icon: Icon, onClick, disabled = false, buttonRef }: IconButtonProps) => (
+const IconButton = ({
+  label,
+  visibleLabel,
+  icon: Icon,
+  onClick,
+  disabled = false,
+  buttonRef,
+}: IconButtonProps) => (
   <button
     ref={buttonRef}
     type="button"
-    className={iconButtonClass}
+    className={`${iconButtonClass} ${visibleLabel ? 'xl:flex xl:w-auto xl:gap-2 xl:px-3' : ''}`}
     aria-label={label}
     title={label}
     disabled={disabled}
     onClick={onClick}
   >
     <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+    {visibleLabel ? <span className="hidden text-xs font-semibold xl:inline">{visibleLabel}</span> : null}
   </button>
 );
-
-const saveStatusText: Record<SaveStatus, string> = {
-  saved: 'Project saved locally',
-  saving: 'Saving project locally',
-  error: 'Project save failed',
-};
 
 export const EditorTopBar = ({
   projectId,
@@ -181,11 +184,33 @@ export const EditorTopBar = ({
     if (committedName !== variationNameState.externalName) onVariationNameChange(committedName);
   };
 
+  if (!projectId && mode === 'easy') {
+    return (
+      <header className="flex h-14 min-w-0 items-center justify-between gap-2 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:px-3">
+        <a href="/" aria-label="InkMaster Studio home" className="flex h-11 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+          <img src="/logo/logo-mark.webp" alt="" className="h-10 w-10 object-contain" />
+          <span className="hidden leading-[0.85] text-[10px] font-bold uppercase tracking-[0.08em] text-neutral-200 sm:grid">
+            <span>Ink</span>
+            <span>Master</span>
+          </span>
+        </a>
+        <div className="flex min-w-0 items-center gap-1" aria-label="Project commands">
+          <div className="flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
+            <button type="button" role="radio" aria-checked="true" className="h-11 min-w-11 rounded bg-emerald-500 px-2 text-[10px] font-semibold text-neutral-950 shadow-sm" onClick={() => onModeChange('easy')}>Basic</button>
+            <button type="button" role="radio" aria-checked="false" className="h-11 min-w-11 rounded px-2 text-[10px] font-semibold text-neutral-400 hover:text-white" onClick={() => onModeChange('advanced')}>Advanced</button>
+          </div>
+          <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
+          <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
+        </div>
+      </header>
+    );
+  }
+
   return (
-    <header className="grid h-24 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:flex md:h-14 md:items-center md:gap-2 md:px-3">
-      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 self-center md:w-64 md:flex-none">
-        <a href="/" aria-label="InkMaster Studio home" className="flex h-9 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
-          <img src="/logo/logo.png" alt="" className="h-10 w-10 object-contain" />
+    <header className="grid h-28 min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 gap-x-1 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:px-3 xl:flex xl:h-14 xl:items-center xl:gap-2">
+      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 self-center xl:w-64 xl:flex-none" data-topbar-group="project" aria-label="Project details">
+        <a href="/" aria-label="InkMaster Studio home" className="flex h-11 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+          <img src="/logo/logo-mark.webp" alt="" className="h-10 w-10 object-contain" />
           <span className="hidden leading-[0.85] text-[10px] font-bold uppercase tracking-[0.08em] text-neutral-200 lg:grid">
             <span>Ink</span>
             <span>Master</span>
@@ -193,10 +218,21 @@ export const EditorTopBar = ({
         </a>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="editor-project-name">Project name</label>
-          <p className="px-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500">Project name</p>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <p className="hidden text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 md:block">Project name</p>
+            {projectId && saveStatus === 'error' ? (
+              <span
+                className="truncate text-[10px] leading-none text-red-400"
+                role="status"
+                aria-live="polite"
+              >
+                Save failed
+              </span>
+            ) : null}
+          </div>
           <input
             id="editor-project-name"
-            className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            className="h-11 w-full min-w-0 border-0 bg-transparent px-1 text-sm font-semibold text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:h-7"
             value={projectNameState.draft}
             aria-label="Project name"
             spellCheck={false}
@@ -212,32 +248,18 @@ export const EditorTopBar = ({
               }
             }}
           />
-          {saveStatus === 'error' ? (
-            <div className="flex h-4 items-center gap-1 px-1 text-[10px] leading-none md:text-[11px]">
-              <span className="text-red-400" role="status" aria-live="polite">{saveStatusText[saveStatus]}</span>
-              <button
-                type="button"
-                className="-my-1 grid h-6 w-6 place-items-center text-red-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-                aria-label="Retry save"
-                title="Retry save"
-                onClick={onRetrySave}
-              >
-                <RefreshCw aria-hidden="true" size={12} />
-              </button>
-            </div>
-          ) : null}
         </div>
       </div>
 
-      <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-1 border-t border-neutral-900 md:min-w-0 md:flex-1 md:border-t-0">
-        <label className="sr-only" htmlFor="editor-variation">Variant selector</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant selector</span>
+      <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-1 border-t border-neutral-900 xl:min-w-0 xl:flex-1 xl:border-t-0" data-topbar-group="variation" aria-label="Variation controls">
+        <label className="sr-only" htmlFor="editor-variation">Variation</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation</span>
         <select
           id="editor-variation"
-          className="h-9 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
+          className="h-11 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
           value={activeVariationId}
           disabled={variations.length === 0}
-          aria-label="Variant selector"
+          aria-label="Variation"
           onChange={(event) => onVariationChange(event.currentTarget.value)}
         >
           {variations.length === 0 ? <option value="">Original</option> : null}
@@ -245,13 +267,13 @@ export const EditorTopBar = ({
             <option key={variation.id} value={variation.id}>{variation.name}</option>
           ))}
         </select>
-        <label className="sr-only" htmlFor="editor-variation-name">Variant name</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant name</span>
+        <label className="sr-only" htmlFor="editor-variation-name">Variation name</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation name</span>
         <input
           id="editor-variation-name"
-          className="h-9 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-48 md:flex-none"
+          className="h-11 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-48 md:flex-none"
           value={variationNameState.draft}
-          aria-label="Variant name"
+          aria-label="Variation name"
           disabled={variations.length === 0}
           spellCheck={false}
           onChange={(event) => updateVariationNameState({ type: 'input', value: event.currentTarget.value })}
@@ -280,16 +302,17 @@ export const EditorTopBar = ({
         />
       </div>
 
-      <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands">
-        <div className="flex h-8 rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
-          <button type="button" role="radio" aria-checked={mode === 'easy'} className={`rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
-          <button type="button" role="radio" aria-checked={mode === 'advanced'} className={`rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}>Adv</button>
+      <div className="col-start-2 row-start-1 flex items-center gap-0 self-center md:gap-1" aria-label="Project commands" data-topbar-group="commands">
+        <div className="flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
+          <button type="button" role="radio" aria-label="Basic" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
+          <button type="button" role="radio" aria-label="Advanced" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}><span className="md:hidden">Adv</span><span className="hidden md:inline">Advanced</span></button>
         </div>
         <div className="hidden md:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} /></div>
+        {saveStatus === 'error' ? <IconButton label="Retry save" icon={RefreshCw} onClick={onRetrySave} /> : null}
         <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
-        <IconButton label="Export" icon={Download} disabled={!projectId} onClick={onExport} buttonRef={exportButtonRef} />
-        <IconButton label="Open local projects" icon={FolderOpen} onClick={onOpenProjects} />
+        <IconButton label="Export" visibleLabel="Export" icon={Download} disabled={!projectId} onClick={onExport} buttonRef={exportButtonRef} />
+        <IconButton label="Open local projects" visibleLabel="Projects" icon={FolderOpen} onClick={onOpenProjects} />
       </div>
     </header>
   );

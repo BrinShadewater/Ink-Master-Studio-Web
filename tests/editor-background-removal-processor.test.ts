@@ -136,7 +136,7 @@ test('picked dark background clears matching closed regions globally', () => {
       ...createDefaultBackgroundRemoval(),
       enabled: true,
       mode: 'picked',
-      pickedPoint: { x: 0, y: 0 },
+      picks: [{ color: '#111111', point: { x: 0, y: 0 } }],
       edgeFeather: 0,
     },
     corrections: noCorrections,
@@ -182,8 +182,7 @@ test('picked mode removes exactly the selected enclosed connected region', () =>
       ...createDefaultBackgroundRemoval(),
       enabled: true,
       mode: 'picked',
-      pickedColor: '#ffffff',
-      pickedPoint: { x: 2 / 6, y: 0.5 },
+      picks: [{ color: '#ffffff', point: { x: 2 / 6, y: 0.5 } }],
       edgeFeather: 0,
     },
     corrections: noCorrections,
@@ -193,6 +192,26 @@ test('picked mode removes exactly the selected enclosed connected region', () =>
   assert.equal(alphaAt(picked, 2, 2), 0);
   assert.equal(alphaAt(picked, 4, 2), 255, 'a disconnected matching region stays');
   assert.equal(alphaAt(picked, 1, 1), 255);
+});
+
+test('picked mode removes every selected color without losing earlier picks', () => {
+  const result = applyBackgroundRemoval({
+    frame: rgbaFrame(5, 1, ['ff0000', 'ff0000', '00ff00', '00ff00', '0000ff']),
+    settings: {
+      ...createDefaultBackgroundRemoval(),
+      enabled: true,
+      mode: 'picked',
+      edgeFeather: 0,
+      picks: [
+        { color: '#ff0000', point: { x: 0, y: 0 } },
+        { color: '#00ff00', point: { x: 0.75, y: 0 } },
+      ],
+    },
+    corrections: noCorrections,
+  });
+  assert.equal(alphaAt(result, 0, 0), 0);
+  assert.equal(alphaAt(result, 3, 0), 0);
+  assert.equal(alphaAt(result, 4, 0), 255);
 });
 
 test('maps tolerance zero through one hundred to bounded perceptual matching', () => {
