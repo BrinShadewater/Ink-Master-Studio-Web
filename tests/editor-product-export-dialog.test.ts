@@ -38,6 +38,7 @@ test('Product export dialog presents the fixed production and proof PNG presets'
   assert.match(markup, /Print-ready PNG/);
   assert.match(markup, /Production summary/);
   assert.match(markup, /DTF transfer/);
+  assert.doesNotMatch(markup, /Download mockup proof/);
   assert.match(markup, /Exporting a PNG keeps your cleaned raster artwork and transparency intact/);
   assert.match(markup, /Printify Full Front/);
   assert.match(markup, /4500 x 5400 px, 300 DPI, 15 x 18 in/);

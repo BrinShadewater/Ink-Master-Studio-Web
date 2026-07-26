@@ -61,6 +61,7 @@ interface TShirtProductSnapshot {
     | 'royal-blue'
     | 'white';
   printMethod: 'dtg' | 'dtf' | 'vinyl';
+  colorVariationIds: Record<string, string>;
   placement: {
     x: number;
     y: number;
@@ -4123,7 +4124,16 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
 });
 
 test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the product editor', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
+  await page.addInitScript(() => {
+    const original = URL.revokeObjectURL.bind(URL);
+    const target = window as typeof window & { __revokedProofUrls: string[] };
+    target.__revokedProofUrls = [];
+    URL.revokeObjectURL = (url) => {
+      target.__revokedProofUrls.push(url);
+      original(url);
+    };
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/editor');
   await uploadTransparentFixture(page, 4000, 4000, 'phase-3b-export.png');
@@ -4156,8 +4166,118 @@ test('@phase3b-acceptance generates a validated transparent T-shirt PNG from the
   if (!downloadPath) throw new Error('The generated PNG download is unavailable.');
   const content = readFileSync(downloadPath);
   expect([...content.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const createProof = dialog.getByRole('button', { name: 'Create mockup proof', exact: true });
+  await expect.poll(async () => (await createProof.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await createProof.click();
+  const proofImage = dialog.getByRole('img', { name: /mockup proof/ });
+  await expect(proofImage).toBeVisible();
+  await expect(dialog).toContainText('Proof only. This mockup estimates placement and garment color. Use the PNG for production.');
+
+  const proofDownloadPromise = page.waitForEvent('download');
+  const downloadProof = dialog.getByRole('button', { name: 'Download mockup proof', exact: true });
+  await expect.poll(async () => (await downloadProof.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await downloadProof.click();
+  const proofDownload = await proofDownloadPromise;
+  expect(proofDownload.suggestedFilename()).toMatch(/-mockup-proof\.png$/);
+  const proofPath = await proofDownload.path();
+  if (!proofPath) throw new Error('The mockup proof download is unavailable.');
+  const proofBytes = readFileSync(proofPath);
+  expect([...proofBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const firstProofUrl = await proofImage.getAttribute('src');
+  if (!firstProofUrl) throw new Error('The first mockup proof URL is unavailable.');
+  await dialog.getByRole('radio', { name: /Standard Tee/ }).check();
+  await expect(proofImage).toHaveCount(0);
+  await expect(downloadProof).toHaveCount(0);
+  await expect.poll(async () => page.evaluate(() => (
+    window as typeof window & { __revokedProofUrls: string[] }
+  ).__revokedProofUrls)).toContain(firstProofUrl);
+
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
+  await expect(dialog.getByText('Ready to print', { exact: true })).toBeVisible({ timeout: 150_000 });
+  await dialog.getByRole('button', { name: 'Create mockup proof', exact: true }).click();
+  await expect(proofImage).toBeVisible();
+  const secondProofUrl = await proofImage.getAttribute('src');
+  if (!secondProofUrl) throw new Error('The second mockup proof URL is unavailable.');
   await page.screenshot({
     path: phase3bArtifactPath('tshirt-png-receipt-1440x900.png'),
     animations: 'disabled',
   });
+  await closeExport.click();
+  await expect.poll(async () => page.evaluate(() => (
+    window as typeof window & { __revokedProofUrls: string[] }
+  ).__revokedProofUrls)).toContain(secondProofUrl);
+});
+
+test('Product export uses the garment-assigned variation for PNG and proof', async ({ page }) => {
+  test.setTimeout(300_000);
+  const projectName = 'assigned-product-proof';
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/editor');
+  await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
+
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await renameActiveVariation(page, 'White proof artwork');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
+  await page.getByRole('button', { name: 'Duotone', exact: true }).click();
+  await page.getByLabel('Variation', { exact: true }).selectOption({ label: 'Original' });
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('button', { name: 'White', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Artwork for White', exact: true }).selectOption({ label: 'White proof artwork' });
+
+  await expect.poll(async () => {
+    const project = await readPersistedPhase2BProject(page, projectName);
+    const original = project?.variations.find(({ name }) => name === 'Original');
+    const assigned = project?.variations.find(({ name }) => name === 'White proof artwork');
+    const product = project?.productVariants.find(({ variationId }) => variationId === original?.id);
+    return {
+      assignmentMatches: Boolean(assigned?.id) && product?.colorVariationIds.white === assigned?.id,
+      looks: assigned?.looks.map(({ id }) => id),
+    };
+  }).toEqual({
+    assignmentMatches: true,
+    looks: ['duotone'],
+  });
+
+  await page.getByRole('button', { name: 'Create print-ready PNG', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Print-ready PNG', exact: true });
+  const summary = dialog.getByRole('heading', { name: 'Production summary', exact: true }).locator('..');
+  await expect(summary).toContainText('White proof artwork');
+  await expect(summary).not.toContainText('Original');
+  await dialog.getByRole('radio', { name: /Draft Proof/ }).check();
+  await dialog.getByRole('button', { name: 'Create PNG', exact: true }).click();
+  await expect(dialog.getByText('Proof ready', { exact: true })).toBeVisible({ timeout: 150_000 });
+
+  const pngDownloadPromise = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const pngDownload = await pngDownloadPromise;
+  const pngPath = await pngDownload.path();
+  if (!pngPath) throw new Error('The assigned artwork PNG download is unavailable.');
+  expect([...readFileSync(pngPath).subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  await dialog.getByRole('button', { name: 'Create mockup proof', exact: true }).click();
+  await expect(dialog.getByRole('img', { name: 'White mockup proof', exact: true })).toBeVisible();
+  const proofDownloadPromise = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download mockup proof', exact: true }).click();
+  const proofDownload = await proofDownloadPromise;
+  const proofPath = await proofDownload.path();
+  if (!proofPath) throw new Error('The assigned artwork proof download is unavailable.');
+  expect([...readFileSync(proofPath).subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  await dialog.getByRole('button', { name: 'Close export', exact: true }).click();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  const assignedArtwork = page.getByRole('combobox', { name: 'Artwork for White', exact: true });
+  await expect(assignedArtwork).toHaveValue(/.+/);
+  await expect(assignedArtwork.locator('option:checked')).toHaveText('White proof artwork');
+  await expect.poll(async () => {
+    const project = await readPersistedPhase2BProject(page, projectName);
+    return project?.variations.find(({ name }) => name === 'White proof artwork')?.looks.map(({ id }) => id);
+  }).toEqual(['duotone']);
 });
