@@ -455,6 +455,8 @@ export const EditorInspector = ({
             onBrushModeChange={onBackgroundBrushModeChange}
             onBrushSizeChange={onBackgroundBrushSizeChange}
             onClearCorrections={backgroundRemoval.clearCorrections}
+            onRemovePick={backgroundRemoval.removePick}
+            onClearPicks={backgroundRemoval.clearPicks}
             onDone={onBackgroundDone}
             mode={mode}
           />

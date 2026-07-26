@@ -23,8 +23,7 @@ test('normalizes background removal without mutating caller-owned state', () => 
   assert.deepEqual(createDefaultBackgroundRemoval(), {
     enabled: false,
     mode: 'auto',
-    pickedColor: null,
-    pickedPoint: null,
+    picks: [],
     tolerance: 24,
     edgeFeather: 1,
     correctionAssetId: null,
@@ -46,8 +45,7 @@ test('normalizes background removal without mutating caller-owned state', () => 
   assert.deepEqual(normalizeBackgroundRemoval(input), {
     enabled: true,
     mode: 'picked',
-    pickedColor: '#aabbcc',
-    pickedPoint: { x: 0, y: 1 },
+    picks: [{ color: '#aabbcc', point: { x: 0, y: 1 } }],
     tolerance: 100,
     edgeFeather: 0,
     correctionAssetId: 'correction-a',
@@ -114,12 +112,12 @@ test('normalizes trace controls and fingerprints source plus settings', () => {
   assert.equal(serializeTraceInput(normalized), serializeTraceInput(structuredClone(normalized)));
 });
 
-test('creates a schema five project with a default product and immutable source metadata', () => {
+test('creates a schema six project with a default product and immutable source metadata', () => {
   const asset = createEditorAsset('project_a', new Blob(['pixels'], { type: 'image/png' }), {
     name: 'still.png', width: 1600, height: 900,
   });
   const project = createEditorProject('Film still', asset);
-  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.schemaVersion, 6);
   assert.equal(project.productVariants.length, 1);
   assert.equal(project.productVariants[0].variationId, project.variations[0].id);
   assert.equal(project.productVariants[0].mockupSlug, 'black');
@@ -209,7 +207,7 @@ test('normalizes text layer values to the command and inspector contract', () =>
   }]);
 
   const textLayer = project.variations[0].layers[0];
-  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.schemaVersion, 6);
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(textLayer.type, 'text');
   assert.equal(textLayer.name, 'Text');
@@ -253,7 +251,7 @@ test('upgrades a version one project from its matching stored asset without chan
     }],
   }, [asset]);
 
-  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.schemaVersion, 6);
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
   assert.equal(project.sourceAssetId, asset.id);
   assert.deepEqual(project.sourceMetadata, {
@@ -327,7 +325,7 @@ test('migrates injected schema two Looks to Original', () => {
   assert.deepEqual(project.variations[0].look, { id: 'original', strength: 100 });
 });
 
-test('normalizes saved schema three Look recipes while adding schema five product state', () => {
+test('normalizes saved schema three Look recipes while adding schema six product state', () => {
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,
   });
@@ -346,7 +344,7 @@ test('normalizes saved schema three Look recipes while adding schema five produc
     }],
   }, [asset]);
 
-  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.schemaVersion, 6);
   assert.equal(project.productVariants[0].variationId, 'variation_a');
   assert.deepEqual(project.variations[0].look, {
     id: 'duotone', strength: 100, shadowColor: '#aabbcc', highlightColor: '#f59e0b', balance: -50,
@@ -424,7 +422,7 @@ test('migrates schema four generated assets and adds a default product', () => {
     }],
   }, [source, prepared, correction, trace]);
 
-  assert.equal(project.schemaVersion, 5);
+  assert.equal(project.schemaVersion, 6);
   assert.equal(project.productVariants.length, 1);
   assert.equal(project.productVariants[0].variationId, 'variation_trace');
   assert.deepEqual(project.variations[0].layers.map(({ id }) => id), ['image_source', 'trace_valid']);
@@ -449,8 +447,38 @@ test('migrates schema four generated assets and adds a default product', () => {
   assert.equal(recoveredTrace.sourceFingerprint, '');
 });
 
+test('migrates schema five picks while preserving non-default Product state', () => {
+  const source = createEditorAsset('project_schema_five', new Blob(['source']), {
+    name: 'source.png', width: 1200, height: 900,
+  });
+  const current = createEditorProject('Schema five', source);
+  const product = structuredClone(current.productVariants[0]);
+  product.mockupSlug = 'red';
+  product.placement = { x: 0.37, y: 0.62, scale: 0.91, rotation: 14 };
+  product.colorVariationIds = { red: current.variations[0].id, white: current.variations[0].id };
+  const legacy = structuredClone(current) as unknown as Record<string, any>;
+  legacy.schemaVersion = 5;
+  legacy.productVariants = [product];
+  legacy.variations[0].layers[0].backgroundRemoval = {
+    ...createDefaultBackgroundRemoval(),
+    mode: 'picked',
+    pickedColor: '#ABC',
+    pickedPoint: { x: 0.2, y: 0.7 },
+  };
+
+  const migrated = migrateEditorProject(legacy, [source]);
+  assert.equal(migrated.schemaVersion, 6);
+  assert.deepEqual(migrated.productVariants, [product]);
+  const image = migrated.variations[0].layers[0];
+  assert.equal(image.type, 'image');
+  if (image.type !== 'image') throw new Error('Expected image layer.');
+  assert.deepEqual(image.backgroundRemoval.picks, [
+    { color: '#aabbcc', point: { x: 0.2, y: 0.7 } },
+  ]);
+});
+
 test('rejects unsupported schemas and records without a valid created timestamp', () => {
-  assert.throws(() => migrateEditorProject({ schemaVersion: 6 }, []), /Unsupported editor project schema/);
+  assert.throws(() => migrateEditorProject({ schemaVersion: 7 }, []), /Unsupported editor project schema/);
   const asset = createEditorAsset('project_a', new Blob(['source']), {
     name: 'source.png', width: 10, height: 10,
   });

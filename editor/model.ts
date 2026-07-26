@@ -27,7 +27,7 @@ import {
 
 export { TEXT_ALIGNMENTS, TEXT_FONT_FAMILIES } from './textNormalization';
 
-export const EDITOR_PROJECT_SCHEMA_VERSION = 5 as const;
+export const EDITOR_PROJECT_SCHEMA_VERSION = 6 as const;
 
 export type EditorTool =
   | 'select'
@@ -484,6 +484,7 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     value.schemaVersion !== 2 &&
     value.schemaVersion !== 3 &&
     value.schemaVersion !== 4 &&
+    value.schemaVersion !== 5 &&
     value.schemaVersion !== EDITOR_PROJECT_SCHEMA_VERSION
   )) {
     throw new Error('Unsupported editor project schema.');
@@ -514,6 +515,6 @@ export const migrateEditorProject = (value: unknown, assets: EditorAsset[]): Edi
     normalizeSourceMetadata(value.sourceMetadata, sourceAsset),
     createLayerNormalizer(availableAssetIds),
     value.schemaVersion === 2 ? normalizeLegacyLook : normalizeVariationLook,
-    value.schemaVersion === EDITOR_PROJECT_SCHEMA_VERSION ? value.productVariants : [],
+    value.schemaVersion >= 5 ? value.productVariants : [],
   );
 };

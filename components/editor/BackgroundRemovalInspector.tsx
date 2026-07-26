@@ -16,6 +16,8 @@ export interface BackgroundRemovalInspectorProps {
   onBrushModeChange: (mode: BackgroundBrushMode) => void;
   onBrushSizeChange: (size: number) => void;
   onClearCorrections: () => Promise<void>;
+  onRemovePick: (index: number) => void;
+  onClearPicks: () => void;
   onDone: () => void;
   mode?: 'easy' | 'advanced';
 }
@@ -40,6 +42,8 @@ export const BackgroundRemovalInspector = ({
   onBrushModeChange,
   onBrushSizeChange,
   onClearCorrections,
+  onRemovePick,
+  onClearPicks,
   onDone,
   mode = 'advanced',
 }: BackgroundRemovalInspectorProps) => {
@@ -94,14 +98,21 @@ export const BackgroundRemovalInspector = ({
             Pick color
           </button>
         </div>
-        {settings.pickedColor ? (
-          <div className="flex items-center justify-between gap-3 border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300">
-            <span>Selected color</span>
-            <span className="flex items-center gap-2 font-mono uppercase">
-              <span aria-hidden="true" className="h-5 w-5 border border-neutral-600" style={{ backgroundColor: settings.pickedColor }} />
-              {settings.pickedColor}
-            </span>
-          </div>
+        {settings.picks.length > 0 ? (
+          <section className="grid gap-2" aria-labelledby="picked-background-colors-title">
+            <h3 id="picked-background-colors-title" className="text-xs font-medium text-neutral-300">Picked colors</h3>
+            <div className="grid gap-2">
+              {settings.picks.map((pick, index) => (
+                <div key={`${pick.color}-${pick.point.x}-${pick.point.y}`} className="flex min-h-11 items-center justify-between gap-3 border border-neutral-800 bg-neutral-950 px-3 text-xs text-neutral-300">
+                  <span className="flex items-center gap-2 font-mono uppercase">
+                    <span aria-hidden="true" className="h-5 w-5 border border-neutral-600" style={{ backgroundColor: pick.color }} />
+                    {pick.color}
+                  </span>
+                  <button type="button" className="h-11 px-2 text-xs text-neutral-300 hover:text-white" aria-label={`Remove picked color ${index + 1}`} onClick={() => onRemovePick(index)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {mode === 'advanced' ? <><RangeControl
@@ -174,6 +185,14 @@ export const BackgroundRemovalInspector = ({
         ) : null}
 
         {mode === 'advanced' ? <div className="grid gap-2">
+          <button
+            type="button"
+            className={commandClass}
+            disabled={settings.picks.length === 0 || processing}
+            onClick={onClearPicks}
+          >
+            Clear picked colors
+          </button>
           <button
             type="button"
             className={commandClass}

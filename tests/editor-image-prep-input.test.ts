@@ -198,7 +198,7 @@ test('fingerprints every semantic preparation input stably', () => {
       backgroundRemoval: {
         ...source.backgroundRemoval,
         mode: 'picked' as const,
-        pickedPoint: { x: 0.2, y: 0.3 },
+        picks: [{ color: '#123456', point: { x: 0.2, y: 0.3 } }],
       },
     },
     {

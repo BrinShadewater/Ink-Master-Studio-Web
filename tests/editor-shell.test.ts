@@ -646,6 +646,14 @@ test('background removal inspector exposes the bounded focused workflow', () => 
   const layer = createEditorProject('Background inspector', source).variations[0].layers[0];
   assert.equal(layer.type, 'image');
   if (layer.type !== 'image') throw new Error('Expected image layer.');
+  layer.backgroundRemoval = {
+    ...layer.backgroundRemoval,
+    mode: 'picked',
+    picks: [
+      { color: '#ff0000', point: { x: 0.2, y: 0.3 } },
+      { color: '#00ff00', point: { x: 0.7, y: 0.6 } },
+    ],
+  };
   const markup = renderToStaticMarkup(createElement(BackgroundRemovalInspector, {
     layer,
     status: 'failed',
@@ -657,6 +665,8 @@ test('background removal inspector exposes the bounded focused workflow', () => 
     onBrushModeChange: () => undefined,
     onBrushSizeChange: () => undefined,
     onClearCorrections: async () => undefined,
+    onRemovePick: () => undefined,
+    onClearPicks: () => undefined,
     onDone: () => undefined,
   }));
 
@@ -668,6 +678,10 @@ test('background removal inspector exposes the bounded focused workflow', () => 
   assert.match(markup, /Background removal failed\./);
   assert.match(markup, />Retry</);
   assert.match(markup, />Clear corrections</);
+  assert.match(markup, /Picked colors/);
+  assert.match(markup, /aria-label="Remove picked color 1"/);
+  assert.match(markup, /aria-label="Remove picked color 2"/);
+  assert.match(markup, />Clear picked colors</);
   assert.match(markup, />Reset background</);
   assert.match(markup, />Done</);
 });
@@ -1330,6 +1344,7 @@ const renderInspectorModeTool = (
     backgroundRemoval: {
       status: 'idle', error: null, retry: () => undefined, pickColor: () => undefined,
       commitStroke: async () => undefined, clearCorrections: async () => undefined,
+      removePick: () => undefined, clearPicks: () => undefined,
     },
     resolutionWorkflow: {
       status: 'idle', error: null, beforeAssetId: null, enhance: async () => undefined,

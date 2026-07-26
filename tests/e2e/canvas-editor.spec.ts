@@ -428,6 +428,32 @@ const uploadTransparentFixture = async (
   });
 };
 
+const uploadPickedColorsFixture = async (page: Page, name: string) => {
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 400;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+    context.fillStyle = '#0000ff';
+    context.fillRect(0, 0, 600, 400);
+    context.fillStyle = '#ff0000';
+    context.fillRect(120, 100, 120, 200);
+    context.fillStyle = '#00ff00';
+    context.fillRect(360, 100, 120, 200);
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (result) => result ? resolve(result) : reject(new Error('Picked color fixture failed.')),
+      'image/png',
+    ));
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  });
+  await page.locator('input[type="file"][aria-label="Import artwork file"]').setInputFiles({
+    name,
+    mimeType: 'image/png',
+    buffer: Buffer.from(bytes),
+  });
+};
+
 const createPhase2CFixture = async (page: Page, size: number): Promise<Buffer> => {
   const bytes = await page.evaluate(async (fixtureSize) => {
     const canvas = document.createElement('canvas');
@@ -935,6 +961,52 @@ const readPersistedPhase2CWorkspace = async (
     assets,
   } satisfies PersistedPhase2CWorkspaceSnapshot;
 }, projectName);
+
+const readPreparedAlphaSamples = async (
+  page: Page,
+  projectName: string,
+  points: Array<{ x: number; y: number }>,
+) => page.evaluate(async ({ name, samples }) => {
+  const records = await new Promise<{ projects: any[]; assets: any[] }>((resolve, reject) => {
+    const request = indexedDB.open('inkmaster-studio');
+    request.onerror = () => reject(request.error ?? new Error('Could not open IndexedDB.'));
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction(['editor-projects', 'editor-assets']);
+      const projects = transaction.objectStore('editor-projects').getAll();
+      const assets = transaction.objectStore('editor-assets').getAll();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not read editor workspace.'));
+      transaction.oncomplete = () => {
+        database.close();
+        resolve({ projects: projects.result, assets: assets.result });
+      };
+    };
+  });
+  const project = records.projects.find((candidate) => candidate.name === name);
+  const variation = project?.variations.find(
+    (candidate: { id: string }) => candidate.id === project.activeVariationId,
+  );
+  const image = variation?.layers.find((candidate: { type: string }) => candidate.type === 'image');
+  const asset = records.assets.find(
+    (candidate) => candidate.id === image?.backgroundRemoval?.preparedAssetId,
+  );
+  if (!asset?.blob) return null;
+  const bitmap = await createImageBitmap(asset.blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Could not inspect prepared artwork.');
+  context.drawImage(bitmap, 0, 0);
+  const result = samples.map((point) => context.getImageData(
+    Math.round(point.x * (bitmap.width - 1)),
+    Math.round(point.y * (bitmap.height - 1)),
+    1,
+    1,
+  ).data[3]);
+  bitmap.close();
+  return result;
+}, { name: projectName, samples: points });
 
 const readPersistedPhase3AWorkspace = async (
   page: Page,
@@ -3116,6 +3188,59 @@ test('crop preserves completed background removal', async ({ page }) => {
   expect(afterPrepared?.blobDigest).toBe(preparedDigest);
 });
 
+test('picked background colors accumulate and persist', async ({ page }) => {
+  const projectName = 'cumulative-picked-colors';
+  const samples = [
+    { x: 0.3, y: 0.5 },
+    { x: 0.7, y: 0.5 },
+    { x: 0.05, y: 0.5 },
+  ];
+  await page.setViewportSize({ width: 1200, height: 844 });
+  await page.goto('/editor');
+  await uploadPickedColorsFixture(page, `${projectName}.png`);
+  const canvas = page.getByLabel('Design canvas');
+  await expectCanvasPainted(canvas);
+
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Pick color', exact: true }).click();
+  const red = await sourcePointOnCanvas(canvas, samples[0].x, samples[0].y);
+  await page.mouse.click(red.x, red.y);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Pick color', exact: true }).click();
+  const green = await sourcePointOnCanvas(canvas, samples[1].x, samples[1].y);
+  await page.mouse.click(green.x, green.y);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.backgroundRemoval?.picks?.map(({ color }: { color: string }) => color);
+  }).toEqual(['#ff0000', '#00ff00']);
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Remove picked color/ })).toHaveCount(2);
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '16:9', exact: true }).click();
+  await expect.poll(async () => {
+    const workspace = await readPersistedPhase2CWorkspace(page, projectName);
+    const image = workspace?.variation.layers.find(({ type }) => type === 'image');
+    return image?.crop;
+  }).not.toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
+    .toEqual([0, 0, 255]);
+});
+
 test('@phase2c-acceptance prepares, traces, persists, compares, and exports one owner design', async ({ page }) => {
   test.setTimeout(180_000);
   const projectName = 'phase-2c-owner';
@@ -3164,7 +3289,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     return {
       enabled: image?.backgroundRemoval?.enabled,
       mode: image?.backgroundRemoval?.mode,
-      picked: Boolean(image?.backgroundRemoval?.pickedPoint),
+      picked: (image?.backgroundRemoval?.picks?.length ?? 0) > 0,
       tolerance: image?.backgroundRemoval?.tolerance,
       feather: image?.backgroundRemoval?.edgeFeather,
       prepared: Boolean(image?.backgroundRemoval?.preparedAssetId),
@@ -3533,7 +3658,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   await expect.poll(() => readPersistedPhase3AWorkspace(page, projectName)).not.toBeNull();
   const initial = await readPersistedPhase3AWorkspace(page, projectName);
   if (!initial) throw new Error('Initial Phase 3A workspace was not persisted.');
-  expect(initial.schemaVersion).toBe(5);
+  expect(initial.schemaVersion).toBe(6);
   const originalLayerBytes = JSON.stringify(initial.variations[0].layers);
 
   await page.getByRole('button', { name: 'Product', exact: true }).click();

@@ -134,7 +134,7 @@ test('preserves exact text content through save normalization and reopen', async
   await deleteEditorProject(projectId);
 });
 
-test('normalizes malformed schema five projects with their stored source asset before saving', async () => {
+test('normalizes malformed schema six projects with their stored source asset before saving', async () => {
   const projectId = `project_${crypto.randomUUID()}`;
   const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
     name: 'source.png', width: 1200, height: 800,
@@ -169,7 +169,7 @@ test('normalizes malformed schema five projects with their stored source asset b
   assert.deepEqual(await getEditorProject(projectId), saved);
 });
 
-test('rejects schema five saves whose source asset is not stored for the project', async () => {
+test('rejects schema six saves whose source asset is not stored for the project', async () => {
   const projectId = `project_${crypto.randomUUID()}`;
   const asset = createEditorAsset(projectId, new Blob(['source'], { type: 'image/png' }), {
     name: 'source.png', width: 1200, height: 800,
@@ -367,7 +367,7 @@ test('hydrates stored version one projects with matching project assets', async 
     await seedRawEditorProject(factory, legacyProject, asset);
 
     const project = await getEditorProject('project_legacy');
-    assert.equal(project?.schemaVersion, 5);
+    assert.equal(project?.schemaVersion, 6);
     assert.equal(project?.productVariants.length, 1);
     assert.deepEqual(project?.variations[0].look, { id: 'original', strength: 100 });
     assert.equal(project?.sourceAssetId, asset.id);
@@ -386,7 +386,7 @@ test('hydrates stored version one projects with matching project assets', async 
   });
 });
 
-test('migrates stored schema two projects with injected Looks to schema five Original when saved', async () => {
+test('migrates stored schema two projects with injected Looks to schema six Original when saved', async () => {
   await withFakeIndexedDb(async (factory) => {
     await saveJob(createStudioJob('Initialize editor stores'));
     const asset = createEditorAsset('project_schema_two', new Blob(['source'], { type: 'image/png' }), {
@@ -421,7 +421,7 @@ test('migrates stored schema two projects with injected Looks to schema five Ori
     await seedRawEditorProject(factory, rawSchemaTwo, asset);
 
     const hydrated = await getEditorProject(rawSchemaTwo.id);
-    assert.equal(hydrated?.schemaVersion, 5);
+    assert.equal(hydrated?.schemaVersion, 6);
     assert.equal(hydrated?.productVariants.length, 1);
     assert.deepEqual(hydrated?.variations[0].look, { id: 'original', strength: 100 });
     await saveEditorProject(hydrated!);
@@ -430,7 +430,7 @@ test('migrates stored schema two projects with injected Looks to schema five Ori
       look?: unknown;
       variations: Array<typeof rawSchemaTwo.variations[number] & { look: unknown }>;
     };
-    assert.equal(stored.schemaVersion, 5);
+    assert.equal(stored.schemaVersion, 6);
     assert.deepEqual(stored.variations[0].look, { id: 'original', strength: 100 });
 
     const reopened = await getEditorProject(rawSchemaTwo.id);

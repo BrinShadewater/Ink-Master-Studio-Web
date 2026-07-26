@@ -8,6 +8,7 @@ import type { DecodedImageEntry } from '../../editor/decodedImages';
 import type { EditorCommand } from '../../editor/history';
 import {
   createImagePrepFingerprint,
+  appendBackgroundRemovalPick,
   convertCleanupCorrectionsToSource,
   normalizeCleanupCorrectionDocument,
   type CleanupCorrectionDocument,
@@ -40,6 +41,8 @@ export interface BackgroundRemovalWorkflow {
   pickColor: (point: NormalizedPoint) => void;
   commitStroke: (stroke: CleanupStroke) => Promise<void>;
   clearCorrections: () => Promise<void>;
+  removePick: (index: number) => void;
+  clearPicks: () => void;
 }
 
 export interface UseBackgroundRemovalWorkflowOptions {
@@ -226,18 +229,43 @@ export const useBackgroundRemovalWorkflow = ({
       currentLayer,
       currentLayer.backgroundRemoval.correctionAssetId ?? '',
     );
+    const pick = {
+      color: samplePickedColor(composed.frame, point),
+      point,
+    };
+    dispatch({
+      type: 'set-background-removal',
+      layerId: currentLayer.id,
+      settings: appendBackgroundRemovalPick({
+        ...currentLayer.backgroundRemoval,
+        enabled: true,
+        mode: 'picked',
+      }, pick),
+    });
+  }, [dispatch, project, sourceImage]);
+
+  const removePick = useCallback((index: number) => {
+    const currentLayer = layerRef.current;
+    if (!currentLayer || index < 0 || index >= currentLayer.backgroundRemoval.picks.length) return;
     dispatch({
       type: 'set-background-removal',
       layerId: currentLayer.id,
       settings: {
         ...currentLayer.backgroundRemoval,
-        enabled: true,
-        mode: 'picked',
-        pickedColor: samplePickedColor(composed.frame, point),
-        pickedPoint: point,
+        picks: currentLayer.backgroundRemoval.picks.filter((_, pickIndex) => pickIndex !== index),
       },
     });
-  }, [dispatch, project, sourceImage]);
+  }, [dispatch]);
+
+  const clearPicks = useCallback(() => {
+    const currentLayer = layerRef.current;
+    if (!currentLayer || currentLayer.backgroundRemoval.picks.length === 0) return;
+    dispatch({
+      type: 'set-background-removal',
+      layerId: currentLayer.id,
+      settings: { ...currentLayer.backgroundRemoval, picks: [] },
+    });
+  }, [dispatch]);
 
   const commitStroke = useCallback(async (stroke: CleanupStroke) => {
     const currentLayer = layerRef.current;
@@ -286,5 +314,7 @@ export const useBackgroundRemovalWorkflow = ({
     pickColor,
     commitStroke,
     clearCorrections,
+    removePick,
+    clearPicks,
   };
 };
