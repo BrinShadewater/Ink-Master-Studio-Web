@@ -558,10 +558,6 @@ export const LooksInspector = ({
         </div>
         </div>
 
-        <p className="text-xs leading-5 text-neutral-500">
-          Recommended next: Open Product to check how the combined finishes print on a garment.
-        </p>
-
         {previewError ? (
           <div className="grid gap-2 border border-red-900 bg-red-950 p-3 text-xs text-red-200" aria-live="polite">
             <p>{previewError}</p>

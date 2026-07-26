@@ -1170,7 +1170,7 @@ test('Basic keeps stack order and strength while Advanced reveals recipe control
   assert.match(basic, />Distressed Print strength</);
   assert.doesNotMatch(basic, /<label[^>]*>Distress</);
   assert.doesNotMatch(basic, />More</);
-  assert.match(basic, /Recommended next: Open Product/);
+  assert.doesNotMatch(basic, /Recommended next:/);
 
   const advanced = renderLooksInspector('distressed-print', { looks, mode: 'advanced' });
   assert.match(advanced, /<label[^>]*>Distress</);
