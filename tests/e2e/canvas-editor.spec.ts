@@ -1563,6 +1563,10 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   await page.goto('/editor');
   await uploadFixture(page, 900, 1200, 'mobile.png');
 
+  const workflowContext = page.locator('aside[aria-label="Inspector"] > div[aria-live="polite"]');
+  await expect(workflowContext.getByText('Step 2 of 3 · Prepare', { exact: true })).toBeVisible();
+  await expect(workflowContext).toContainText('Crop if framing needs work');
+
   const select = page.getByRole('button', { name: 'Select' });
   const crop = page.getByRole('button', { name: 'Crop' });
   const adjust = page.getByRole('button', { name: 'Adjust' });
@@ -1596,8 +1600,8 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
 
   const toolBoxes = await Promise.all([select, crop, adjust].map((button) => button.boundingBox()));
   for (const box of toolBoxes) {
-    expect(box?.width).toBe(40);
-    expect(box?.height).toBe(40);
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
   }
   expect(new Set(toolBoxes.map((box) => box?.y)).size).toBe(1);
 

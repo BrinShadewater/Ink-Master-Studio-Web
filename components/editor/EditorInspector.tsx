@@ -131,6 +131,28 @@ const getAdvancedRecommendation = (layer: DesignLayer | null, tool: EditorTool) 
   return 'Place the trace first. Use Looks only for a variation-wide finish.';
 };
 
+const basicRecommendations: Record<EditorTool, string> = {
+  select: 'Crop if framing needs work, then preview the result on Product.',
+  crop: 'Adjust only if the artwork needs correction, then open Product.',
+  adjust: 'Preview the corrected artwork on Product.',
+  enhance: 'Return to Product and check print readiness.',
+  looks: 'Open Product to check the finish on a garment.',
+  'remove-background': 'Preview the transparent artwork on Product.',
+  trace: 'Open Product to confirm garment placement.',
+  product: 'Review readiness, then export the production PNG.',
+};
+
+export const getInspectorWorkflowContext = (
+  mode: 'easy' | 'advanced',
+  layer: DesignLayer | null,
+  tool: EditorTool,
+) => ({
+  stage: tool === 'product' ? 'Step 3 of 3 · Preview and export' : 'Step 2 of 3 · Prepare',
+  recommendation: mode === 'easy'
+    ? basicRecommendations[tool]
+    : getAdvancedRecommendation(layer, tool),
+});
+
 const InspectorFrame = ({
   tool,
   mode,
@@ -142,19 +164,30 @@ const InspectorFrame = ({
   layer: DesignLayer | null;
   children: ReactNode;
 }) => {
-  const recommendation = mode === 'advanced' ? getAdvancedRecommendation(layer, tool) : null;
+  const workflow = getInspectorWorkflowContext(mode, layer, tool);
   return (
     <aside className="flex h-60 min-h-0 flex-col overflow-hidden border-t border-neutral-800 bg-neutral-900 md:h-full md:border-l md:border-t-0" aria-label="Inspector">
+      <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-3 py-2 md:hidden" aria-live="polite">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-studio-measure">
+            {mode === 'easy' ? workflow.stage : 'Advanced workspace'}
+          </p>
+          <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
+        </div>
+        <p className="mt-1 line-clamp-2 text-xs leading-4 text-neutral-300">
+          {workflow.recommendation ?? toolPurpose[tool]}
+        </p>
+      </div>
       <div className="hidden shrink-0 border-b border-neutral-800 bg-neutral-950/55 px-4 py-2 md:block">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-studio-measure">Print bench</p>
           <p className="text-xs font-semibold text-neutral-200">{sectionTitle[tool]}</p>
         </div>
         <p className="mt-0.5 text-xs leading-4 text-neutral-400">{toolPurpose[tool]}</p>
-        {recommendation ? (
+        {workflow.recommendation ? (
           <p className="mt-1 border-t border-neutral-800 pt-1 text-xs leading-4 text-neutral-300">
             <span className="font-semibold text-emerald-300">Recommended next: </span>
-            {recommendation}
+            {workflow.recommendation}
           </p>
         ) : null}
       </div>

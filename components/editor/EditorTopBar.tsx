@@ -249,14 +249,14 @@ export const EditorTopBar = ({
       </div>
 
       <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-1 border-t border-neutral-900 md:min-w-0 md:flex-1 md:border-t-0">
-        <label className="sr-only" htmlFor="editor-variation">Variant selector</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant selector</span>
+        <label className="sr-only" htmlFor="editor-variation">Variation</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation</span>
         <select
           id="editor-variation"
           className="h-11 w-24 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-32"
           value={activeVariationId}
           disabled={variations.length === 0}
-          aria-label="Variant selector"
+          aria-label="Variation"
           onChange={(event) => onVariationChange(event.currentTarget.value)}
         >
           {variations.length === 0 ? <option value="">Original</option> : null}
@@ -264,13 +264,13 @@ export const EditorTopBar = ({
             <option key={variation.id} value={variation.id}>{variation.name}</option>
           ))}
         </select>
-        <label className="sr-only" htmlFor="editor-variation-name">Variant name</label>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variant name</span>
+        <label className="sr-only" htmlFor="editor-variation-name">Variation name</label>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 md:inline">Variation name</span>
         <input
           id="editor-variation-name"
           className="h-11 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 md:w-48 md:flex-none"
           value={variationNameState.draft}
-          aria-label="Variant name"
+          aria-label="Variation name"
           disabled={variations.length === 0}
           spellCheck={false}
           onChange={(event) => updateVariationNameState({ type: 'input', value: event.currentTarget.value })}

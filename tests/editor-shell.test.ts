@@ -36,6 +36,7 @@ import {
   controlBounds,
   cropToEdgePercentages,
   edgePercentagesToCrop,
+  getInspectorWorkflowContext,
 } from '../components/editor/EditorInspector';
 import {
   createFontSizeDraftState,
@@ -266,7 +267,7 @@ test('empty Basic top bar keeps only project-start commands', () => {
   assert.match(markup, /aria-label="Open local projects"/);
   assert.doesNotMatch(markup, /aria-label="Project name"/);
   assert.doesNotMatch(markup, /aria-label="Export"/);
-  assert.doesNotMatch(markup, /aria-label="Variant selector"/);
+  assert.doesNotMatch(markup, /aria-label="Variation"/);
 });
 
 test('empty Advanced top bar does not report a saved project', () => {
@@ -1135,7 +1136,7 @@ test('top bar exposes variation management and a live retryable save failure', (
     ...topBarProps,
     saveStatus: 'error',
   }));
-  assert.match(markup, /aria-label="Variant name"/);
+  assert.match(markup, /aria-label="Variation name"/);
   assert.match(markup, /aria-label="Duplicate variation"/);
   assert.match(markup, /aria-label="Delete variation"/);
   assert.match(markup, /aria-live="polite"/);
@@ -1196,7 +1197,11 @@ test('inspector controls keep deterministic bounds and normalized crop dimension
   );
 });
 
-const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' = 'select') => {
+const renderInspector = (
+  layer: DesignLayer,
+  tool: 'select' | 'crop' | 'adjust' = 'select',
+  mode: 'easy' | 'advanced' = 'advanced',
+) => {
   const source = createEditorAsset('project-inspector', new Blob(['source']), {
     name: 'source.png', width: 100, height: 80,
   });
@@ -1211,9 +1216,30 @@ const renderInspector = (layer: DesignLayer, tool: 'select' | 'crop' | 'adjust' 
     coordinator: {} as LookRenderCoordinator,
     lookError: null,
     onRetryLook: () => undefined,
+    mode,
     dispatch: () => undefined,
   }));
 };
+
+test('Basic inspector preserves the three-step workflow after import', () => {
+  const source = createEditorAsset('project-basic-workflow', new Blob(['source']), {
+    name: 'source.png', width: 100, height: 80,
+  });
+  const project = createEditorProject('Basic workflow', source);
+  const layer = project.variations[0].layers[0];
+  const markup = renderInspector(layer, 'select', 'easy');
+
+  assert.match(markup, /Step 2 of 3/);
+  assert.match(markup, /Crop if framing needs work, then preview the result on Product/);
+  assert.match(markup, /aria-live="polite"/);
+  assert.deepEqual(
+    getInspectorWorkflowContext('easy', layer, 'product'),
+    {
+      stage: 'Step 3 of 3 · Preview and export',
+      recommendation: 'Review readiness, then export the production PNG.',
+    },
+  );
+});
 
 test('text inspector exposes complete editable text and shared transform controls', () => {
   const layer = {
