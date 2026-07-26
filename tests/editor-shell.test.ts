@@ -1516,6 +1516,8 @@ test('image inspector retains phase-one control ids, bounds, and image-only sect
   const cropMarkup = renderInspector(layer, 'crop');
   assert.match(cropMarkup, /Reframe image artwork without changing the canvas size/);
   assert.match(cropMarkup, /Recommended next:/);
+  assert.match(cropMarkup, />Reset crop</);
+  assert.doesNotMatch(cropMarkup, />Free</);
   assert.equal(cropMarkup.match(/class="[^"]*h-11[^"]*"[^>]*>[^<]*<\/button>/g)?.length, 7);
   for (const edge of ['left', 'top', 'right', 'bottom']) {
     assert.match(cropMarkup, new RegExp(`id="editor-crop-${edge}"[^>]*min="0"[^>]*max="45"[^>]*step="1"`));

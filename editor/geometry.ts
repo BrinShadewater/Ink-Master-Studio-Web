@@ -46,6 +46,29 @@ export const getCroppedSourceRect = (source: Size, crop: CropRect): Rect => ({
   height: round(source.height * crop.height),
 });
 
+export const fitCropToAspectRatio = (
+  crop: CropRect,
+  source: Size,
+  targetRatio: number,
+): CropRect => {
+  if (!isUsableSize(source) || !Number.isFinite(targetRatio) || targetRatio <= 0) {
+    return { ...crop };
+  }
+  const normalizedRatio = targetRatio * source.height / source.width;
+  const centerX = crop.x + crop.width / 2;
+  const centerY = crop.y + crop.height / 2;
+  let width = crop.width;
+  let height = crop.height;
+  if (width / height > normalizedRatio) width = height * normalizedRatio;
+  else height = width / normalizedRatio;
+  return {
+    x: round(Math.max(0, Math.min(1 - width, centerX - width / 2))),
+    y: round(Math.max(0, Math.min(1 - height, centerY - height / 2))),
+    width: round(width),
+    height: round(height),
+  };
+};
+
 export const getLayerDrawRect = (
   source: Size,
   viewport: Size,

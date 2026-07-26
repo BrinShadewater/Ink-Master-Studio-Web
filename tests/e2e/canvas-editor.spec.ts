@@ -1565,6 +1565,43 @@ test('moves selected artwork and crop bounds with the keyboard', async ({ page }
   }).toEqual({ x: 0, y: 0, width: 0.99, height: 1 });
 });
 
+test('crop ratios resize the window without stretching artwork', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto('/editor');
+  await uploadFixture(page, 1200, 800, 'crop-ratio.png');
+
+  await expect.poll(async () => (await readPersistedComposition(page, 'crop-ratio'))?.layers.length)
+    .toBe(1);
+  const before = await readPersistedComposition(page, 'crop-ratio');
+  const beforeTransform = before?.layers[0]?.transform;
+  await page.getByRole('button', { name: 'Crop', exact: true }).click();
+  await page.getByRole('button', { name: '1:1', exact: true }).click();
+
+  const cropFrame = page.getByRole('group', {
+    name: 'Crop frame. Drag inside or use the Arrow keys to reposition. Hold Shift for a larger step.',
+    exact: true,
+  });
+  const frameBox = await cropFrame.boundingBox();
+  if (!frameBox) throw new Error('Crop frame bounds are unavailable.');
+  expect(Math.abs(frameBox.width / frameBox.height - 1)).toBeLessThan(0.02);
+
+  await expect.poll(async () => {
+    const persisted = await readPersistedComposition(page, 'crop-ratio');
+    const persistedCrop = persisted?.layers[0]?.crop;
+    return persistedCrop
+      ? Math.abs((persistedCrop.width * 1200) / (persistedCrop.height * 800) - 1)
+      : Number.POSITIVE_INFINITY;
+  }).toBeLessThan(0.000001);
+  const after = await readPersistedComposition(page, 'crop-ratio');
+  const crop = after?.layers[0]?.crop;
+  if (!crop) throw new Error('Persisted crop is unavailable.');
+  expect(after?.layers[0]?.transform).toEqual(beforeTransform);
+
+  await page.getByRole('button', { name: 'Reset crop', exact: true }).click();
+  await expect.poll(async () => (await readPersistedComposition(page, 'crop-ratio'))?.layers[0]?.crop)
+    .toEqual({ x: 0, y: 0, width: 1, height: 1 });
+});
+
 test('keeps the editor usable at 390 by 844 and captures the mobile layout', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/editor');

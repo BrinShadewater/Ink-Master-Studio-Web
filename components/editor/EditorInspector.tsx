@@ -13,6 +13,7 @@ import type {
 import type { ProductMockupLoadStatus } from '../../editor/productMockupLoader';
 import type { TShirtProductVariant } from '../../editor/productModel';
 import type { ProductPreviewMode } from '../../editor/productModel';
+import { fitCropToAspectRatio } from '../../editor/geometry';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { LooksInspector } from './LooksInspector';
 import {
@@ -239,19 +240,10 @@ const ImageInspector = ({
   const cropEdges = cropToEdgePercentages(layer.crop);
   const applyAspectRatio = (ratio: number) => {
     if (!asset) return;
-    const sourceRatio = asset.width / asset.height;
-    let width = layer.crop.width;
-    let height = width * sourceRatio / ratio;
-    if (height > 1) {
-      height = Math.min(1, layer.crop.height);
-      width = Math.min(1, height * ratio / sourceRatio);
-    }
-    updateCrop({
-      x: Math.max(0, Math.min(1 - width, layer.crop.x + (layer.crop.width - width) / 2)),
-      y: Math.max(0, Math.min(1 - height, layer.crop.y + (layer.crop.height - height) / 2)),
-      width,
-      height,
-    }, 'inspector-crop-ratio');
+    updateCrop(
+      fitCropToAspectRatio(layer.crop, asset, ratio),
+      'inspector-crop-ratio',
+    );
     endHistoryGroup();
   };
 
@@ -291,7 +283,7 @@ const ImageInspector = ({
         ) : null}
 
         {tool === 'crop' ? (
-          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Free']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-free')}>{label as string}</button>)}</div>{mode === 'advanced' ? (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+          <><p className="text-xs leading-5 text-neutral-500">Drag the grid on the canvas to reposition the crop, or use a ratio below.</p><div className="grid grid-cols-3 gap-2" aria-label="Crop aspect ratio">{[[1, '1:1'], [4 / 5, '4:5'], [16 / 9, '16:9'], [3 / 2, '3:2'], [2 / 3, '2:3'], [0, 'Reset crop']].map(([ratio, label]) => <button key={label as string} type="button" className="h-11 border border-neutral-700 bg-neutral-950 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400" onClick={() => ratio ? applyAspectRatio(ratio as number) : updateCrop({ x: 0, y: 0, width: 1, height: 1 }, 'inspector-crop-reset')}>{label as string}</button>)}</div>{mode === 'advanced' ? (['left', 'top', 'right', 'bottom'] as const).map((edge) => (
             <RangeControl
               key={edge}
               id={`editor-crop-${edge}`}
