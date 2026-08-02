@@ -1,5 +1,7 @@
 # InkMaster Studio Web
 
+![Licence](https://img.shields.io/badge/licence-all%20rights%20reserved-lightgrey?style=flat-square) ![Live](https://img.shields.io/badge/live-inkmasterstudio.com-brightgreen?style=flat-square) ![Shadewater Labs](https://img.shields.io/badge/Shadewater%20Labs-%E2%9A%97%EF%B8%8F-6b4fa2?style=flat-square)
+
 InkMaster Studio turns creator artwork into print-ready PNG files for Printify
 and print-on-demand shops. Drop an image, edit it on a canvas, place it on a
 product, and download a compliant file.
@@ -173,3 +175,9 @@ limits, same-origin checks, and quota controls intact.
 - If a module's reachability changed, update the allowlist in
   `tests/reachability.test.mjs` and say why in the pull request.
 - Check that no real client assets or secrets are committed.
+
+---
+
+## 📄 Licence
+
+All rights reserved. This repository is public so the work can be read and referenced, not relicensed. The code, copy, and creative assets remain © Brin Shadewater / Shadewater Labs. If you want to use something here, ask.
