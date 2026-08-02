@@ -30,3 +30,6 @@ test-results
 *.njsproj
 *.sln
 *.sw?
+
+# Session scratch from /impeccable runs - critique snapshots, consumed by the polish step
+.impeccable/
