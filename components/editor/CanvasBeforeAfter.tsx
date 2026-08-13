@@ -11,6 +11,13 @@ export interface CanvasBeforeAfterProps {
   imagesById: Record<string, DecodedImageEntry>;
   coordinator: LookRenderCoordinator;
   label: string;
+  /**
+   * Reports failures from the "after" surface. While a comparison tool is open this view
+   * replaces the editor canvas, so without this a failed Look preview would leave a
+   * silently stale image with no error and no Retry.
+   */
+  onFailureChange?: (message: string | null) => void;
+  retryGeneration?: number;
 }
 
 export const CanvasBeforeAfter = ({
@@ -20,6 +27,8 @@ export const CanvasBeforeAfter = ({
   imagesById,
   coordinator,
   label,
+  onFailureChange,
+  retryGeneration,
 }: CanvasBeforeAfterProps) => {
   const [position, setPosition] = useState(50);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -57,6 +66,8 @@ export const CanvasBeforeAfter = ({
                 maxPixelDimension={1600}
                 background="#aeb9b7"
                 ariaLabel="After artwork"
+                onFailureChange={onFailureChange}
+                retryGeneration={retryGeneration}
               />
             </div>
           </div>
