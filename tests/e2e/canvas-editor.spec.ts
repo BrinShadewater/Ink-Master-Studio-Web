@@ -377,11 +377,15 @@ const openVariationMenu = async (page: Page) => {
  * must close it again, or a later click lands on this popup instead.
  */
 const closeVariationMenu = async (page: Page) => {
-  const summary = page.locator('summary[aria-label="Manage variation"]');
-  const isOpen = await summary
-    .evaluate((el) => (el.parentElement as HTMLDetailsElement | null)?.open ?? false)
-    .catch(() => false);
-  if (isOpen) await summary.click();
+  // Close by toggling the native <details> rather than clicking the summary: a click
+  // moves focus, and several tests assert focus immediately after an action that closes
+  // this menu. The element is uncontrolled, so setting `open` is what the click does.
+  await page.locator('summary[aria-label="Manage variation"]')
+    .evaluate((el) => {
+      const details = el.parentElement as HTMLDetailsElement | null;
+      if (details?.open) details.open = false;
+    })
+    .catch(() => undefined);
 };
 
 const duplicateVariation = async (page: Page) => {
