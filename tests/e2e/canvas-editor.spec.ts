@@ -1186,6 +1186,18 @@ const expectPersistedImageAssets = (
   }
 };
 
+/** Reads canvas pixels once the surface has stopped changing between frames. */
+const readSettledCanvasPixels = async (canvas: Locator) => {
+  let settled = '';
+  await expect.poll(async () => {
+    const first = await readCanvasPixels(canvas);
+    if (first !== await readCanvasPixels(canvas)) return false;
+    settled = first;
+    return true;
+  }).toBe(true);
+  return settled;
+};
+
 const readCanvasPixels = (canvas: Locator) => canvas.evaluate((element) => {
   const target = element as HTMLCanvasElement;
   return target.toDataURL('image/png');
@@ -1260,7 +1272,12 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   await openVariationMenu(page);
   await expect(page.getByLabel('Variation name')).toHaveValue(name);
   if (expectedPng) {
-    await expect.poll(() => readCanvasPixels(canvas)).toBe(expectedPng);
+    // Compare settled frames: the canvas repaints while the variation restores, so raw
+    // samples can miss the stable result entirely.
+    await expect.poll(async () => {
+      const first = await readCanvasPixels(canvas);
+      return first === await readCanvasPixels(canvas) ? first : null;
+    }).toBe(expectedPng);
   } else {
     // "Different from the previous variation" alone can match a partially rendered
     // frame, which then reads as a duplicate of some other variation. Wait for the
@@ -2910,8 +2927,14 @@ test('@task5-review preserves direct canvas drag geometry with a processed Look'
   const originalCanvas = await readCanvasPixels(canvas);
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalCanvas);
+  // Looks replaces the design canvas with the before/after compare view, so wait for the
+  // processed result on its "after" surface before returning to Select.
+  await expect.poll(
+    () => readCanvasPixels(page.getByLabel('After artwork', { exact: true })),
+  ).not.toBe(originalCanvas);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
+  // The placement readouts asserted below are numeric placement, which is Advanced-only.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
 
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas bounds are unavailable.');
@@ -3221,14 +3244,33 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(distressedBeforeEdgeBreakup);
 
   await page.getByRole('button', { name: 'Select', exact: true }).click();
-  const distressedPress = await readCanvasPixels(canvas);
+  const distressedPress = await readSettledCanvasPixels(canvas);
+  // Selecting a variation keeps painting the last ready frame until the new render
+  // arrives, so "differs from the previous variation" can settle on a frame belonging to
+  // an earlier one. Wait until the canvas is a frame we have not already recorded.
+  const readVariationDistinctFrom = async (name: string, seen: string[]) => {
+    await page.getByLabel('Variation', { exact: true }).selectOption({ label: name });
+    let settled = '';
+    await expect.poll(async () => {
+      const first = await readCanvasPixels(canvas);
+      if (seen.includes(first)) return false;
+      if (first !== await readCanvasPixels(canvas)) return false;
+      settled = first;
+      return true;
+    }).toBe(true);
+    return settled;
+  };
+
+  const duotonePoster = await readVariationDistinctFrom('Duotone Poster', [distressedPress]);
+  const halftoneScreen = await readVariationDistinctFrom(
+    'Halftone Screen',
+    [distressedPress, duotonePoster],
+  );
   const desktopPngs: Record<string, string> = {
     'Distressed Press': distressedPress,
-    'Duotone Poster': await selectVariationAndReadCanvas(page, 'Duotone Poster'),
-    'Halftone Screen': await selectVariationAndReadCanvas(page, 'Halftone Screen'),
+    'Duotone Poster': duotonePoster,
+    'Halftone Screen': halftoneScreen,
     // Pass the expected pixels so the helper polls until the look has fully re-applied.
-    // Without it, it returns as soon as the canvas merely differs from the previous
-    // variation, which can be a partially rendered frame.
     'Distressed Press final': await selectVariationAndReadCanvas(
       page,
       'Distressed Press',
@@ -3291,7 +3333,12 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await expect(page.getByLabel('Project name')).toHaveValue(projectName);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeReload);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(desktopPngs['Distressed Press']);
+  // Poll until a *settled* frame matches: the canvas repaints while the reopened project
+  // restores, so a single stable sample can still land on an intermediate frame.
+  await expect.poll(async () => {
+    const first = await readCanvasPixels(canvas);
+    return first === await readCanvasPixels(canvas) ? first : null;
+  }).toBe(desktopPngs['Distressed Press']);
 
   expect(await selectVariationAndReadCanvas(
     page,

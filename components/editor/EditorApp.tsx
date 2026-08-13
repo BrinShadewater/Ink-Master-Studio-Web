@@ -544,6 +544,8 @@ export const EditorApp = () => {
                   imagesById={imagesById}
                   coordinator={lookCoordinator}
                   label={tool === 'enhance' ? 'Resolution enhancement comparison' : 'Finish comparison'}
+                  onFailureChange={setLookError}
+                  retryGeneration={lookRetryGeneration}
                 />
               ) : (
                 <EditorCanvas
