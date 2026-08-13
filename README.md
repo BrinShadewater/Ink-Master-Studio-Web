@@ -1,4 +1,4 @@
-# InkMaster Studio Web
+# 🖨️ InkMaster Studio Web
 
 ![Licence](https://img.shields.io/badge/licence-all%20rights%20reserved-lightgrey?style=flat-square) ![Live](https://img.shields.io/badge/live-inkmasterstudio.com-brightgreen?style=flat-square) ![Shadewater Labs](https://img.shields.io/badge/Shadewater%20Labs-%E2%9A%97%EF%B8%8F-6b4fa2?style=flat-square)
 
@@ -10,7 +10,7 @@ The app is local-first. Uploaded artwork, saved projects, and preview results
 stay in the browser unless the user downloads a file or chooses optional AI
 cleanup.
 
-## What This App Does
+## ✨ What This App Does
 
 - Canvas editor with image, text, and vector-trace layers, undo/redo history,
   and named variations of a design.
@@ -30,7 +30,7 @@ cleanup.
 - Optional AI cleanup routed through a server-side API so provider keys never
   enter the browser bundle.
 
-## Stack
+## 🧱 Stack
 
 - Vite 8, React 19, TypeScript 5.8
 - Tailwind CSS 3.4
@@ -38,7 +38,7 @@ cleanup.
 - Vercel serverless API routes for optional AI cleanup
 - Playwright for browser acceptance tests
 
-## Local Development
+## 💻 Local Development
 
 Prerequisites:
 
@@ -74,7 +74,7 @@ npm run build
 npm run preview
 ```
 
-## Project Map
+## 🗺️ Project Map
 
 ```text
 index.tsx                      Entry point
@@ -93,7 +93,7 @@ public/mockups/                Product mockup assets
 public/logo/                   Brand assets
 ```
 
-## Repository Status
+## 📍 Repository Status
 
 The shipped application is the canvas-first editor. `App.tsx` routes to exactly
 two surfaces: the landing page, and the editor at `/editor`.
@@ -119,7 +119,7 @@ Gemini requests remain behind the server-side `/api/edit-image` route.
 variables, or any browser-public path. `tests/ai-cleanup.test.ts` enforces this
 by scanning client source and failing the build if it appears.
 
-## Testing
+## 🧪 Testing
 
 ```shell
 npm test          # typecheck, production build, 593 unit tests, reachability checks
@@ -134,7 +134,7 @@ The Playwright suite is not yet in CI. It needs a browser install step and takes
 roughly 18 minutes, and some selectors are currently out of date with the UI, so
 it is run manually for now.
 
-## Documentation
+## 📚 Documentation
 
 - `SECURITY.md` — read before touching API keys, uploads, or deployment config
 - `CONTRIBUTING.md`
@@ -147,13 +147,13 @@ it is run manually for now.
 layout that the canvas-first rewrite replaced. Treat its chunk analysis as
 historical.
 
-## Security Note
+## 🔒 Security Note
 
 Read `SECURITY.md` before deploying. The browser sends fixed cleanup action IDs,
 not arbitrary model prompts. Keep AI provider keys server-side and keep upload
 limits, same-origin checks, and quota controls intact.
 
-## Roadmap Boundaries
+## 🚧 Roadmap Boundaries
 
 - AI enhancement beyond local upscaling is deferred until provider selection,
   retention policy, cost controls, privacy copy, and failure fallback are
@@ -165,7 +165,7 @@ limits, same-origin checks, and quota controls intact.
 - Screen-print separations remain a distinct future production mode.
 - Printer, RIP, and ICC synchronization remain outside the local-first scope.
 
-## Review Checklist
+## ✅ Review Checklist
 
 - Run `npm test`. It covers strict TypeScript checking, production build
   verification, the Node and tsx test suites, and module reachability.
