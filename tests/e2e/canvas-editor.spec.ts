@@ -414,7 +414,15 @@ const layerDrawer = (page: Page) =>
  */
 const openLayers = async (page: Page) => {
   if (await layerDrawer(page).count()) return;
-  await page.getByRole('button', { name: 'Layers', exact: true }).click();
+  const button = page.getByRole('button', { name: 'Layers', exact: true });
+  // On desktop the Layers button is hidden in Advanced (`md:hidden`), so the drawer is
+  // only reachable from Basic. Drop back automatically rather than making every caller
+  // sequence it; callers that need Advanced afterwards switch back themselves.
+  if (!(await button.isVisible().catch(() => false))) {
+    await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+    await button.waitFor();
+  }
+  await button.click();
   await layerDrawer(page).waitFor();
 };
 
@@ -3869,10 +3877,14 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await addTextLayer(page);
   await page.getByLabel('Content', { exact: true }).fill('OWNER MASTER');
   await page.getByLabel('Content', { exact: true }).blur();
+  await openLayers(page);
   await page.getByRole('button', {
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await closeLayers(page);
+  // openLayers drops to Basic to reach the drawer; numeric placement needs Advanced.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByLabel('X position', { exact: true }).fill('0.58');
   await page.getByLabel('X position', { exact: true }).blur();
@@ -3924,10 +3936,15 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   expect(afterReload?.assets.find(({ id }) => id === afterReload.sourceAssetId)?.blobDigest)
     .toBe(sourceBefore?.blobDigest);
 
+  await openLayers(page);
   await page.getByRole('button', {
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await closeLayers(page);
+  // openLayers drops to Basic to reach the drawer; Trace is a toolbar button only in
+  // Advanced (it sits behind More in Basic).
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Trace', exact: true }).click();
   await page.screenshot({
     path: phase2cArtifactPath('desktop-image-prep-trace-1440x900.png'),
