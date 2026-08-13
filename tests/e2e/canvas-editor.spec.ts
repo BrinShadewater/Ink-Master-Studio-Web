@@ -1186,15 +1186,25 @@ const expectPersistedImageAssets = (
   }
 };
 
-/** Reads canvas pixels once the surface has stopped changing between frames. */
+/**
+ * Reads canvas pixels once the surface has stopped changing.
+ *
+ * Requires three consecutive identical samples with a gap between them: a Look render
+ * arriving mid-capture can otherwise leave two adjacent reads equal while the surface is
+ * still settling, which produces a reference frame nothing else ever matches.
+ */
 const readSettledCanvasPixels = async (canvas: Locator) => {
   let settled = '';
   await expect.poll(async () => {
     const first = await readCanvasPixels(canvas);
-    if (first !== await readCanvasPixels(canvas)) return false;
-    settled = first;
+    await canvas.page().waitForTimeout(120);
+    const second = await readCanvasPixels(canvas);
+    if (first !== second) return false;
+    await canvas.page().waitForTimeout(120);
+    if (second !== await readCanvasPixels(canvas)) return false;
+    settled = second;
     return true;
-  }).toBe(true);
+  }, { timeout: 15000 }).toBe(true);
   return settled;
 };
 
@@ -3330,9 +3340,15 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
   // Editor mode is component state, not persisted, so a reload drops back to Basic.
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+  // Match the tool the reference frames were captured under: the inspector's width
+  // differs per tool, which changes the canvas size and therefore its pixels.
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   await expect(page.getByLabel('Project name')).toHaveValue(projectName);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeReload);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
+  // The design includes an Impact text layer, and fonts load asynchronously after a
+  // reload — painting before they resolve renders the text in a fallback face.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // Poll until a *settled* frame matches: the canvas repaints while the reopened project
   // restores, so a single stable sample can still land on an intermediate frame.
   await expect.poll(async () => {
@@ -3363,13 +3379,17 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
     id: 'distressed-print', strength: 92, wear: 57, textureScale: 8,
     edgeBreakup: 43, seed: distressedSeed,
   });
-  const pngBeforeReroll = await readCanvasPixels(looksCanvas);
+  const pngBeforeReroll = await readSettledCanvasPixels(looksCanvas);
   await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
   await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(pngBeforeReroll);
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
     .find(({ name }) => name === 'Distressed Press')?.look.seed).not.toBe(distressedSeed);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(pngBeforeReroll);
+  // Compare settled frames: the surface repaints while the undone seed re-renders.
+  await expect.poll(async () => {
+    const first = await readCanvasPixels(looksCanvas);
+    return first === await readCanvasPixels(looksCanvas) ? first : null;
+  }).toBe(pngBeforeReroll);
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
     .find(({ name }) => name === 'Distressed Press')?.look).toEqual(recipeBeforeReroll);
 
