@@ -51,6 +51,26 @@ interface TextRecord {
   font: string;
 }
 
+/** Stands in for `Path2D`, which does not exist in Node. */
+class FakePath {
+  constructor(readonly data: string) {}
+}
+
+interface FillRecord {
+  canvas: FakeCanvas;
+  data: string;
+  style: string | CanvasGradient | CanvasPattern;
+  alpha: number;
+  operations: unknown[][];
+}
+
+interface StrokeRecord {
+  canvas: FakeCanvas;
+  data: string;
+  style: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+}
+
 class FakeCanvas {
   readonly id: number;
   readonly initialWidth: number;
@@ -124,6 +144,8 @@ interface FakeRecords {
     pixels: Uint8ClampedArray;
   }>;
   texts: TextRecord[];
+  fills: FillRecord[];
+  strokes: StrokeRecord[];
 }
 
 class FakeContext {
@@ -185,6 +207,39 @@ class FakeContext {
 
   scale(x: number, y: number) {
     this.operations.push(['scale', x, y]);
+  }
+
+  transform(a: number, b: number, c: number, d: number, e: number, f: number) {
+    this.operations.push(['transform', a, b, c, d, e, f]);
+  }
+
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number) {
+    this.operations.push(['setTransform', a, b, c, d, e, f]);
+  }
+
+  fill(path: Path2D) {
+    this.records.fills.push({
+      canvas: this.canvas,
+      data: (path as unknown as FakePath).data,
+      style: this.fillStyle,
+      alpha: this.globalAlpha,
+      operations: this.operations.map((operation) => [...operation]),
+    });
+    // Stand in for rasterisation so alpha/digest bookkeeping still sees painted pixels.
+    if (this.canvas.pixels.length === 0) return;
+    this.canvas.pixels[0] = 255;
+    this.canvas.pixels[1] = 0;
+    this.canvas.pixels[2] = 0;
+    this.canvas.pixels[3] = Math.round(255 * this.globalAlpha);
+  }
+
+  stroke(path: Path2D) {
+    this.records.strokes.push({
+      canvas: this.canvas,
+      data: (path as unknown as FakePath).data,
+      style: this.strokeStyle,
+      lineWidth: this.lineWidth,
+    });
   }
 
   clearRect() {
@@ -381,9 +436,14 @@ const createHarness = (
     draws: [],
     resizeCalls: [],
     texts: [],
+    fills: [],
+    strokes: [],
   };
   let canvasCalls = 0;
   const dependencies: TShirtExportRendererDependencies = {
+    createTracePath(data) {
+      return new FakePath(data) as unknown as Path2D;
+    },
     createCanvas(width, height) {
       canvasCalls += 1;
       if (canvasCalls === options.failCanvasAt) throw new Error('fake canvas failure');
@@ -493,13 +553,22 @@ test('renders authoritative raster, text, and sanitized trace content on the pre
     width: edge,
     height: edge,
   }, trace.transform);
-  const decodedTrace = records.decoded.find(({ id }) => id === 'trace');
-  assert.ok(decodedTrace);
-  assert.deepEqual(
-    { width: decodedTrace.width, height: decodedTrace.height },
-    { width: Math.ceil(expectedTrace.width), height: Math.ceil(expectedTrace.height) },
+  // The trace is drawn straight onto a canvas with Path2D rather than serialised to SVG
+  // and decoded: Chromium's createImageBitmap cannot decode an image/svg+xml blob, which
+  // failed every trace export in Chrome. So the trace must NOT reach decodeBitmap.
+  assert.equal(
+    records.decoded.find(({ id }) => id === 'trace'),
+    undefined,
+    'trace is rasterised directly, never decoded as an image',
   );
-  assert.match(new TextDecoder().decode(decodedTrace.bytes), /fill="#ff0000"/);
+  const traceCanvas = records.canvases.find(({ initialWidth, initialHeight }) =>
+    initialWidth === Math.ceil(expectedTrace.width) &&
+    initialHeight === Math.ceil(expectedTrace.height));
+  assert.ok(traceCanvas, 'trace canvas sized to the prepared region');
+  const traceFill = records.fills.find(({ canvas }) => canvas === traceCanvas);
+  assert.ok(traceFill, 'trace paths are filled onto that canvas');
+  assert.equal(traceFill.style, '#ff0000');
+  assert.equal(traceFill.data, 'M0 0L400 0L400 200L0 200Z');
 
   const placementDraw = records.draws.find(({ canvas, image }) =>
     canvas === output && image === master as unknown as CanvasImageSource);
@@ -663,26 +732,31 @@ test('prepares only rotated visible raster and trace regions at canonical pixel 
     ['scale', 1, 1],
   ]);
 
-  const decodedTrace = records.decoded.find(({ id }) => id === 'trace');
-  assert.ok(decodedTrace);
+  // The trace is rasterised with Path2D onto its own canvas. What used to be carried by
+  // the serialised SVG's viewBox is now carried by the setTransform that maps the visible
+  // source region onto that canvas, so the same property is asserted through it.
   const traceVisibleSpan = Math.SQRT2 * edge;
-  assert.equal(decodedTrace.width, Math.ceil(traceVisibleSpan));
-  assert.equal(decodedTrace.height, Math.ceil(traceVisibleSpan));
-  const traceDocument = new DOMParser().parseFromString(
-    new TextDecoder().decode(decodedTrace.bytes),
-    'image/svg+xml',
+  const traceCanvas = records.canvases.find(({ initialWidth, initialHeight }) =>
+    initialWidth === Math.ceil(traceVisibleSpan) &&
+    initialHeight === Math.ceil(traceVisibleSpan));
+  assert.ok(traceCanvas, 'trace canvas spans the rotated visible region');
+  const traceFill = records.fills.find(({ canvas }) => canvas === traceCanvas);
+  assert.ok(traceFill, 'trace paths are filled onto that canvas');
+  const mapping = traceFill.operations
+    .filter((operation) => operation[0] === 'setTransform')
+    .pop() as [string, number, number, number, number, number, number] | undefined;
+  assert.ok(mapping, 'trace region is mapped onto the canvas');
+  assert.ok(
+    traceCanvas.initialWidth / mapping[1] < 100,
+    'trace region contains only visible source width',
   );
-  const viewBox = traceDocument.documentElement.getAttribute('viewBox')
-    ?.split(/\s+/).map(Number);
-  assert.ok(viewBox);
-  assert.ok(viewBox[2] < 100, 'trace viewBox contains only visible source width');
-  assert.ok(viewBox[3] < 100, 'trace viewBox contains only visible source height');
-  const traceBitmap = records.bitmaps.find(({ width, height }) =>
-    width === decodedTrace.width && height === decodedTrace.height);
-  assert.ok(traceBitmap);
+  assert.ok(
+    traceCanvas.initialHeight / mapping[4] < 100,
+    'trace region contains only visible source height',
+  );
   const traceComposite = records.draws.find(({ canvas, image }) =>
-    canvas === master && image === traceBitmap as unknown as CanvasImageSource);
-  assert.ok(traceComposite, 'decoded visible trace is composed directly');
+    canvas === master && image === traceCanvas as unknown as CanvasImageSource);
+  assert.ok(traceComposite, 'rasterised visible trace is composed directly');
   assert.ok(Math.abs(traceComposite.args[6] - traceVisibleSpan) < 1e-9);
   assert.ok(Math.abs(traceComposite.args[7] - traceVisibleSpan) < 1e-9);
   assert.deepEqual(traceComposite.operations.slice(-3), [

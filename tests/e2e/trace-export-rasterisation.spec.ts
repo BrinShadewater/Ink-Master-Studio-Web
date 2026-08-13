@@ -3,18 +3,20 @@ import { expect, test } from '@playwright/test';
 /**
  * The gap this closes.
  *
- * `editor/tshirtExportRenderer.ts` serialises the sanitised trace SVG with
- * `@xmldom/xmldom`, then hands that string to `createImageBitmap` and draws the result
- * into the exported PNG. Every existing test for that path runs in Node and compares
- * strings and objects — none of them rasterise, because `createImageBitmap` does not
- * exist there.
+ * `editor/tshirtExportRenderer.ts` rasterises the sanitised trace document into the
+ * exported PNG. Every other test for that path runs in Node and compares strings and
+ * objects — none of them rasterise, because neither `Path2D` nor `createImageBitmap`
+ * exists there. So the step where a trace becomes pixels in a print-ready file had no
+ * coverage at all, in a repo where the export is treated as a print contract.
  *
- * So an xmldom change that altered serializer output could produce a blank or wrong
- * trace layer in a print-ready file while `npm test` stayed green. This test runs the
- * real renderer in a real browser and asserts on pixels.
+ * This runs the real renderer in a real browser and asserts on pixels. It earned its
+ * keep immediately: it caught that the renderer used to serialise the trace back to SVG
+ * and decode it with `createImageBitmap`, which Chromium cannot do for `image/svg+xml`
+ * blobs at all — every trace export failed in Chrome and Edge.
  *
- * The control case at the end exists so this cannot quietly become theatre: it proves
- * the pixel assertion actually discriminates.
+ * The two control cases exist so this cannot quietly become theatre. They prove the
+ * pixel assertion discriminates on colour rather than merely on "something was drawn",
+ * and that unsafe markup is still refused on this path.
  */
 
 const TRACE_SVG =
@@ -128,22 +130,8 @@ const renderTraceExport = async (
     }
   }, markup);
 
-test.describe('@trace-raster xmldom serializer output survives rasterisation', () => {
-  test('a sanitised trace SVG reaches the exported canvas as visible pixels', async ({ page }) => {
-    // PINNED TO A KNOWN BUG. This currently fails with "The source image could not be
-    // decoded." Chromium's createImageBitmap does not decode SVG blobs at all — verified
-    // directly: a minimal valid SVG fails both plain and with resizeWidth/resizeHeight,
-    // while a PNG blob and an <img>-based decode of the same SVG both succeed.
-    //
-    // `browserRendererDependencies.decodeBitmap` (editor/tshirtExportRenderer.ts:71-81)
-    // calls createImageBitmap on an image/svg+xml blob, so exporting a T-shirt PNG for any
-    // design containing a trace layer fails in Chrome and Edge with "Could not render
-    // artwork for PNG export."
-    //
-    // Remove this marker when the decode path is fixed. Playwright fails the run if a
-    // test.fail() test starts passing, so this cannot rot into a silent pass.
-    test.fail();
-
+test.describe('@trace-raster a trace layer reaches the exported canvas', () => {
+  test('a sanitised trace reaches the exported canvas as visible pixels', async ({ page }) => {
     await page.goto('/');
 
     const evidence = await renderTraceExport(page, TRACE_SVG);
@@ -152,28 +140,42 @@ test.describe('@trace-raster xmldom serializer output survives rasterisation', (
     expect(evidence.width, 'preset width').toBeGreaterThan(0);
     expect(evidence.height, 'preset height').toBeGreaterThan(0);
 
-    // The trace is a solid #ff0000 rectangle. If xmldom's serialised markup ever stops
-    // decoding — a dropped xmlns, a reordered attribute the decoder rejects — the bitmap
-    // is blank and this count goes to zero while every Node test still passes.
+    // The trace is a solid #ff0000 rectangle. If the trace ever stops reaching the
+    // canvas, this count goes to zero while every Node test still passes.
     expect(evidence.redPixels, 'trace pixels present in the exported canvas')
       .toBeGreaterThan(0);
     expect(evidence.opaquePixels, 'exported canvas is not empty').toBeGreaterThan(0);
   });
 
-  test('control: markup that cannot rasterise yields no trace pixels', async ({ page }) => {
+  test('control: the pixel count tracks the trace colour, not merely any paint', async ({ page }) => {
     await page.goto('/');
 
-    // Same document, but the SVG namespace is removed. createImageBitmap refuses this,
-    // so the render must either throw or produce no trace pixels. If this case ever
-    // reports red pixels, the assertion above is not measuring what it claims to.
+    // The same document filled green. Something is still drawn, so the canvas is not
+    // empty — but no red may appear. If this reported red pixels, the assertion above
+    // would be measuring incidental paint rather than the trace itself.
     const evidence = await renderTraceExport(
       page,
-      '<svg viewBox="0 0 400 200"><path fill="#ff0000" d="M0 0L400 0L400 200L0 200Z"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">' +
+      '<path fill="#00ff00" d="M0 0L400 0L400 200L0 200Z"/></svg>',
     );
 
-    expect(
-      evidence.error !== null || evidence.redPixels === 0,
-      'unrasterisable markup must not produce trace pixels',
-    ).toBe(true);
+    expect(evidence.error, 'a green trace still renders').toBeNull();
+    expect(evidence.opaquePixels, 'green trace paints the canvas').toBeGreaterThan(0);
+    expect(evidence.redPixels, 'no red paint from a green trace').toBe(0);
+  });
+
+  test('control: unsafe trace markup is refused rather than drawn', async ({ page }) => {
+    await page.goto('/');
+
+    // The sanitiser allowlists only path and g elements. A script element must be
+    // rejected before anything reaches the canvas, on this path as much as in Node.
+    const evidence = await renderTraceExport(
+      page,
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">' +
+      '<script>alert(1)</script><path fill="#ff0000" d="M0 0L400 0L400 200L0 200Z"/></svg>',
+    );
+
+    expect(evidence.error, 'unsafe markup must fail the render').not.toBeNull();
+    expect(evidence.redPixels, 'unsafe markup paints nothing').toBe(0);
   });
 });
