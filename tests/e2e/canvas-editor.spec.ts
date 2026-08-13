@@ -377,11 +377,15 @@ const openVariationMenu = async (page: Page) => {
  * must close it again, or a later click lands on this popup instead.
  */
 const closeVariationMenu = async (page: Page) => {
-  const summary = page.locator('summary[aria-label="Manage variation"]');
-  const isOpen = await summary
-    .evaluate((el) => (el.parentElement as HTMLDetailsElement | null)?.open ?? false)
-    .catch(() => false);
-  if (isOpen) await summary.click();
+  // Close by toggling the native <details> rather than clicking the summary: a click
+  // moves focus, and several tests assert focus immediately after an action that closes
+  // this menu. The element is uncontrolled, so setting `open` is what the click does.
+  await page.locator('summary[aria-label="Manage variation"]')
+    .evaluate((el) => {
+      const details = el.parentElement as HTMLDetailsElement | null;
+      if (details?.open) details.open = false;
+    })
+    .catch(() => undefined);
 };
 
 const duplicateVariation = async (page: Page) => {
@@ -414,7 +418,15 @@ const layerDrawer = (page: Page) =>
  */
 const openLayers = async (page: Page) => {
   if (await layerDrawer(page).count()) return;
-  await page.getByRole('button', { name: 'Layers', exact: true }).click();
+  const button = page.getByRole('button', { name: 'Layers', exact: true });
+  // On desktop the Layers button is hidden in Advanced (`md:hidden`), so the drawer is
+  // only reachable from Basic. Drop back automatically rather than making every caller
+  // sequence it; callers that need Advanced afterwards switch back themselves.
+  if (!(await button.isVisible().catch(() => false))) {
+    await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+    await button.waitFor();
+  }
+  await button.click();
   await layerDrawer(page).waitFor();
 };
 
@@ -1250,7 +1262,20 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   if (expectedPng) {
     await expect.poll(() => readCanvasPixels(canvas)).toBe(expectedPng);
   } else {
-    await expect.poll(() => readCanvasPixels(canvas)).not.toBe(previousPng);
+    // "Different from the previous variation" alone can match a partially rendered
+    // frame, which then reads as a duplicate of some other variation. Wait for the
+    // canvas to settle: two consecutive identical reads that also differ from before.
+    let settled: string | null = null;
+    await expect.poll(async () => {
+      const first = await readCanvasPixels(canvas);
+      if (first === previousPng) return false;
+      const second = await readCanvasPixels(canvas);
+      if (first !== second) return false;
+      settled = second;
+      return true;
+    }).toBe(true);
+    await expectCanvasPainted(canvas);
+    return settled!;
   }
   await expectCanvasPainted(canvas);
   return readCanvasPixels(canvas);
@@ -3196,11 +3221,19 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(distressedBeforeEdgeBreakup);
 
   await page.getByRole('button', { name: 'Select', exact: true }).click();
+  const distressedPress = await readCanvasPixels(canvas);
   const desktopPngs: Record<string, string> = {
-    'Distressed Press': await readCanvasPixels(canvas),
+    'Distressed Press': distressedPress,
     'Duotone Poster': await selectVariationAndReadCanvas(page, 'Duotone Poster'),
     'Halftone Screen': await selectVariationAndReadCanvas(page, 'Halftone Screen'),
-    'Distressed Press final': await selectVariationAndReadCanvas(page, 'Distressed Press'),
+    // Pass the expected pixels so the helper polls until the look has fully re-applied.
+    // Without it, it returns as soon as the canvas merely differs from the previous
+    // variation, which can be a partially rendered frame.
+    'Distressed Press final': await selectVariationAndReadCanvas(
+      page,
+      'Distressed Press',
+      distressedPress,
+    ),
   };
   expect(desktopPngs['Distressed Press final']).toBe(desktopPngs['Distressed Press']);
   expect(new Set([
@@ -3329,18 +3362,20 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await uploadTransparentFixture(page, 720, 960, `${projectName}.png`);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const canvas = page.getByLabel('Design canvas');
+  // The Looks tool swaps the canvas for the before/after compare view.
+  const looksCanvas = page.getByLabel('After artwork', { exact: true });
   await expectCanvasPainted(canvas);
   await renameActiveVariation(page, 'Vintage Study');
 
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Vintage Ink', exact: true }).click();
   await setLookRange(page, 'Vintage Ink strength', 73);
-  const beforeGrain = await readCanvasPixels(canvas);
+  const beforeGrain = await readCanvasPixels(looksCanvas);
   await setLookRange(page, 'Grain', 61);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeGrain);
-  const beforeReroll = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(beforeGrain);
+  const beforeReroll = await readCanvasPixels(looksCanvas);
   await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeReroll);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(beforeReroll);
 
   const expectedVintageLook = {
     id: 'vintage-ink', strength: 73, warmth: 45, fade: 25, grain: 61, seed: rerolledSeed,
@@ -3353,6 +3388,9 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await expect(page.getByLabel('Vintage Ink strength range', { exact: true })).toHaveValue('73');
   await expect(page.getByLabel('Grain range', { exact: true })).toHaveValue('61');
 
+  // Leave Looks before measuring: it replaces the design canvas with the before/after
+  // compare view, and the layout assertions below are about the base editor surfaces.
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   const editorLayout = await page.evaluate(() => {
     const bounds = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -3394,6 +3432,8 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
 
   await duplicateVariation(page);
   await renameActiveVariation(page, 'Dark Alternate');
+  // Back into Looks: the layout measurement above needed the base canvas.
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
     ({ name, look }) => ({ name, look }),
@@ -3529,12 +3569,14 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await page.goto('/editor');
   await uploadTransparentFixture(page, 960, 720, `${projectName}.png`);
   const canvas = page.getByLabel('Design canvas');
+  // The Looks tool swaps the canvas for the before/after compare view.
+  const looksCanvas = page.getByLabel('After artwork', { exact: true });
   await expectCanvasPainted(canvas);
   const originalPng = await readCanvasPixels(canvas);
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalPng);
-  const firstReadyPng = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(originalPng);
+  const firstReadyPng = await readCanvasPixels(looksCanvas);
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
   await setLookRange(page, 'Monochrome strength', 82);
@@ -3543,18 +3585,18 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(async () => (await getLookWorkerHarness(page)).requests.some(
     ({ look, maxDimension }) => look.id === 'monochrome' && look.strength === 63 && maxDimension > 240,
   )).toBe(true);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(firstReadyPng);
-  const newerReadyPng = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(firstReadyPng);
+  const newerReadyPng = await readCanvasPixels(looksCanvas);
   await invokeLookWorkerHarness(page, 'failHeld');
   await page.waitForTimeout(100);
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(newerReadyPng);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
   await setLookRange(page, 'Monochrome strength', 47);
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry Look preview', exact: true })).toBeVisible();
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(newerReadyPng);
   const expectedRecipe = { id: 'monochrome', strength: 47, contrast: 20, brightness: 0 };
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect(page.getByLabel('Project name')).toBeVisible();
@@ -3563,7 +3605,7 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
 
   await page.getByRole('button', { name: 'Retry Look preview', exact: true }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(newerReadyPng);
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeRetry);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
@@ -3869,10 +3911,14 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   await addTextLayer(page);
   await page.getByLabel('Content', { exact: true }).fill('OWNER MASTER');
   await page.getByLabel('Content', { exact: true }).blur();
+  await openLayers(page);
   await page.getByRole('button', {
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await closeLayers(page);
+  // openLayers drops to Basic to reach the drawer; numeric placement needs Advanced.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByLabel('X position', { exact: true }).fill('0.58');
   await page.getByLabel('X position', { exact: true }).blur();
@@ -3924,10 +3970,15 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   expect(afterReload?.assets.find(({ id }) => id === afterReload.sourceAssetId)?.blobDigest)
     .toBe(sourceBefore?.blobDigest);
 
+  await openLayers(page);
   await page.getByRole('button', {
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await closeLayers(page);
+  // openLayers drops to Basic to reach the drawer; Trace is a toolbar button only in
+  // Advanced (it sits behind More in Basic).
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Trace', exact: true }).click();
   await page.screenshot({
     path: phase2cArtifactPath('desktop-image-prep-trace-1440x900.png'),
@@ -4238,6 +4289,9 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   await page.reload();
   await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  // Editor mode is component state, not persisted, so the reload dropped back to Basic.
+  // The mobile layout assertions below expect the Advanced inspector's content height.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const afterReload = await readPersistedPhase3AWorkspace(page, projectName);
   expect(afterReload).toEqual(beforeReload);
   expect(afterReload?.sourceDigest).toBe(initial.sourceDigest);
@@ -4249,6 +4303,11 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  // The inspector collapses to a header bar on mobile; its content only renders expanded.
+  const expandInspector = page.getByRole('button', { name: 'Expand', exact: true });
+  if (await expandInspector.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await expandInspector.click();
+  }
   const mobileLayout = await page.evaluate(() => {
     const bounds = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -4273,9 +4332,14 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
       preview: bounds(preview),
       inspector: bounds(inspector),
       toolbar: bounds(toolbar),
-      inspectorScrollable:
-        inspector.scrollHeight > inspector.clientHeight &&
-        getComputedStyle(inspector).overflowY === 'auto',
+      // The aside is now a fixed-height shell with overflow-hidden; the scrolling moved
+      // to an inner content region, which on mobile only renders once expanded.
+      inspectorScrollable: (() => {
+        const content = document.getElementById('editor-inspector-content');
+        if (!content) return false;
+        return content.scrollHeight > content.clientHeight &&
+          getComputedStyle(content).overflowY === 'auto';
+      })(),
     };
   });
   const contained = (
