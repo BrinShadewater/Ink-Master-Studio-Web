@@ -1432,6 +1432,8 @@ test('composes ordered image and text layers with persistence on desktop', async
   await openLayers(page);
   await page.getByLabel('Layer name: Text').fill('Phase 2A headline');
   await page.getByLabel('Layer name: Text').press('Enter');
+  // The drawer is modal — leave it open and it swallows every later inspector click.
+  await closeLayers(page);
   await page.getByLabel('Content', { exact: true }).fill('INK\nIN ORDER');
   await page.getByLabel('Content', { exact: true }).blur();
   await page.getByLabel('Font', { exact: true }).selectOption('Georgia');
@@ -1447,6 +1449,8 @@ test('composes ordered image and text layers with persistence on desktop', async
   await page.getByLabel('Outline color', { exact: true }).fill('#f8fafc');
   await page.getByLabel('Outline color', { exact: true }).blur();
 
+  // Everything from here to the canvas drag below is drawer work.
+  await openLayers(page);
   await page.getByRole('button', { name: 'Move layer down' }).click();
   const overlayRow = page.locator('li').filter({
     has: page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' }),
@@ -1471,6 +1475,7 @@ test('composes ordered image and text layers with persistence on desktop', async
   expect(baseLayerId).toBeTruthy();
   await baseButton.click();
   await expect(canvas).toHaveAttribute('data-selected-layer-id', baseLayerId!);
+  await closeLayers(page);
   const canvasBox = await canvas.boundingBox();
   if (!canvasBox) throw new Error('Canvas bounds are unavailable.');
   const center = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 };
@@ -1538,7 +1543,10 @@ test('composes ordered image and text layers with persistence on desktop', async
   await page.getByRole('dialog').getByRole('button').filter({ hasText: 'phase-2a-base' }).click();
   await expect.poll(() => readPersistedComposition(page, 'phase-2a-base')).toEqual(beforeReload);
   await expect(canvas).toHaveAttribute('data-selected-layer-id', duplicateLayerId!);
+  // The reload closed the drawer, so reopen it to inspect the layer list.
+  await openLayers(page);
   await expect(duplicateButton).toHaveAttribute('aria-pressed', 'true');
+  await closeLayers(page);
   await expect(page.getByLabel('Content', { exact: true })).toHaveValue('INK\nIN ORDER');
   await expect(page.getByLabel('Font', { exact: true })).toHaveValue('Georgia');
   await expect(page.getByLabel('Size', { exact: true })).toHaveValue('88');
@@ -1556,12 +1564,14 @@ test('composes ordered image and text layers with persistence on desktop', async
   const reopenedOverlayRow = page.locator('li').filter({
     has: page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' }),
   });
+  await openLayers(page);
   await reopenedOverlayRow.getByRole('button', { name: 'Show layer' }).click();
   await expect.poll(() => readCanvasPixels(canvas)).not.toBe(canvasBeforeReload);
   const canvasWithOverlay = await readCanvasPixels(canvas);
   expect(canvasWithOverlay).not.toBe(canvasBeforeReload);
   await reopenedOverlayRow.getByRole('button', { name: 'Hide layer' }).click();
   await expect.poll(() => readCanvasPixels(canvas)).toBe(canvasBeforeReload);
+  await closeLayers(page);
 });
 
 test('manages layers on mobile without covering the canvas', async ({ page }) => {
@@ -1848,10 +1858,15 @@ test('normalizes direct drag against landscape and portrait viewport dimensions'
     { width: 900, height: 1600, name: 'drag-portrait.png' },
   ]) {
     await uploadFixture(page, fixture.width, fixture.height, fixture.name);
-    await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
-    await expect(page.getByLabel('Project name')).toHaveValue(path.parse(fixture.name).name);
+    // Layers are reachable in Basic only on desktop, so check the layer before switching.
+    // Mode persists across loop iterations, so return to Basic first.
+    await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+    await openLayers(page);
     await expect(page.getByRole('button', { name: `Select layer ${fixture.name}` }))
       .toHaveAttribute('aria-pressed', 'true');
+    await closeLayers(page);
+    await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
+    await expect(page.getByLabel('Project name')).toHaveValue(path.parse(fixture.name).name);
     const canvas = page.getByLabel('Design canvas');
     await expectCanvasPainted(canvas);
     const box = await canvas.boundingBox();
@@ -2406,6 +2421,7 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await page.getByRole('button', { name: 'Select layer Text' }).evaluate((button) => {
     (button as HTMLButtonElement).click();
   });
+  await closeLayers(page);
   await expect(page.getByLabel('Size', { exact: true })).toHaveValue('72');
   await page.getByLabel('Fill color', { exact: true }).fill('#336699');
   await page.getByRole('button', { name: 'Align center', exact: true }).click();
@@ -2481,16 +2497,22 @@ test('separates text content sessions when selection unmounts the focused inspec
   await uploadFixture(page, 640, 480, 'content-sessions.png');
   await addTextLayer(page);
 
+  // Both select via evaluate() to avoid moving focus, which is the point of this test.
+  // The drawer still has to be opened to reach the buttons, and closed again so it does
+  // not sit over the inspector.
   const selectImageWithoutFocus = async () => {
     await openLayers(page);
     await page.getByRole('button', { name: 'Select layer content-sessions.png' }).evaluate((button) => {
       (button as HTMLButtonElement).click();
     });
+    await closeLayers(page);
   };
   const selectTextWithoutFocus = async () => {
+    await openLayers(page);
     await page.getByRole('button', { name: 'Select layer Text' }).evaluate((button) => {
       (button as HTMLButtonElement).click();
     });
+    await closeLayers(page);
   };
 
   await page.getByLabel('Content', { exact: true }).fill('First session');
