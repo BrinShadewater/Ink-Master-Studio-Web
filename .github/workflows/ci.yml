@@ -30,3 +30,59 @@ jobs:
       # so building separately would only duplicate work.
       - name: Typecheck, build and test
         run: npm test
+
+  # The Playwright suite is the only thing that exercises the canvas, worker and
+  # rasterisation paths — the parts that do not fail in ways typechecking catches. It
+  # ran nowhere for a long time and silently rotted to the point that no test in it
+  # passed; this job exists so that cannot happen again.
+  #
+  # Kept as a separate job rather than appended to `npm test` so the fast unit feedback
+  # is not blocked behind a browser download and a ~7 minute run.
+  e2e:
+    name: End-to-end (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # The engines floor. One browser run is enough — these tests assert app
+          # behaviour, not Node compatibility, which the matrix above already covers.
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # Key on the resolved Playwright version: browser builds are pinned to it, so a
+      # stale cache after an upgrade would install the wrong binaries.
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      # A cache hit restores the browser but not its OS-level shared libraries.
+      - name: Install browser system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          # Traces, screenshots and videos are retained on failure by
+          # playwright.config.ts, and are the fastest way to read a CI-only failure.
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
