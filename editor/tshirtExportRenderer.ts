@@ -26,9 +26,9 @@ import type {
   TShirtExportAssetSnapshot,
   TShirtPngExportSnapshot,
 } from './tshirtExportProtocol';
+import type { SafeTraceDocument } from './traceModel';
 import {
   sanitizeTraceSvg,
-  serializeSafeTraceDocument,
   type TraceXmlPlatform,
 } from './traceSanitizer';
 
@@ -47,6 +47,11 @@ export interface TShirtExportRendererDependencies {
     options: { filter: 'lanczos3' },
   ) => Promise<OffscreenCanvas>;
   traceXmlPlatform?: TraceXmlPlatform;
+  /**
+   * Builds a canvas path from sanitised SVG path data. Injectable because `Path2D`
+   * does not exist in Node, where the renderer's unit tests run.
+   */
+  createTracePath?: (data: string) => Path2D;
 }
 
 export interface TShirtExportRenderedFrame {
@@ -82,6 +87,7 @@ export const createBrowserTShirtExportRendererDependencies =
     resize: (source, destination, options) =>
       resizer.resize(source, destination, options),
     traceXmlPlatform: workerXmlPlatform,
+    createTracePath: (data) => new Path2D(data),
   };
 };
 
@@ -122,14 +128,6 @@ const positiveCanvasEdge = (value: number) => {
 
 const bytesToText = (bytes: ArrayBuffer) =>
   new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-
-const textToArrayBuffer = (value: string): ArrayBuffer => {
-  const bytes = new TextEncoder().encode(value);
-  return bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-};
 
 const assetMapFromSnapshot = (
   assets: TShirtExportAssetSnapshot[],
@@ -769,26 +767,94 @@ const renderRasterLayer = async (
   }
 };
 
-const serializeTraceRegion = (
-  safeMarkup: string,
-  source: Rect,
+/**
+ * Applies one sanitised SVG transform list to a canvas context.
+ *
+ * The sanitiser has already normalised this string to a space-separated list of
+ * `name(v1 v2 ...)` groups drawn from matrix/translate/rotate/scale with finite numeric
+ * arguments, so this only has to map each to its canvas equivalent, in order.
+ */
+const applyTraceTransform = (context: DesignCanvasContext, transform: string) => {
+  for (const group of transform.matchAll(/(matrix|translate|rotate|scale)\(([^)]*)\)/g)) {
+    const values = group[2].split(/[\s,]+/).filter(Boolean).map(Number);
+    // The sanitiser guarantees these counts, so a miss here means the document did not
+    // come from it. Fail rather than transform by undefined and paint something wrong.
+    if (values.length === 0 || values.some((value) => !Number.isFinite(value))) {
+      throw new Error(RENDER_ERROR);
+    }
+    if (group[1] === 'matrix' && values.length === 6) {
+      context.transform(values[0], values[1], values[2], values[3], values[4], values[5]);
+    } else if (group[1] === 'translate') {
+      context.translate(values[0], values[1] ?? 0);
+    } else if (group[1] === 'scale') {
+      context.scale(values[0], values[1] ?? values[0]);
+    } else if (group[1] === 'rotate') {
+      // rotate(a cx cy) rotates about a point; rotate(a) about the current origin.
+      if (values.length === 3) {
+        context.translate(values[1], values[2]);
+        context.rotate(values[0] * Math.PI / 180);
+        context.translate(-values[1], -values[2]);
+      } else {
+        context.rotate(values[0] * Math.PI / 180);
+      }
+    } else {
+      throw new Error(RENDER_ERROR);
+    }
+  }
+};
+
+/**
+ * Rasterises the sanitised trace document straight onto a canvas.
+ *
+ * This deliberately does not round-trip through SVG markup. Chromium's
+ * `createImageBitmap` cannot decode an `image/svg+xml` blob at all, so the previous
+ * serialise-then-decode approach failed every trace export in Chrome and Edge. Drawing
+ * the already-sanitised paths removes the decode entirely, and with it the dependency of
+ * print output on an XML serialiser's byte-level formatting.
+ */
+const drawSafeTraceDocument = (
+  context: DesignCanvasContext,
+  document: SafeTraceDocument,
+  region: Rect,
   output: Size,
-  platform: TraceXmlPlatform,
+  dependencies: TShirtExportRendererDependencies,
 ) => {
-  const parsed = new platform.DOMParser().parseFromString(
-    safeMarkup,
-    'image/svg+xml',
+  if (
+    !(region.width > 0) || !(region.height > 0) ||
+    !Number.isFinite(region.x) || !Number.isFinite(region.y)
+  ) {
+    throw new Error(RENDER_ERROR);
+  }
+  const createTracePath = dependencies.createTracePath ??
+    ((data: string) => new Path2D(data));
+  const horizontalScale = output.width / region.width;
+  const verticalScale = output.height / region.height;
+
+  context.save();
+  // Map the requested region of the trace document onto the whole output canvas.
+  context.setTransform(
+    horizontalScale,
+    0,
+    0,
+    verticalScale,
+    -region.x * horizontalScale,
+    -region.y * verticalScale,
   );
-  const root = parsed.documentElement;
-  root.setAttribute(
-    'viewBox',
-    [source.x, source.y, source.width, source.height]
-      .map((value) => String(Number(value.toFixed(6))))
-      .join(' '),
-  );
-  root.setAttribute('width', String(output.width));
-  root.setAttribute('height', String(output.height));
-  return new platform.XMLSerializer().serializeToString(parsed);
+  for (const path of document.paths) {
+    context.save();
+    if (path.transform) applyTraceTransform(context, path.transform);
+    const shape = createTracePath(path.d);
+    context.globalAlpha = path.opacity;
+    context.fillStyle = path.fill;
+    context.fill(shape);
+    if (path.stroke && path.strokeWidth > 0) {
+      context.strokeStyle = path.stroke;
+      context.lineWidth = path.strokeWidth;
+      context.stroke(shape);
+    }
+    context.restore();
+  }
+  context.restore();
 };
 
 const renderTraceLayer = async (
@@ -822,48 +888,38 @@ const renderTraceLayer = async (
     bytesToText(asset.bytes),
     platform,
   );
-  const safeMarkup = serializeSafeTraceDocument(
-    safe,
-    platform,
-  );
   const sourceRegion = mapLocalRectToSource(visible, drawRect, {
     x: 0,
     y: 0,
     width: safe.width,
     height: safe.height,
   });
-  const serialized = serializeTraceRegion(
-    safeMarkup,
-    sourceRegion,
-    preparationSize,
-    platform,
-  );
-  const finalAsset: TShirtExportAssetSnapshot = {
-    ...asset,
-    mimeType: 'image/svg+xml',
-    width: preparationSize.width,
-    height: preparationSize.height,
-    bytes: textToArrayBuffer(serialized),
-  };
-
-  let bitmap: ImageBitmap | null = null;
+  let traceCanvas: OffscreenCanvas | null = null;
   try {
-    bitmap = await decodeOwnedBitmap(
+    traceCanvas = ownCanvas(
       dependencies,
       ownership,
-      finalAsset,
+      preparationSize.width,
+      preparationSize.height,
+    );
+    drawSafeTraceDocument(
+      canvasContext(traceCanvas),
+      safe,
+      sourceRegion,
+      preparationSize,
+      dependencies,
     );
     drawPreparedLocalRegion(
       masterContext,
-      bitmap,
-      { width: finalAsset.width, height: finalAsset.height },
+      traceCanvas,
+      preparationSize,
       drawRect,
       visible,
       layer.transform,
       layer.opacity,
     );
   } finally {
-    releaseBitmap(ownership, bitmap);
+    releaseCanvas(ownership, traceCanvas);
   }
 };
 
