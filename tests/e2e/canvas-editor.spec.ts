@@ -371,14 +371,37 @@ const openVariationMenu = async (page: Page) => {
   await duplicate.waitFor();
 };
 
+/**
+ * The disclosure stays open until it is toggled again, and its popup is positioned over
+ * the canvas area — where it covers the Compare Board header. So anything that opens it
+ * must close it again, or a later click lands on this popup instead.
+ */
+const closeVariationMenu = async (page: Page) => {
+  const summary = page.locator('summary[aria-label="Manage variation"]');
+  const isOpen = await summary
+    .evaluate((el) => (el.parentElement as HTMLDetailsElement | null)?.open ?? false)
+    .catch(() => false);
+  if (isOpen) await summary.click();
+};
+
 const duplicateVariation = async (page: Page) => {
   await openVariationMenu(page);
   await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await closeVariationMenu(page);
 };
 
 const deleteVariation = async (page: Page) => {
   await openVariationMenu(page);
   await page.getByRole('button', { name: 'Delete variation', exact: true }).click();
+  await closeVariationMenu(page);
+};
+
+const renameVariation = async (page: Page, name: string) => {
+  await openVariationMenu(page);
+  const input = page.getByLabel('Variation name');
+  await input.fill(name);
+  await input.press('Enter');
+  await closeVariationMenu(page);
 };
 
 const layerDrawer = (page: Page) =>
@@ -1688,8 +1711,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
   await page.getByRole('button', { name: 'Adjust' }).click();
   await page.getByLabel('Contrast').fill('25');
   await duplicateVariation(page);
-  await page.getByLabel('Variation name').fill('Print B');
-  await page.getByLabel('Variation name').press('Enter');
+  await renameVariation(page, 'Print B');
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Print B');
   await expect.poll(() => readPersistedEditorState(page, 'film-still')).toEqual({
     variation: 'Print B',
@@ -1795,8 +1817,7 @@ test('renames and deletes variations with deterministic persisted fallback', asy
   await openVariationMenu(page);
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
   await duplicateVariation(page);
-  await page.getByLabel('Variation name').fill('Back print');
-  await page.getByLabel('Variation name').press('Enter');
+  await renameVariation(page, 'Back print');
   await duplicateVariation(page);
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Back print copy');
 
@@ -2828,21 +2849,16 @@ test('compares Looks across variations', async ({ page }) => {
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
-  await openVariationMenu(page);
-  const variationName = page.getByLabel('Variation name');
-  await variationName.fill('Contrast');
-  await variationName.press('Enter');
+  await renameVariation(page, 'Contrast');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
 
   await duplicateVariation(page);
-  await variationName.fill('Mono');
-  await variationName.press('Enter');
+  await renameVariation(page, 'Mono');
   await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
 
   await duplicateVariation(page);
-  await variationName.fill('Duotone');
-  await variationName.press('Enter');
+  await renameVariation(page, 'Duotone');
   await page.getByRole('button', { name: 'Duotone', exact: true }).click();
 
   await expect.poll(async () => (await readPersistedProjectBytes(page, 'compare-looks'))?.variations)
@@ -2877,7 +2893,10 @@ test('compares Looks across variations', async ({ page }) => {
 
   await compareCommand.click();
   await expect(board).toBeVisible();
-  await board.getByText('Variations', { exact: true }).click();
+  // The board reflows while its Look previews render, so the disclosure never settles
+  // if it is clicked the moment the region becomes visible.
+  await expect(board.locator('canvas[data-look-preview="true"]')).toHaveCount(2);
+  await board.locator('summary').filter({ hasText: 'Variations' }).click();
   await board.getByRole('checkbox', { name: 'Contrast', exact: true }).check();
 
   let previews = board.locator('canvas[data-look-preview="true"]');
@@ -2909,12 +2928,14 @@ test('compares Looks across variations', async ({ page }) => {
 
   await board.getByRole('button', { name: 'Edit Mono', exact: true }).click();
   await expect(board).toHaveCount(0);
-  await openVariationMenu(page);
-  await expect(page.getByLabel('Variation name')).toHaveValue('Mono');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
   await expect(selectCommand).toHaveAttribute('aria-pressed', 'true');
   await expect(looksCommand).toHaveAttribute('aria-pressed', 'false');
+  // Assert focus before touching the variation disclosure: opening it moves focus.
   await expect(compareCommand).toBeFocused();
+  await openVariationMenu(page);
+  await expect(page.getByLabel('Variation name')).toHaveValue('Mono');
+  await closeVariationMenu(page);
   await expect.poll(async () => (await readPersistedProjectBytes(page, 'compare-looks'))?.updatedAt)
     .not.toBe(beforeCompare?.updatedAt);
   const afterEdit = await readPersistedProjectBytes(page, 'compare-looks');
@@ -3204,9 +3225,9 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   const board = page.getByRole('region', { name: 'Compare Board' });
   await expect(board).toBeVisible();
-  await board.getByText('Variations', { exact: true }).click();
+  await board.locator('summary').filter({ hasText: 'Variations' }).click();
   await board.getByRole('checkbox', { name: 'Duotone Poster', exact: true }).check();
-  await board.getByText('Variations', { exact: true }).click();
+  await board.locator('summary').filter({ hasText: 'Variations' }).click();
   const previews = board.locator('canvas[data-look-preview="true"]');
   await expect(previews).toHaveCount(3);
   for (let index = 0; index < 3; index += 1) await expectCanvasPainted(previews.nth(index));
