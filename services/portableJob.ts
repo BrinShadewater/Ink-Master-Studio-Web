@@ -67,7 +67,7 @@ export const importPortableJob = async (archive: Blob): Promise<StudioJob> => {
           name: sourceMeta.name,
           type: sourceMeta.type,
           lastModified: sourceMeta.lastModified,
-          blob: new Blob([await sourceFile.async('uint8array')], { type: sourceMeta.type }),
+          blob: new Blob([new Uint8Array(await sourceFile.async('uint8array'))], { type: sourceMeta.type }),
         }
       : null;
     const exports = await Promise.all(parsed.job.exports.map(async (entry) => {
@@ -79,7 +79,7 @@ export const importPortableJob = async (archive: Blob): Promise<StudioJob> => {
         format: entry.format,
         timestamp: entry.timestamp,
         metadata: entry.metadata,
-        blob: new Blob([await file.async('uint8array')]),
+        blob: new Blob([new Uint8Array(await file.async('uint8array'))]),
       };
     }));
     return migrateStudioJob({ ...parsed.job, sourceArtwork, exports });

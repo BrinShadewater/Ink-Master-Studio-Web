@@ -90,7 +90,11 @@ export const createTShirtExportWorkerHandler = (
     const encoded = new Uint8Array(await blob.arrayBuffer());
     const preset = dependencies.getPreset(snapshot.presetId);
     const resolved = dependencies.writeResolution(encoded, preset.pixelsPerMeter);
-    const pngBytes = resolved.buffer.slice(resolved.byteOffset, resolved.byteOffset + resolved.byteLength);
+    // Copy into a fresh Uint8Array rather than slicing `resolved.buffer`: a typed
+    // array's `buffer` is `ArrayBufferLike`, so slicing it widens to
+    // `ArrayBuffer | SharedArrayBuffer`, which is not the `ArrayBuffer` the ready
+    // message declares and cannot be transferred. Same bytes, same single copy.
+    const pngBytes = new Uint8Array(resolved).buffer;
     post({
       type: 'ready', requestId: snapshot.requestId, fingerprint: snapshot.fingerprint,
       pngBytes, metadata: frame.metadata,

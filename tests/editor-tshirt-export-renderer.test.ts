@@ -333,7 +333,7 @@ const asset = (
     width,
     height,
     role: options.role ?? null,
-    bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    bytes: new Uint8Array(bytes).buffer,
   };
 };
 
