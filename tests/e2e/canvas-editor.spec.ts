@@ -2041,14 +2041,24 @@ test('Basic keeps Product visible and specialists behind More', async ({ page })
 
   const toolbar = page.getByRole('navigation', { name: 'Editor tools' });
   const primaryCommands = toolbar.getByRole('button');
-  await expect(primaryCommands).toHaveCount(5);
-  await expect(primaryCommands.nth(0)).toHaveAccessibleName('Select');
-  await expect(primaryCommands.nth(1)).toHaveAccessibleName('Crop');
-  await expect(primaryCommands.nth(2)).toHaveAccessibleName('Product');
-  await expect(primaryCommands.nth(3)).toHaveAccessibleName('Layers');
-  await expect(primaryCommands.nth(4)).toHaveAccessibleName('More tools');
+  // Matches `basicTools` in EditorToolbar, which is a deliberate curated list, plus the
+  // Layers and More affordances. The point of this test is the two properties asserted
+  // below — Product reachable without scrolling, specialists behind More — not this
+  // exact roster, so update the roster with the list and keep the properties.
+  const basicRoster = [
+    'Select', 'Remove background', 'Crop', 'Enhance resolution', 'Looks', 'Product',
+    'Layers', 'More tools',
+  ];
+  await expect(primaryCommands).toHaveCount(basicRoster.length);
+  for (const [index, name] of basicRoster.entries()) {
+    await expect(primaryCommands.nth(index)).toHaveAccessibleName(name);
+  }
 
-  const productBounds = await primaryCommands.nth(2).boundingBox();
+  // Specialists are not promoted into the Basic toolbar.
+  await expect(toolbar.getByRole('button', { name: 'Adjust', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Trace', exact: true })).toHaveCount(0);
+
+  const productBounds = await primaryCommands.nth(basicRoster.indexOf('Product')).boundingBox();
   const toolbarBounds = await toolbar.boundingBox();
   expect(productBounds).not.toBeNull();
   expect(toolbarBounds).not.toBeNull();
@@ -2058,8 +2068,12 @@ test('Basic keeps Product visible and specialists behind More', async ({ page })
   );
   await expect(toolbar).toHaveJSProperty('scrollLeft', 0);
 
+  // ...they live behind More, and are reachable from there.
   await toolbar.getByRole('button', { name: 'More tools' }).click();
-  await page.getByRole('menuitem', { name: 'Remove background' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Adjust' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Trace' })).toBeVisible();
+  await toolbar.getByRole('button', { name: 'More tools' }).click();
+
   await expect(toolbar.getByRole('button', { name: 'Remove background' })).toBeEnabled();
   await toolbar.getByRole('button', { name: 'Product' }).click();
   await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();

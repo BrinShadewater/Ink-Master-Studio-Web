@@ -243,7 +243,7 @@ export const EditorTopBar = ({
         <label className="sr-only" htmlFor="editor-variation">Variation</label>
         <select
           id="editor-variation"
-          className="h-11 w-28 shrink-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:w-36"
+          className="h-11 w-28 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-100 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:w-36"
           value={activeVariationId}
           disabled={variations.length === 0}
           aria-label="Variation"
@@ -284,7 +284,7 @@ export const EditorTopBar = ({
         </details>
       </div>
 
-      <div className="ml-auto flex items-center gap-0 md:gap-1" aria-label="Project commands" data-topbar-group="commands">
+      <div className="ml-auto flex shrink-0 items-center gap-0 md:gap-1" aria-label="Project commands" data-topbar-group="commands">
         <div className="flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5" role="radiogroup" aria-label="Editor mode">
           <button type="button" role="radio" aria-label="Basic" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
           <button type="button" role="radio" aria-label="Advanced" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}><span className="md:hidden">Adv</span><span className="hidden md:inline">Advanced</span></button>
