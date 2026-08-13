@@ -3085,9 +3085,14 @@ test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
 
   // Add text first: the Layers button it needs is Basic-mode only on desktop.
   await addTextLayer(page);
-  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await duplicateVariation(page);
+  // Select the image layer while still in Basic: the drawer is unreachable on desktop
+  // once Advanced hides the Layers button. Selection order is preserved -- duplicate
+  // first, then select -- so the tool state matches what the assertions below expect.
+  await openLayers(page);
   await page.getByRole('button', { name: 'Select layer compare-auto-exit.png' }).click();
+  await closeLayers(page);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
 
   const cropCommand = page.getByRole('button', { name: 'Crop', exact: true });
   const selectCommand = page.getByRole('button', { name: 'Select', exact: true });
