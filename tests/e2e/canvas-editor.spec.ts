@@ -4255,6 +4255,9 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   await page.reload();
   await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  // Editor mode is component state, not persisted, so the reload dropped back to Basic.
+  // The mobile layout assertions below expect the Advanced inspector's content height.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const afterReload = await readPersistedPhase3AWorkspace(page, projectName);
   expect(afterReload).toEqual(beforeReload);
   expect(afterReload?.sourceDigest).toBe(initial.sourceDigest);
@@ -4266,6 +4269,11 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  // The inspector collapses to a header bar on mobile; its content only renders expanded.
+  const expandInspector = page.getByRole('button', { name: 'Expand', exact: true });
+  if (await expandInspector.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await expandInspector.click();
+  }
   const mobileLayout = await page.evaluate(() => {
     const bounds = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -4290,9 +4298,14 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
       preview: bounds(preview),
       inspector: bounds(inspector),
       toolbar: bounds(toolbar),
-      inspectorScrollable:
-        inspector.scrollHeight > inspector.clientHeight &&
-        getComputedStyle(inspector).overflowY === 'auto',
+      // The aside is now a fixed-height shell with overflow-hidden; the scrolling moved
+      // to an inner content region, which on mobile only renders once expanded.
+      inspectorScrollable: (() => {
+        const content = document.getElementById('editor-inspector-content');
+        if (!content) return false;
+        return content.scrollHeight > content.clientHeight &&
+          getComputedStyle(content).overflowY === 'auto';
+      })(),
     };
   });
   const contained = (
