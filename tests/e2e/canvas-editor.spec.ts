@@ -2542,7 +2542,10 @@ test('keeps save failure status and retry accessible on mobile', async ({ page }
   await uploadFixture(page, 900, 1200, 'retry-save.png');
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect.poll(async () => (await readPersistedEditorState(page, 'retry-save'))?.x).toBe(0.5);
-  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  // The editor top bar surfaces save problems only — the persistent "Saved locally"
+  // indicator lives on StudioTopBar, a different surface. The poll above is what proves
+  // the write landed; this asserts the failure state is absent.
+  await expect(page.getByRole('status').filter({ hasText: 'Save failed' })).toHaveCount(0);
 
   await page.evaluate(() => {
     const originalPut = IDBObjectStore.prototype.put;
