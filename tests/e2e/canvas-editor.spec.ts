@@ -1262,7 +1262,20 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   if (expectedPng) {
     await expect.poll(() => readCanvasPixels(canvas)).toBe(expectedPng);
   } else {
-    await expect.poll(() => readCanvasPixels(canvas)).not.toBe(previousPng);
+    // "Different from the previous variation" alone can match a partially rendered
+    // frame, which then reads as a duplicate of some other variation. Wait for the
+    // canvas to settle: two consecutive identical reads that also differ from before.
+    let settled: string | null = null;
+    await expect.poll(async () => {
+      const first = await readCanvasPixels(canvas);
+      if (first === previousPng) return false;
+      const second = await readCanvasPixels(canvas);
+      if (first !== second) return false;
+      settled = second;
+      return true;
+    }).toBe(true);
+    await expectCanvasPainted(canvas);
+    return settled!;
   }
   await expectCanvasPainted(canvas);
   return readCanvasPixels(canvas);
@@ -3208,11 +3221,19 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(distressedBeforeEdgeBreakup);
 
   await page.getByRole('button', { name: 'Select', exact: true }).click();
+  const distressedPress = await readCanvasPixels(canvas);
   const desktopPngs: Record<string, string> = {
-    'Distressed Press': await readCanvasPixels(canvas),
+    'Distressed Press': distressedPress,
     'Duotone Poster': await selectVariationAndReadCanvas(page, 'Duotone Poster'),
     'Halftone Screen': await selectVariationAndReadCanvas(page, 'Halftone Screen'),
-    'Distressed Press final': await selectVariationAndReadCanvas(page, 'Distressed Press'),
+    // Pass the expected pixels so the helper polls until the look has fully re-applied.
+    // Without it, it returns as soon as the canvas merely differs from the previous
+    // variation, which can be a partially rendered frame.
+    'Distressed Press final': await selectVariationAndReadCanvas(
+      page,
+      'Distressed Press',
+      distressedPress,
+    ),
   };
   expect(desktopPngs['Distressed Press final']).toBe(desktopPngs['Distressed Press']);
   expect(new Set([
