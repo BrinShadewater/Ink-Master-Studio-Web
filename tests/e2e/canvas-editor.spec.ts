@@ -1237,6 +1237,8 @@ const renameActiveVariation = async (page: Page, name: string) => {
   await input.fill(name);
   await input.press('Enter');
   await expect(input).toHaveValue(name);
+  // Leave the disclosure closed: its popup overlays the canvas and swallows later clicks.
+  await closeVariationMenu(page);
 };
 
 const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPng?: string) => {
@@ -3145,9 +3147,15 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.goto('/editor');
 
   const canvas = page.getByLabel('Design canvas');
+  // While the Looks tool is active the canvas is replaced by the before/after compare
+  // view, so pixel reads in those sections target its 'After artwork' surface.
+  const looksCanvas = page.getByLabel('After artwork', { exact: true });
   await uploadTransparentFixture(page, 1200, 900, `${projectName}.png`);
   await expectCanvasPainted(canvas);
   await addTextLayer(page);
+  // Detailed Look controls (Duotone shadow/highlight colours) render only in Advanced;
+  // the text layer above had to be added in Basic, so switch after it.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByLabel('Content', { exact: true }).fill('INK / THREE WAYS');
   await page.getByLabel('Content', { exact: true }).blur();
   await page.getByLabel('Font', { exact: true }).selectOption('Impact');
@@ -3161,9 +3169,9 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await setLookRange(page, 'Duotone strength', 79);
   await setLookColor(page, 'Shadow color', '#172554');
   await setLookColor(page, 'Highlight color', '#fde047');
-  const duotoneBeforeBalance = await readCanvasPixels(canvas);
+  const duotoneBeforeBalance = await readCanvasPixels(looksCanvas);
   await setLookRange(page, 'Balance', -17);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(duotoneBeforeBalance);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(duotoneBeforeBalance);
 
   await duplicateVariation(page);
   await renameActiveVariation(page, 'Halftone Screen');
@@ -3173,9 +3181,9 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await setLookRange(page, 'Angle', 32);
   await setLookColor(page, 'Foreground color', '#172554');
   await page.getByRole('button', { name: 'Solid background', exact: true }).click();
-  const halftoneBeforeBackground = await readCanvasPixels(canvas);
+  const halftoneBeforeBackground = await readCanvasPixels(looksCanvas);
   await setLookColor(page, 'Background color', '#fef3c7');
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(halftoneBeforeBackground);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(halftoneBeforeBackground);
 
   await duplicateVariation(page);
   await renameActiveVariation(page, 'Distressed Press');
@@ -3183,9 +3191,9 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await setLookRange(page, 'Distressed Print strength', 92);
   await setLookRange(page, 'Distress', 57);
   await setLookRange(page, 'Texture scale', 8);
-  const distressedBeforeEdgeBreakup = await readCanvasPixels(canvas);
+  const distressedBeforeEdgeBreakup = await readCanvasPixels(looksCanvas);
   await setLookRange(page, 'Edge breakup', 43);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(distressedBeforeEdgeBreakup);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(distressedBeforeEdgeBreakup);
 
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   const desktopPngs: Record<string, string> = {
@@ -3275,13 +3283,13 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
     id: 'distressed-print', strength: 92, wear: 57, textureScale: 8,
     edgeBreakup: 43, seed: distressedSeed,
   });
-  const pngBeforeReroll = await readCanvasPixels(canvas);
+  const pngBeforeReroll = await readCanvasPixels(looksCanvas);
   await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(pngBeforeReroll);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(pngBeforeReroll);
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
     .find(({ name }) => name === 'Distressed Press')?.look.seed).not.toBe(distressedSeed);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(pngBeforeReroll);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(pngBeforeReroll);
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations
     .find(({ name }) => name === 'Distressed Press')?.look).toEqual(recipeBeforeReroll);
 
@@ -3804,10 +3812,15 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     { type: 'trace', visible: true },
   ]);
 
+  // Layer selection needs the drawer, which is Basic-only on desktop, so drop back to
+  // Basic for the selection and switch to Advanced again afterwards.
+  await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+  await openLayers(page);
   await page.getByRole('button', {
     name: `Select layer ${projectName}.png trace`,
     exact: true,
   }).click();
+  await closeLayers(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await setEditorRange(page, 'Detail', 72);
   await setEditorRange(page, 'Smoothing', 48);
@@ -4152,6 +4165,9 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
     { steps: 5 },
   );
   await page.mouse.up();
+  // Numeric placement (Rotation) renders only in Advanced -- TransformControls takes
+  // showNumericPlacement={mode === 'advanced'}. Everything before this is drag-based.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await setEditorRange(page, 'Rotation', 15);
 
   await expect.poll(async () => {
