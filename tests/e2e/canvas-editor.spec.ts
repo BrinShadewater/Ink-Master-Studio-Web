@@ -356,6 +356,31 @@ const uploadFixture = async (page: Page, width: number, height: number, name: st
   });
 };
 
+/**
+ * Variation controls live inside a <details> disclosure labelled "Manage variation".
+ * While it is closed its children are not rendered, so they are absent from the
+ * accessibility tree entirely and no role-based locator can reach them.
+ *
+ * The <summary> itself does not expose as role=button, so it is clicked by label.
+ * Idempotent: safe to call when the disclosure is already open.
+ */
+const openVariationMenu = async (page: Page) => {
+  const duplicate = page.getByRole('button', { name: 'Duplicate variation', exact: true });
+  if (await duplicate.isVisible().catch(() => false)) return;
+  await page.locator('summary[aria-label="Manage variation"]').click();
+  await duplicate.waitFor();
+};
+
+const duplicateVariation = async (page: Page) => {
+  await openVariationMenu(page);
+  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+};
+
+const deleteVariation = async (page: Page) => {
+  await openVariationMenu(page);
+  await page.getByRole('button', { name: 'Delete variation', exact: true }).click();
+};
+
 const createTransparentPngFixture = async (
   page: Page,
   width: number,
@@ -1150,6 +1175,7 @@ const setLookColor = async (page: Page, label: string, value: string) => {
 };
 
 const renameActiveVariation = async (page: Page, name: string) => {
+  await openVariationMenu(page);
   const input = page.getByLabel('Variation name');
   await input.fill(name);
   await input.press('Enter');
@@ -1160,6 +1186,7 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   const canvas = page.getByLabel('Design canvas');
   const previousPng = await readCanvasPixels(canvas);
   await page.getByLabel('Variation', { exact: true }).selectOption({ label: name });
+  await openVariationMenu(page);
   await expect(page.getByLabel('Variation name')).toHaveValue(name);
   if (expectedPng) {
     await expect.poll(() => readCanvasPixels(canvas)).toBe(expectedPng);
@@ -1216,7 +1243,7 @@ const verifyOrderedLookStackFlow = async (
     { id: 'duotone', strength: 64 },
   ]);
 
-  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await duplicateVariation(page);
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   const compare = page.getByRole('region', { name: 'Compare Board', exact: true });
   await expect(compare.locator('canvas[data-look-preview="true"]')).toHaveCount(2);
@@ -1622,7 +1649,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 
   await page.getByRole('button', { name: 'Adjust' }).click();
   await page.getByLabel('Contrast').fill('25');
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await page.getByLabel('Variation name').fill('Print B');
   await page.getByLabel('Variation name').press('Enter');
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Print B');
@@ -1696,7 +1723,7 @@ test('keeps undo and redo independent while alternating between variations', asy
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByLabel('X position').fill('0.7');
   await page.getByLabel('X position').blur();
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await page.getByLabel('X position').fill('0.9');
   await page.getByLabel('X position').blur();
 
@@ -1723,19 +1750,21 @@ test('keeps undo and redo independent while alternating between variations', asy
 test('renames and deletes variations with deterministic persisted fallback', async ({ page }) => {
   await page.goto('/editor');
   await uploadFixture(page, 800, 800, 'variation-management.png');
+  await openVariationMenu(page);
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await page.getByLabel('Variation name').fill('Back print');
   await page.getByLabel('Variation name').press('Enter');
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Back print copy');
 
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Delete variation' }).click();
+  await deleteVariation(page);
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Back print');
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Delete variation' }).click();
+  await deleteVariation(page);
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Original');
+  await openVariationMenu(page);
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeDisabled();
   await expect.poll(async () => (await readPersistedEditorState(page, 'variation-management'))?.variationNames)
     .toEqual(['Original']);
@@ -1879,6 +1908,7 @@ test('keeps the editor usable at 390 by 844 and captures the mobile layout', asy
   await expect(layers).toBeVisible();
   await expect(more).toBeVisible();
   await expect(page.getByRole('button', { name: 'Adjust' })).toHaveCount(0);
+  await openVariationMenu(page);
   await expect(page.getByLabel('Variation name')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate variation' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete variation' })).toBeVisible();
@@ -1972,7 +2002,7 @@ test('Basic keeps Product visible and specialists behind More', async ({ page })
   await expect(toolbar.getByRole('button', { name: 'Crop' })).toBeEnabled();
   await expect(toolbar.getByRole('button', { name: 'Layers' })).toBeEnabled();
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await toolbar.getByRole('button', { name: 'Compare' }).click();
   await expect(page.getByRole('region', { name: 'Compare Board' })).toBeVisible();
@@ -2753,18 +2783,19 @@ test('compares Looks across variations', async ({ page }) => {
   await uploadFixture(page, 960, 720, 'compare-looks.png');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
+  await openVariationMenu(page);
   const variationName = page.getByLabel('Variation name');
   await variationName.fill('Contrast');
   await variationName.press('Enter');
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await variationName.fill('Mono');
   await variationName.press('Enter');
   await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await variationName.fill('Duotone');
   await variationName.press('Enter');
   await page.getByRole('button', { name: 'Duotone', exact: true }).click();
@@ -2833,6 +2864,7 @@ test('compares Looks across variations', async ({ page }) => {
 
   await board.getByRole('button', { name: 'Edit Mono', exact: true }).click();
   await expect(board).toHaveCount(0);
+  await openVariationMenu(page);
   await expect(page.getByLabel('Variation name')).toHaveValue('Mono');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
   await expect(selectCommand).toHaveAttribute('aria-pressed', 'true');
@@ -2947,7 +2979,7 @@ test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
-  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await duplicateVariation(page);
   await page.getByRole('button', { name: 'Select layer compare-auto-exit.png' }).click();
 
   const cropCommand = page.getByRole('button', { name: 'Crop', exact: true });
@@ -2963,7 +2995,7 @@ test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
   await expect(cropCommand).toBeDisabled();
 
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Delete variation', exact: true }).click();
+  await deleteVariation(page);
 
   await expect(board).toHaveCount(0);
   await expect(compareCommand).toBeDisabled();
@@ -3002,7 +3034,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await setLookRange(page, 'Balance', -17);
   await expect.poll(() => readCanvasPixels(canvas)).not.toBe(duotoneBeforeBalance);
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await renameActiveVariation(page, 'Halftone Screen');
   await page.getByRole('button', { name: 'Graphic Halftone', exact: true }).click();
   await setLookRange(page, 'Graphic Halftone strength', 84);
@@ -3014,7 +3046,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await setLookColor(page, 'Background color', '#fef3c7');
   await expect.poll(() => readCanvasPixels(canvas)).not.toBe(halftoneBeforeBackground);
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await renameActiveVariation(page, 'Distressed Press');
   await page.getByRole('button', { name: 'Distressed Print', exact: true }).click();
   await setLookRange(page, 'Distressed Print strength', 92);
@@ -3219,7 +3251,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   expect(editorLayout.canvas.bottom).toBeLessThanOrEqual(editorLayout.inspector.top + 1);
   expect(editorLayout.inspector.bottom).toBeLessThanOrEqual(editorLayout.toolbar.top + 1);
 
-  await page.getByRole('button', { name: 'Duplicate variation' }).click();
+  await duplicateVariation(page);
   await renameActiveVariation(page, 'Dark Alternate');
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
@@ -3342,6 +3374,7 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   });
   await board.getByRole('button', { name: 'Edit Dark Alternate', exact: true }).click();
   await expect(board).toHaveCount(0);
+  await openVariationMenu(page);
   await expect(page.getByLabel('Variation name')).toHaveValue('Dark Alternate');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeCompare);
@@ -3403,8 +3436,7 @@ test('crop preserves completed background removal', async ({ page }) => {
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
 
-  await page.getByRole('button', { name: 'More tools', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
   await page.getByLabel('Enable background removal', { exact: true }).check();
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
@@ -3460,8 +3492,7 @@ test('picked background colors accumulate and persist', async ({ page }) => {
   const canvas = page.getByLabel('Design canvas');
   await expectCanvasPainted(canvas);
 
-  await page.getByRole('button', { name: 'More tools', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
   await page.getByRole('button', { name: 'Pick color', exact: true }).click();
   const red = await sourcePointOnCanvas(canvas, samples[0].x, samples[0].y);
   await page.mouse.click(red.x, red.y);
@@ -3482,8 +3513,7 @@ test('picked background colors accumulate and persist', async ({ page }) => {
   await page.reload();
   await page.getByRole('button', { name: 'Open local projects', exact: true }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
-  await page.getByRole('button', { name: 'More tools', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
   await expect(page.getByRole('button', { name: /Remove picked color/ })).toHaveCount(2);
   await expect.poll(() => readPreparedAlphaSamples(page, projectName, samples))
     .toEqual([0, 0, 255]);
@@ -3526,8 +3556,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
     mimeType: 'image/png',
   });
 
-  await page.getByRole('button', { name: 'More tools', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Remove background', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove background', exact: true }).click();
   await page.getByLabel('Enable background removal', { exact: true }).check();
   await expect.poll(async () => {
     const workspace = await readPersistedPhase2CWorkspace(page, projectName);
@@ -3790,7 +3819,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   });
   expect(svgEvidence.paths).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await duplicateVariation(page);
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   const compareBoard = page.getByRole('region', { name: 'Compare Board', exact: true });
   await expect(compareBoard).toBeVisible();
@@ -4015,7 +4044,7 @@ test('@phase3a-acceptance places independent owner designs on photographic T-shi
   const heather = await readPersistedPhase3AWorkspace(page, projectName);
   expect(heather?.productVariants[0].placement).toEqual(originalProduct.placement);
 
-  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await duplicateVariation(page);
   const variationSelect = page.getByLabel('Variation', { exact: true });
   const duplicateId = await variationSelect.inputValue();
   expect(duplicateId).not.toBe(initial.activeVariationId);
@@ -4229,7 +4258,7 @@ test('Product export uses the garment-assigned variation for PNG and proof', asy
   await page.goto('/editor');
   await uploadTransparentFixture(page, 4000, 4000, `${projectName}.png`);
 
-  await page.getByRole('button', { name: 'Duplicate variation', exact: true }).click();
+  await duplicateVariation(page);
   await renameActiveVariation(page, 'White proof artwork');
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
