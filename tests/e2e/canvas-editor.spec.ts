@@ -2334,11 +2334,17 @@ test('releases the mobile layer focus trap when resizing to desktop', async ({ p
 
   await page.setViewportSize({ width: 1200, height: 844 });
 
+  // The layers UI is a single modal drawer at every width now — there is no separate
+  // desktop panel for the trap to hand off to. What must still hold is the property this
+  // test is named for: the trap survives the resize intact and stays releasable, rather
+  // than stranding focus.
   const drawer = page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
-  const desktopLayers = page.getByRole('region', { name: 'Layers panel' });
+  await expect(drawer).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Close layers' })).toBeFocused();
+
+  await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
-  await expect(desktopLayers).toBeVisible();
-  await expect(desktopLayers).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Layers' })).toBeFocused();
 
   await page.keyboard.press('Tab');
   const focusState = await page.evaluate(() => {
@@ -2387,11 +2393,15 @@ test('edits text layers and keeps image tools reachable across selection fallbac
 
   const select = page.getByRole('button', { name: 'Select', exact: true });
   const crop = page.getByRole('button', { name: 'Crop', exact: true });
-  const adjust = page.getByRole('button', { name: 'Adjust', exact: true });
   await addTextLayer(page);
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await expect(crop).toBeEnabled();
-  await expect(adjust).toBeEnabled();
+  // Adjust is a specialist: in Basic it lives behind More rather than on the toolbar,
+  // and this test is about tools staying *reachable*, so check it where it now lives.
+  // Basic is required here anyway — the Layers drawer below is Basic-only on desktop.
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: 'Adjust' })).toBeEnabled();
+  await page.getByRole('button', { name: 'More tools', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Text', exact: true })).toBeVisible();
 
   await page.getByLabel('Content', { exact: true }).fill('First line\nSecond line');
@@ -2413,7 +2423,10 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await fontSize.fill('96');
   await fontSize.press('Escape');
   await expect(fontSize).toHaveValue('72');
-  await fontSize.fill('96');
+  // No uncommitted edit is left pending here on purpose. Reaching the layer list means
+  // opening a focus-trapping drawer, which blurs the field and commits it — so the
+  // round-trip below checks that selection restores the persisted value, which is the
+  // fallback path this test is named for.
   await openLayers(page);
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).evaluate((button) => {
     (button as HTMLButtonElement).click();
@@ -2438,10 +2451,12 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await expect(page.getByRole('button', { name: 'Align center', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('X position', { exact: true })).toHaveValue('0.6');
 
+  await openLayers(page);
   await page.getByRole('button', { name: 'Duplicate layer' }).click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).click();
+  await closeLayers(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await select.click();
   await expect(select).toHaveAttribute('aria-pressed', 'true');
@@ -2460,7 +2475,11 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
   await crop.click();
   await expect(crop).toHaveAttribute('aria-pressed', 'true');
+  // Deleting is a drawer action, and the drawer is Basic-only at this width.
+  await page.getByRole('radio', { name: 'Basic', exact: true }).click();
+  await openLayers(page);
   await page.getByRole('button', { name: 'Delete layer' }).click();
+  await closeLayers(page);
   await expect(select).toHaveAttribute('aria-pressed', 'true');
 
   await page.setViewportSize({ width: 390, height: 844 });
