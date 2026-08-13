@@ -381,6 +381,40 @@ const deleteVariation = async (page: Page) => {
   await page.getByRole('button', { name: 'Delete variation', exact: true }).click();
 };
 
+const layerDrawer = (page: Page) =>
+  page.locator('[role="dialog"][aria-labelledby="mobile-layers-title"]');
+
+/**
+ * Layer controls — `Add text`, `Add image`, and every `Select layer …` button — live in
+ * the Layers drawer. There is no persistent layers panel, so the drawer has to be open
+ * before any of them exist. Idempotent.
+ */
+const openLayers = async (page: Page) => {
+  if (await layerDrawer(page).count()) return;
+  await page.getByRole('button', { name: 'Layers', exact: true }).click();
+  await layerDrawer(page).waitFor();
+};
+
+const closeLayers = async (page: Page) => {
+  if (!(await layerDrawer(page).count())) return;
+  await page.getByRole('button', { name: 'Close layers', exact: true }).click();
+  await layerDrawer(page).waitFor({ state: 'detached' });
+};
+
+/**
+ * The Layers button is rendered on desktop in Basic mode only — Advanced hides it with
+ * `md:hidden` — so a text layer has to be added before switching to Advanced.
+ *
+ * Adding one closes the drawer on its own: `addTextLayerFromPanel` calls
+ * `closeMobileDrawer`. `closeLayers` is a no-op in that case and only matters if that
+ * behaviour changes.
+ */
+const addTextLayer = async (page: Page) => {
+  await openLayers(page);
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await closeLayers(page);
+};
+
 const createTransparentPngFixture = async (
   page: Page,
   width: number,
@@ -1367,9 +1401,12 @@ test('composes ordered image and text layers with persistence on desktop', async
 
   await uploadFixture(page, 1200, 800, 'phase-2a-base.png');
   await uploadLayerFixture(page, 640, 960, 'phase-2a-overlay.png');
+  await openLayers(page);
   await expect(page.getByRole('button', { name: 'Select layer phase-2a-overlay.png' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
 
+  // Adding a text layer closes the drawer (addTextLayerFromPanel calls closeMobileDrawer).
+  await openLayers(page);
   await page.getByLabel('Layer name: Text').fill('Phase 2A headline');
   await page.getByLabel('Layer name: Text').press('Enter');
   await page.getByLabel('Content', { exact: true }).fill('INK\nIN ORDER');
@@ -1644,6 +1681,7 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
   await expect(canvas).toBeVisible();
 
   await uploadFixture(page, 1600, 900, 'film-still.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect(page.getByLabel('Project name')).toHaveValue('film-still');
   await expectCanvasPainted(canvas);
 
@@ -1690,6 +1728,8 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
 
   await openProjects.click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: 'film-still' }).click();
+  // Editor mode is component state, not persisted, so a reload drops back to Basic.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect(page.getByLabel('Variation').locator('option:checked')).toHaveText('Print B');
   await page.getByRole('button', { name: 'Adjust' }).click();
   await expect(page.getByLabel('Contrast')).toHaveValue('25');
@@ -1713,6 +1753,8 @@ test('imports, edits, duplicates, autosaves, reloads, and reopens a local projec
   await page.reload();
   await page.getByRole('button', { name: 'Open local projects' }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: 'film-still' }).click();
+  // Editor mode is component state, not persisted, so a reload drops back to Basic.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Adjust' }).click();
   await expect(page.getByLabel('Contrast')).toHaveValue('25');
 });
@@ -2296,7 +2338,7 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   const select = page.getByRole('button', { name: 'Select', exact: true });
   const crop = page.getByRole('button', { name: 'Crop', exact: true });
   const adjust = page.getByRole('button', { name: 'Adjust', exact: true });
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await addTextLayer(page);
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await expect(crop).toBeEnabled();
   await expect(adjust).toBeEnabled();
@@ -2322,6 +2364,7 @@ test('edits text layers and keeps image tools reachable across selection fallbac
   await fontSize.press('Escape');
   await expect(fontSize).toHaveValue('72');
   await fontSize.fill('96');
+  await openLayers(page);
   await page.getByRole('button', { name: 'Select layer tool-paths.png' }).evaluate((button) => {
     (button as HTMLButtonElement).click();
   });
@@ -2401,9 +2444,10 @@ test('separates text content sessions when selection unmounts the focused inspec
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 640, 480, 'content-sessions.png');
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await addTextLayer(page);
 
   const selectImageWithoutFocus = async () => {
+    await openLayers(page);
     await page.getByRole('button', { name: 'Select layer content-sessions.png' }).evaluate((button) => {
       (button as HTMLButtonElement).click();
     });
@@ -2437,7 +2481,7 @@ test('groups text color control changes separately from discrete alignment', asy
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 640, 480, 'color-groups.png');
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await addTextLayer(page);
 
   const fillColor = page.getByLabel('Fill color', { exact: true });
   await fillColor.fill('#112233');
@@ -2781,6 +2825,7 @@ test('compares Looks across variations', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto('/editor');
   await uploadFixture(page, 960, 720, 'compare-looks.png');
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
   await openVariationMenu(page);
@@ -2978,7 +3023,9 @@ test('auto-exits Compare to a normalized enabled tool', async ({ page }) => {
   await uploadFixture(page, 960, 720, 'compare-auto-exit.png');
   await expectCanvasPainted(page.getByLabel('Design canvas'));
 
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  // Add text first: the Layers button it needs is Basic-mode only on desktop.
+  await addTextLayer(page);
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await duplicateVariation(page);
   await page.getByRole('button', { name: 'Select layer compare-auto-exit.png' }).click();
 
@@ -3016,7 +3063,7 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const canvas = page.getByLabel('Design canvas');
   await uploadTransparentFixture(page, 1200, 900, `${projectName}.png`);
   await expectCanvasPainted(canvas);
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await addTextLayer(page);
   await page.getByLabel('Content', { exact: true }).fill('INK / THREE WAYS');
   await page.getByLabel('Content', { exact: true }).blur();
   await page.getByLabel('Font', { exact: true }).selectOption('Impact');
@@ -3114,6 +3161,8 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   await page.reload();
   await page.getByRole('button', { name: 'Open local projects' }).click();
   await page.getByRole('dialog').getByRole('button').filter({ hasText: projectName }).click();
+  // Editor mode is component state, not persisted, so a reload drops back to Basic.
+  await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   await expect(page.getByLabel('Project name')).toHaveValue(projectName);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeReload);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
@@ -3720,7 +3769,7 @@ test('@phase2c-acceptance prepares, traces, persists, compares, and exports one 
   expect(traceTransparencyEvidence.tracedForeground)
     .not.toEqual(traceTransparencyEvidence.canvasBackground);
 
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await addTextLayer(page);
   await page.getByLabel('Content', { exact: true }).fill('OWNER MASTER');
   await page.getByLabel('Content', { exact: true }).blur();
   await page.getByRole('button', {
