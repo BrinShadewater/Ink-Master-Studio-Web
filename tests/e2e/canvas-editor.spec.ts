@@ -3341,18 +3341,20 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await uploadTransparentFixture(page, 720, 960, `${projectName}.png`);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).click();
   const canvas = page.getByLabel('Design canvas');
+  // The Looks tool swaps the canvas for the before/after compare view.
+  const looksCanvas = page.getByLabel('After artwork', { exact: true });
   await expectCanvasPainted(canvas);
   await renameActiveVariation(page, 'Vintage Study');
 
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Vintage Ink', exact: true }).click();
   await setLookRange(page, 'Vintage Ink strength', 73);
-  const beforeGrain = await readCanvasPixels(canvas);
+  const beforeGrain = await readCanvasPixels(looksCanvas);
   await setLookRange(page, 'Grain', 61);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeGrain);
-  const beforeReroll = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(beforeGrain);
+  const beforeReroll = await readCanvasPixels(looksCanvas);
   await page.getByRole('button', { name: 'Reroll texture', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(beforeReroll);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(beforeReroll);
 
   const expectedVintageLook = {
     id: 'vintage-ink', strength: 73, warmth: 45, fade: 25, grain: 61, seed: rerolledSeed,
@@ -3365,6 +3367,9 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
   await expect(page.getByLabel('Vintage Ink strength range', { exact: true })).toHaveValue('73');
   await expect(page.getByLabel('Grain range', { exact: true })).toHaveValue('61');
 
+  // Leave Looks before measuring: it replaces the design canvas with the before/after
+  // compare view, and the layout assertions below are about the base editor surfaces.
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   const editorLayout = await page.evaluate(() => {
     const bounds = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -3406,6 +3411,8 @@ test('@phase2b-acceptance keeps mobile Looks and Compare bounded and persistent'
 
   await duplicateVariation(page);
   await renameActiveVariation(page, 'Dark Alternate');
+  // Back into Looks: the layout measurement above needed the base canvas.
+  await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'High Contrast', exact: true }).click();
   await expect.poll(async () => (await readPersistedPhase2BProject(page, projectName))?.variations.map(
     ({ name, look }) => ({ name, look }),
@@ -3541,12 +3548,14 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await page.goto('/editor');
   await uploadTransparentFixture(page, 960, 720, `${projectName}.png`);
   const canvas = page.getByLabel('Design canvas');
+  // The Looks tool swaps the canvas for the before/after compare view.
+  const looksCanvas = page.getByLabel('After artwork', { exact: true });
   await expectCanvasPainted(canvas);
   const originalPng = await readCanvasPixels(canvas);
   await page.getByRole('button', { name: 'Looks', exact: true }).click();
   await page.getByRole('button', { name: 'Monochrome', exact: true }).click();
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(originalPng);
-  const firstReadyPng = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(originalPng);
+  const firstReadyPng = await readCanvasPixels(looksCanvas);
 
   await enqueueLookWorkerRule(page, { action: 'hold', lookId: 'monochrome', minimumDimension: 241 });
   await setLookRange(page, 'Monochrome strength', 82);
@@ -3555,18 +3564,18 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
   await expect.poll(async () => (await getLookWorkerHarness(page)).requests.some(
     ({ look, maxDimension }) => look.id === 'monochrome' && look.strength === 63 && maxDimension > 240,
   )).toBe(true);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(firstReadyPng);
-  const newerReadyPng = await readCanvasPixels(canvas);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(firstReadyPng);
+  const newerReadyPng = await readCanvasPixels(looksCanvas);
   await invokeLookWorkerHarness(page, 'failHeld');
   await page.waitForTimeout(100);
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(newerReadyPng);
 
   await enqueueLookWorkerRule(page, { action: 'fail', lookId: 'monochrome', minimumDimension: 241 });
   await setLookRange(page, 'Monochrome strength', 47);
   await expect(page.getByText('Look preview failed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry Look preview', exact: true })).toBeVisible();
-  await expect.poll(() => readCanvasPixels(canvas)).toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).toBe(newerReadyPng);
   const expectedRecipe = { id: 'monochrome', strength: 47, contrast: 20, brightness: 0 };
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect(page.getByLabel('Project name')).toBeVisible();
@@ -3575,7 +3584,7 @@ test('@phase2b-acceptance rejects stale worker failure and retries the current r
 
   await page.getByRole('button', { name: 'Retry Look preview', exact: true }).click();
   await expect(page.getByText('Look preview failed.', { exact: true })).toHaveCount(0);
-  await expect.poll(() => readCanvasPixels(canvas)).not.toBe(newerReadyPng);
+  await expect.poll(() => readCanvasPixels(looksCanvas)).not.toBe(newerReadyPng);
   await expect.poll(() => readPersistedLook(page, projectName)).toEqual(expectedRecipe);
   await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeRetry);
   await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeRetry);
