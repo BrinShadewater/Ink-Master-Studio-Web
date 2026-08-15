@@ -217,8 +217,60 @@
   </head>
 
   <body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500 selection:text-white">
+    <!--
+      Pre-render shell. Measured 2026-08-13: this element was an empty <main> and the page
+      carried 44 characters of visible text with JavaScript off. GPTBot, ClaudeBot and
+      PerplexityBot do not execute JavaScript, so inkmasterstudio.com was effectively blank
+      to every AI crawler. Googlebot renders JS and saw the real app, which is why the gap
+      never appeared in Search Console.
+
+      React's createRoot() (index.tsx) replaces these children on mount, so this is both the
+      crawler-visible content and the loading state it replaced. Same pattern already
+      shipping on shadewaterlabs.com and brinshadewater.com.
+
+      Copy is sourced, not invented. The h1, the lead and the "stay in your browser" line
+      are the rendered page's OWN copy, read out of the running app — so a crawler quotes
+      what a visitor actually sees rather than a parallel description. The audience line is
+      from PRODUCT.md and the three capability lines are real strings from the editor UI.
+      Per AGENTS.md this is a
+      local-first canvas editor for print-on-demand — NOT a tattoo or studio-services site —
+      and there are no artists, prices or booking promises to claim.
+
+      Styling reuses the .static-shell rules already in this file's <style> block. They were
+      defined here and referenced nowhere, so this adds no new CSS and inherits the existing
+      slate palette (#020617 / #e2e8f0) rather than introducing a parallel one.
+    -->
     <div id="root">
-      <main aria-label="Loading InkMaster Studio" style="min-height: 100dvh; background: #0a0a0a"></main>
+      <main aria-label="InkMaster Studio" class="static-shell">
+        <div class="static-shell__inner">
+          <p>InkMaster Studio — Canvas-First Merch Editor</p>
+          <h1>Turn artwork into a print-ready shirt design.</h1>
+          <p>
+            Prepare artwork on a precise local canvas, preview it on real garments, and
+            export a Printify Full Front PNG with fixed dimensions and DPI metadata.
+          </p>
+          <p>Core editing and saved projects stay in your browser.</p>
+
+          <h2>Your artwork stays local</h2>
+          <p>
+            Artwork, projects, and previews remain on your own machine unless you explicitly
+            download, import, export, or invoke the optional server-side AI cleanup. The
+            repository is public so that claim can be checked.
+          </p>
+
+          <h2>Every export, checked</h2>
+          <ul>
+            <li>Keeps your artwork local and prepares a working copy.</li>
+            <li>Pick a Printify preset with the right pixel size and DPI.</li>
+            <li>Save a compliant PNG without technical jargon.</li>
+          </ul>
+
+          <p>
+            For independent artists, streamers, creators, and print-on-demand sellers
+            preparing artwork for Printify.
+          </p>
+        </div>
+      </main>
     </div>
   </body>
 </html>
