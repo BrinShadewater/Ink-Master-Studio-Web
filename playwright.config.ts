@@ -5,7 +5,7 @@ const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
 export default defineConfig({
   testDir: './tests/e2e',
   outputDir: 'test-results',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
