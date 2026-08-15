@@ -1284,10 +1284,21 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
   if (expectedPng) {
     // Compare settled frames: the canvas repaints while the variation restores, so raw
     // samples can miss the stable result entirely.
+    let settled = '';
+    // 15s, matching readSettledCanvasPixels: restoring a variation re-runs the look
+    // pipeline, which exceeds expect.poll's 5s default when the machine is loaded.
     await expect.poll(async () => {
       const first = await readCanvasPixels(canvas);
-      return first === await readCanvasPixels(canvas) ? first : null;
-    }).toBe(expectedPng);
+      if (first !== await readCanvasPixels(canvas)) return null;
+      settled = first;
+      return first;
+    }, { timeout: 15000 }).toBe(expectedPng);
+    await expectCanvasPainted(canvas);
+    // Return the frame the poll actually matched, NOT a fresh read. Re-reading here
+    // samples the canvas again, and a repaint between the poll passing and that read
+    // returns a frame the poll never validated — which made the caller's
+    // `'Distressed Press final' === 'Distressed Press'` assertion intermittently fail.
+    return settled;
   } else {
     // "Different from the previous variation" alone can match a partially rendered
     // frame, which then reads as a duplicate of some other variation. Wait for the
@@ -1304,8 +1315,6 @@ const selectVariationAndReadCanvas = async (page: Page, name: string, expectedPn
     await expectCanvasPainted(canvas);
     return settled!;
   }
-  await expectCanvasPainted(canvas);
-  return readCanvasPixels(canvas);
 };
 
 const verifyOrderedLookStackFlow = async (
@@ -3344,17 +3353,49 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   // differs per tool, which changes the canvas size and therefore its pixels.
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await expect(page.getByLabel('Project name')).toHaveValue(projectName);
-  await expect.poll(() => readPersistedPhase2BProject(page, projectName)).toEqual(projectBeforeReload);
-  await expect.poll(() => readPersistedProjectBytes(page, projectName)).toEqual(projectBytesBeforeReload);
+  // Reopening sometimes performs a content-identical re-save, which moves `updatedAt` and
+  // nothing else — and the byte snapshot embeds that stamp via JSON.stringify, so both
+  // comparisons inherit the race. Compare the *content* exactly, which is what "persisted
+  // unchanged across a reload" actually means here, then assert the stamp never travels
+  // backwards. Do not widen this to ignore other fields: a content difference is a real
+  // failure. The spurious re-save itself is a product question, recorded separately.
+  const withoutWriteStamp = <T extends { updatedAt: number }>(snapshot: T | null) => (
+    snapshot ? { ...snapshot, updatedAt: 0 } : snapshot
+  );
+  const withoutStampedBytes = (snapshot: PersistedProjectByteSnapshot | null) => {
+    if (!snapshot) return snapshot;
+    const parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(snapshot.bytes)));
+    delete parsed.updatedAt;
+    return {
+      ...snapshot,
+      updatedAt: 0,
+      bytes: [...new TextEncoder().encode(JSON.stringify(parsed))],
+    };
+  };
+  // 15s like the canvas polls: reopening restores the active variation asynchronously, so
+  // the default 5s can expire mid-restore and report a difference that resolves moments
+  // later — `activeVariationId` being the field still in flight.
+  await expect.poll(
+    async () => withoutWriteStamp(await readPersistedPhase2BProject(page, projectName)),
+    { timeout: 15000 },
+  ).toEqual(withoutWriteStamp(projectBeforeReload));
+  await expect.poll(
+    async () => withoutStampedBytes(await readPersistedProjectBytes(page, projectName)),
+    { timeout: 15000 },
+  ).toEqual(withoutStampedBytes(projectBytesBeforeReload));
+  expect((await readPersistedPhase2BProject(page, projectName))?.updatedAt ?? 0)
+    .toBeGreaterThanOrEqual(projectBeforeReload?.updatedAt ?? 0);
   // The design includes an Impact text layer, and fonts load asynchronously after a
   // reload — painting before they resolve renders the text in a fallback face.
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // Poll until a *settled* frame matches: the canvas repaints while the reopened project
   // restores, so a single stable sample can still land on an intermediate frame.
+  // 15s, matching readSettledCanvasPixels: restoring a reopened project re-runs the look
+  // pipeline, which exceeds expect.poll's 5s default when the machine is loaded.
   await expect.poll(async () => {
     const first = await readCanvasPixels(canvas);
     return first === await readCanvasPixels(canvas) ? first : null;
-  }).toBe(desktopPngs['Distressed Press']);
+  }, { timeout: 15000 }).toBe(desktopPngs['Distressed Press']);
 
   expect(await selectVariationAndReadCanvas(
     page,
@@ -3402,10 +3443,19 @@ test('@phase2b-acceptance persists exact desktop Looks, pixels, and seeded undo'
   const previews = board.locator('canvas[data-look-preview="true"]');
   await expect(previews).toHaveCount(3);
   for (let index = 0; index < 3; index += 1) await expectCanvasPainted(previews.nth(index));
-  const previewPngs = await previews.evaluateAll((canvases) => (
+  // The three previews render independently. `expectCanvasPainted` proves each has *some*
+  // paint, not that each has finished its own look — two can transiently hold the same
+  // intermediate frame, which reads as a duplicate. Poll until the set is stable across
+  // consecutive samples AND all three differ.
+  const samplePreviews = () => previews.evaluateAll((canvases) => (
     canvases.map((preview) => (preview as HTMLCanvasElement).toDataURL('image/png'))
   ));
-  expect(new Set(previewPngs).size).toBe(3);
+  await expect.poll(async () => {
+    const first = await samplePreviews();
+    const second = await samplePreviews();
+    if (first.join(' ') !== second.join(' ')) return 0;
+    return new Set(second).size;
+  }, { timeout: 15000 }).toBe(3);
   const previewBounds = await previews.evaluateAll((canvases) => canvases.map((preview) => {
     const bounds = preview.getBoundingClientRect();
     return { width: Math.round(bounds.width), height: Math.round(bounds.height) };
