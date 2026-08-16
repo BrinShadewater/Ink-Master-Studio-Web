@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
-    "@xmldom/xmldom": "^0.8.13",
+    "@xmldom/xmldom": "^0.9.11",
     "imagetracerjs": "^1.2.6",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
