@@ -130,9 +130,9 @@ npm run verify    # both of the above
 CI runs `npm test` on Node 22 and 24 for every pull request and every push to
 `main`.
 
-The Playwright suite is not yet in CI. It needs a browser install step and takes
-roughly 18 minutes, and some selectors are currently out of date with the UI, so
-it is run manually for now.
+The Playwright suite runs in CI too, as its own `End-to-end (chromium)` job — it
+installs Chromium, caches the browser between runs, and gates pull requests
+alongside the unit jobs.
 
 ## 📚 Documentation
 
