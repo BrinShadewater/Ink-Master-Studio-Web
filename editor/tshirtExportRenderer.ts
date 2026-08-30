@@ -59,10 +59,7 @@ export interface TShirtExportRenderedFrame {
   metadata: TShirtExportRenderMetadata;
 }
 
-const workerXmlPlatform: TraceXmlPlatform = {
-  DOMParser: DOMParser as unknown as new () => globalThis.DOMParser,
-  XMLSerializer: XMLSerializer as unknown as new () => globalThis.XMLSerializer,
-};
+const workerXmlPlatform: TraceXmlPlatform = { DOMParser, XMLSerializer };
 
 export const createBrowserTShirtExportRendererDependencies =
 (): TShirtExportRendererDependencies => {

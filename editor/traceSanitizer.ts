@@ -11,9 +11,48 @@ const TRANSFORM_PATTERN = new RegExp(
   'gi',
 );
 
+// Structural on purpose: the sanitizer runs against the browser DOM on the main
+// thread and @xmldom/xmldom in workers and tests, and since @xmldom/xmldom 0.9
+// those two type worlds no longer overlap. Only the members the sanitizer uses.
+export interface TraceXmlAttribute {
+  readonly name: string;
+}
+
+export interface TraceXmlNode {
+  readonly nodeType: number;
+  readonly nodeName: string;
+  readonly nodeValue: string | null;
+}
+
+export interface TraceXmlElement extends TraceXmlNode {
+  readonly localName: string | null;
+  readonly namespaceURI: string | null;
+  readonly attributes: {
+    readonly length: number;
+    item(index: number): TraceXmlAttribute | null;
+  };
+  readonly childNodes: {
+    readonly length: number;
+    item(index: number): TraceXmlNode | null;
+  };
+  hasAttribute(name: string): boolean;
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
+  appendChild(node: TraceXmlNode): unknown;
+}
+
+export interface TraceXmlDocument {
+  readonly documentElement: TraceXmlElement | null;
+  createElementNS(namespaceURI: string, qualifiedName: string): TraceXmlElement;
+}
+
 export interface TraceXmlPlatform {
-  DOMParser: new () => DOMParser;
-  XMLSerializer: new () => XMLSerializer;
+  DOMParser: new () => {
+    parseFromString(source: string, mimeType: string): TraceXmlDocument;
+  };
+  XMLSerializer: new () => {
+    serializeToString(node: TraceXmlDocument | TraceXmlNode): string;
+  };
 }
 
 const unsafe = (): never => {
@@ -77,17 +116,17 @@ const normalizeTransform = (value: string): string => {
   return normalized.join(' ');
 };
 
-const attributesOf = (element: Element) =>
+const attributesOf = (element: TraceXmlElement) =>
   Array.from({ length: element.attributes.length }, (_, index) => element.attributes.item(index)!)
     .filter(Boolean);
 
-const ensureAllowedAttributes = (element: Element, allowed: ReadonlySet<string>) => {
+const ensureAllowedAttributes = (element: TraceXmlElement, allowed: ReadonlySet<string>) => {
   for (const attribute of attributesOf(element)) {
     if (!allowed.has(attribute.name)) return unsafe();
   }
 };
 
-const parsePath = (element: Element, parentTransform: string | null): SafeTracePath => {
+const parsePath = (element: TraceXmlElement, parentTransform: string | null): SafeTracePath => {
   ensureAllowedAttributes(element, new Set([
     'd',
     'fill',
@@ -122,14 +161,17 @@ const parsePath = (element: Element, parentTransform: string | null): SafeTraceP
 };
 
 const collectPaths = (
-  parent: Element,
+  parent: TraceXmlElement,
   inheritedTransform: string | null,
   paths: SafeTracePath[],
 ) => {
-  for (const child of Array.from(parent.childNodes)) {
+  const children = parent.childNodes;
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children.item(index);
+    if (!child) return unsafe();
     if (child.nodeType === 3 && !(child.nodeValue ?? '').trim()) continue;
     if (child.nodeType !== 1) return unsafe();
-    const element = child as Element;
+    const element = child as TraceXmlElement;
     if (element.namespaceURI && element.namespaceURI !== SVG_NAMESPACE) return unsafe();
     const name = element.localName || element.nodeName;
     if (name === 'path') {
@@ -197,6 +239,7 @@ export const serializeSafeTraceDocument = (
     'image/svg+xml',
   );
   const root = parsed.documentElement;
+  if (!root) return unsafe();
   root.setAttribute('viewBox', `0 0 ${value.width} ${value.height}`);
   root.setAttribute('width', String(value.width));
   root.setAttribute('height', String(value.height));
