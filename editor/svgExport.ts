@@ -7,10 +7,7 @@ import type {
   TextLayer,
   TraceLayer,
 } from './model';
-import {
-  sanitizeTraceSvg,
-  type TraceXmlPlatform,
-} from './traceSanitizer';
+import { sanitizeTraceSvg } from './traceSanitizer';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
@@ -21,7 +18,14 @@ const TRANSFORM_PATTERN = new RegExp(
   'gi',
 );
 
-export interface XmlPlatform extends TraceXmlPlatform {}
+// Browser-typed rather than extending TraceXmlPlatform: this module builds full
+// documents (ownerDocument, setAttributeNS, text nodes) and only runs where the
+// real DOM exists. It still satisfies TraceXmlPlatform structurally when handed
+// down to sanitizeTraceSvg.
+export interface XmlPlatform {
+  DOMParser: new () => DOMParser;
+  XMLSerializer: new () => XMLSerializer;
+}
 
 export interface SvgExportEligibility {
   eligible: boolean;

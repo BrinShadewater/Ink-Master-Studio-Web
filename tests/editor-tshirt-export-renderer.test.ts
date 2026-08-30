@@ -488,10 +488,7 @@ const createHarness = (
       });
       return destinationValue;
     },
-    traceXmlPlatform: {
-      DOMParser: DOMParser as unknown as new () => globalThis.DOMParser,
-      XMLSerializer: XMLSerializer as unknown as new () => globalThis.XMLSerializer,
-    },
+    traceXmlPlatform: { DOMParser, XMLSerializer },
   };
   return { dependencies, records };
 };
