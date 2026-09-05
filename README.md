@@ -32,7 +32,7 @@ cleanup.
 
 ## 🧱 Stack
 
-- Vite 8, React 19, TypeScript 5.8
+- Vite 8, React 19, TypeScript 5.9
 - Tailwind CSS 3.4
 - Web Workers and canvas image processing
 - Vercel serverless API routes for optional AI cleanup
@@ -122,7 +122,7 @@ by scanning client source and failing the build if it appears.
 ## 🧪 Testing
 
 ```shell
-npm test          # typecheck, production build, 593 unit tests, reachability checks
+npm test          # typecheck, production build, the unit suite, reachability checks
 npm run test:e2e  # Playwright browser acceptance suite
 npm run verify    # both of the above
 ```
