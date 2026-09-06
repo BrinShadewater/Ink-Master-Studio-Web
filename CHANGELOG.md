@@ -4,6 +4,7 @@ Notable changes to Ink Master Studio Web are tracked here.
 
 ## Unreleased
 
+- The landing garment mock and siren print are served at the size they render (768 px tees, 160/320 px print via `srcset`), and the idle warm-up of the other garments fetches the same candidate (#65).
 - Replaced the starter README with project-specific documentation.
 - Added contribution, issue, and pull request guidance.
 - Added project brief and maintenance documentation for production workflows.
