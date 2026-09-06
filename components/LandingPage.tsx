@@ -26,7 +26,11 @@ const ProductStage = () => {
     const warm = () => {
       garments.forEach(({ image }) => {
         if (image === selected.image) return;
+        // Same srcset and sizes as the rendered <img>, so the warm-up fetches the candidate
+        // the swatch will actually show rather than the 1200px original on every screen.
         const mockup = new Image();
+        mockup.sizes = '(min-width: 800px) 684px, 90vw';
+        mockup.srcset = `${image.replace('.webp', '-768w.webp')} 768w, ${image} 1200w`;
         mockup.src = image;
       });
     };
@@ -46,10 +50,10 @@ const ProductStage = () => {
       <div className="absolute inset-7 border border-[#496574]/35" />
       <div className="absolute inset-x-0 top-6 flex justify-between px-9 text-xs text-studio-measure"><span>00</span><span>200</span><span>400</span><span>600</span></div>
       <div className="absolute inset-y-0 left-6 flex flex-col justify-between py-12 text-xs text-studio-measure"><span>00</span><span>200</span><span>400</span><span>600</span></div>
-      <img src={selected.image} alt="" aria-hidden="true" decoding="async" fetchPriority="high" className={`absolute inset-x-[5%] inset-y-0 h-full w-[90%] object-contain ${selected.imageClass}`} />
+      <img src={selected.image} srcSet={`${selected.image.replace(".webp", "-768w.webp")} 768w, ${selected.image} 1200w`} sizes="(min-width: 800px) 684px, 90vw" alt="" aria-hidden="true" decoding="async" fetchPriority="high" className={`absolute inset-x-[5%] inset-y-0 h-full w-[90%] object-contain ${selected.imageClass}`} />
       <div className="absolute inset-x-0 top-[37%] flex h-[31%] flex-col items-center gap-1">
         <p className={`text-center text-[10px] font-bold uppercase tracking-[0.14em] ${copyTone}`}>Tie me to the mast</p>
-        <img src="/landing-siren-print.webp" alt="" aria-hidden="true" decoding="async" fetchPriority="high" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
+        <img src="/landing-siren-print.webp" srcSet="/landing-siren-print-160w.webp 160w, /landing-siren-print-320w.webp 320w, /landing-siren-print.webp 474w" sizes="(min-width: 800px) 152px, 20vw" alt="" aria-hidden="true" decoding="async" fetchPriority="high" className={`h-[72%] w-[20%] object-cover ${printBlend} shadow-[0_8px_18px_rgba(0,0,0,0.3)]`} />
         <p className={`text-center text-[10px] font-bold uppercase tracking-[0.1em] ${copyTone}`}>I want to hear the siren's song</p>
       </div>
       <div className="absolute inset-x-0 bottom-0 border-t border-[#405967] bg-[#172633]/94 px-4 py-3 md:px-5">
