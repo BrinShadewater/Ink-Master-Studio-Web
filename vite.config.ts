@@ -21,30 +21,12 @@ export default defineConfig(() => {
         sourcemap: false,
         rollupOptions: {
           output: {
-            manualChunks: (id) => {
-              // Vendor chunks
-              if (id.includes('node_modules')) {
-                if (id.includes('react') || id.includes('react-dom')) {
-                  return 'react-vendor';
-                }
-                if (id.includes('imagetracerjs')) {
-                  return 'image-processing';
-                }
-                if (id.includes('jspdf') || id.includes('jszip')) {
-                  return 'pdf-export';
-                }
-                if (id.includes('@google/genai')) {
-                  return 'ai-vendor';
-                }
-              }
-              // Component-based splitting for lazy-loaded modules
-              if (id.includes('/components/BatchProcessor')) {
-                return 'batch-processor';
-              }
-              if (id.includes('/components/ExportHistory')) {
-                return 'export-history';
-              }
-            },
+            // No manualChunks, on purpose (2026-09-05). The hand-written vendor split put Vite's
+            // own preload helper inside the pdf-export chunk (jsPDF used it first), so the landing
+            // page's entry imported pdf-export to get one function and modulepreloaded ~500 KB of
+            // jsPDF/html2canvas/core-js that only the editor uses. Lighthouse flagged it as 137 KB
+            // of unused JavaScript on every landing visit. Default splitting keeps the landing to
+            // the entry + runtime and loads jsPDF only from the editor's dynamic import.
             // Optimize asset file names
             assetFileNames: (assetInfo) => {
               const info = assetInfo.name.split('.');
