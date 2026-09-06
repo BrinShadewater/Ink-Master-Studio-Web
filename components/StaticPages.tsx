@@ -169,6 +169,17 @@ export const StaticPage: React.FC<{ route: StaticRoute }> = ({ route }) => {
     setMetaContent('meta[property="og:description"]', route.description);
     setMetaContent('meta[name="twitter:title"]', `${route.title} | InkMaster Studio`);
     setMetaContent('meta[name="twitter:description"]', route.description);
+    // The shell's canonical and og:url point at the home page; without this every guide told
+    // search engines it was a copy of "/" (Lighthouse SEO 92 on /printify-file-requirements,
+    // and a real de-indexing risk for the guides).
+    const self = `https://inkmasterstudio.com${route.id === 'not-found' ? '/' : route.path}`;
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const previousCanonical = canonical?.href;
+    if (canonical) canonical.href = self;
+    const ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
+    const previousOgUrl = ogUrl?.content;
+    if (ogUrl) ogUrl.content = self;
+    setMetaContent('meta[name="twitter:url"]', self);
 
     let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
     if (!robots) {
@@ -177,6 +188,11 @@ export const StaticPage: React.FC<{ route: StaticRoute }> = ({ route }) => {
       document.head.appendChild(robots);
     }
     robots.content = route.id === 'not-found' ? 'noindex, follow' : 'index, follow, max-image-preview:large';
+    return () => {
+      if (canonical && previousCanonical) canonical.href = previousCanonical;
+      if (ogUrl && previousOgUrl) ogUrl.content = previousOgUrl;
+      if (previousOgUrl) setMetaContent('meta[name="twitter:url"]', previousOgUrl);
+    };
   }, [route]);
 
   return (
@@ -211,7 +227,7 @@ export const StaticPage: React.FC<{ route: StaticRoute }> = ({ route }) => {
         </div>
       </main>
       <footer className="border-t border-slate-800 px-4 py-6">
-        <nav className="mx-auto flex max-w-5xl flex-wrap gap-3 text-xs text-slate-500" aria-label="Footer">
+        <nav className="mx-auto flex max-w-5xl flex-wrap gap-3 text-xs text-slate-400" aria-label="Footer">
           {footerLinks.map(([href, label]) => (
             <a key={href} href={href} className="hover:text-slate-200">{label}</a>
           ))}
