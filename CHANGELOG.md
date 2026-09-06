@@ -4,6 +4,7 @@ Notable changes to Ink Master Studio Web are tracked here.
 
 ## Unreleased
 
+- The landing page no longer downloads the editor's PDF stack (jsPDF, html2canvas, core-js): the hand-written chunk split had parked Vite's preload helper in that chunk, so every landing visit modulepreloaded ~500 KB it never ran. Landing JavaScript 204 KB → 67 KB on the wire (#64).
 - The landing garment mock and siren print are served at the size they render (768 px tees, 160/320 px print via `srcset`), and the idle warm-up of the other garments fetches the same candidate (#65).
 - Replaced the starter README with project-specific documentation.
 - Added contribution, issue, and pull request guidance.
