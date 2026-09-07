@@ -206,6 +206,10 @@ export const EditorTopBar = ({
   }
 
   return (
+    // EditorApp reserves 112px for this bar below xl and 56px from xl up. One wrapper keeps
+    // that a single grid child while the second row exists, so the reserved height is filled
+    // rather than left as a dead band under a 56px bar.
+    <div className="min-w-0">
     <header className="relative flex h-14 min-w-0 items-center gap-2 border-b border-neutral-800 bg-neutral-950 px-2 shadow-[0_1px_0_rgba(255,255,255,0.03)] md:px-3">
       <div className="flex min-w-0 items-center gap-2" data-topbar-group="project" aria-label="Project details">
         <a href="/" aria-label="InkMaster Studio home" className="flex h-11 shrink-0 items-center gap-1.5 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
@@ -289,7 +293,9 @@ export const EditorTopBar = ({
           <button type="button" role="radio" aria-label="Basic" aria-checked={mode === 'easy'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'easy' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('easy')}>Basic</button>
           <button type="button" role="radio" aria-label="Advanced" aria-checked={mode === 'advanced'} className={`h-11 min-w-11 rounded px-2 text-[10px] font-semibold ${mode === 'advanced' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`} onClick={() => onModeChange('advanced')}><span className="md:hidden">Adv</span><span className="hidden md:inline">Advanced</span></button>
         </div>
-        <div className="hidden md:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
+        {/* Below xl the bar has a second row and history lives there, so exactly one Undo
+            is rendered at any width and role-based lookups stay unambiguous. */}
+        <div className="hidden xl:contents"><IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} /></div>
         {saveStatus === 'error' ? <IconButton label="Retry save" icon={RefreshCw} onClick={onRetrySave} /> : null}
         <IconButton label="Import artwork" icon={Upload} onClick={onImport} />
@@ -297,5 +303,14 @@ export const EditorTopBar = ({
         <IconButton label="Open local projects" visibleLabel="Projects" icon={FolderOpen} onClick={onOpenProjects} />
       </div>
     </header>
+    <div
+      className="flex h-14 min-w-0 items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-2 md:px-3 xl:hidden"
+      role="group"
+      aria-label="History"
+    >
+      <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
+      <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
+    </div>
+    </div>
   );
 };
