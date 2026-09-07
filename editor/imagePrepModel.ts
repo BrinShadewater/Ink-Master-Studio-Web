@@ -36,6 +36,31 @@ export interface BackgroundRemovalSettings {
   inputFingerprint: string;
 }
 
+/**
+ * Which asset should be shown to the reader, and asked questions about.
+ *
+ * Background removal writes a new asset and leaves the original untouched, so anything that
+ * asks "what is this artwork like?" must ask it of the prepared asset once one exists, or it
+ * answers about a picture the reader is no longer looking at. The product readiness card asked
+ * the original, so it went on demanding a background removal that had already completed, and
+ * the print-ready PNG button it replaces never appeared.
+ *
+ * Deliberately distinct from the trace workflow's input selection, which yields null while a
+ * removal is enabled but unfinished instead of falling back to the original.
+ */
+export const resolveDisplayAssetId = (
+  layer: {
+    assetId: string;
+    backgroundRemoval: Pick<BackgroundRemovalSettings, 'enabled' | 'preparedAssetId'>;
+  },
+  hasAsset: (assetId: string) => boolean,
+): string => {
+  const prepared = layer.backgroundRemoval.enabled
+    ? layer.backgroundRemoval.preparedAssetId
+    : null;
+  return prepared && hasAsset(prepared) ? prepared : layer.assetId;
+};
+
 const MAX_CORRECTION_STROKES = 2_000;
 const MAX_STROKE_POINTS = 20_000;
 export const MAX_BACKGROUND_REMOVAL_PICKS = 16;
