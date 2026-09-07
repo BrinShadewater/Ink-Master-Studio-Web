@@ -1,3 +1,4 @@
+import { siteFooterLinks, SOURCE_URL } from '../content/staticRoutes';
 import { ArrowRight, FileCheck2, Layers3, LockKeyhole, Ruler, Shirt } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -90,4 +91,25 @@ export const LandingPage = ({ onOpenEditor }: LandingPageProps) => <main classNa
     <ProductStage />
   </section>
   <section id="features" className="relative z-10 border-t border-studio-border bg-[#14232d] shadow-[0_-10px_28px_rgba(0,0,0,0.2)]"><div className="mx-auto grid max-w-[1440px] gap-6 px-5 py-8 md:grid-cols-[1.15fr_repeat(3,1fr)] md:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#9cc5c7]">Built for print precision</p><h2 className="mt-3 text-3xl font-black uppercase leading-none text-white">Every export, checked.</h2></div>{[[LockKeyhole, 'Local-first workflow', 'Core edits and projects remain in your browser.'], [Ruler, 'Printify Full Front', '4500 x 5400 px with 300 DPI metadata.'], [FileCheck2, 'Readiness checks', 'Resolution, transparency, and file-size guidance.']].map(([Icon, title, detail]) => { const FeatureIcon = Icon as typeof LockKeyhole; return <div key={title as string} className="flex gap-3 border-l border-[#3a5664] pl-5"><FeatureIcon aria-hidden="true" className="shrink-0 text-[#90bec1]" size={25} /><div><h3 className="text-sm font-bold text-white">{title as string}</h3><p className="mt-1 text-sm leading-6 text-[#c1ced2]">{detail as string}</p></div></div>; })}</div></section>
+  <footer className="relative z-10 border-t border-studio-border bg-[#101d27] px-5 py-10 md:px-8">
+    <div className="mx-auto grid max-w-[1440px] gap-8 md:grid-cols-[1.5fr_1fr_1fr]">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#9cc5c7]">Local-first, and checkable</p>
+        <p className="mt-3 max-w-md text-sm leading-6 text-[#b2c5c8]">Core editing and saved projects stay in your browser. The source is public so you can confirm that instead of taking our word for it.</p>
+        <a className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#8fc0c3] underline underline-offset-4 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-focus" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">Read the source on GitHub <ArrowRight aria-hidden="true" size={15} /></a>
+      </div>
+      <nav aria-label="Guides">
+        <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-[#9cc5c7]">Guides</h2>
+        <ul className="mt-3 grid gap-2">
+          {siteFooterLinks.filter((link) => link.group === 'guides').map((link) => <li key={link.path}><a className="text-sm leading-6 text-[#b2c5c8] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-focus" href={link.path}>{link.label}</a></li>)}
+        </ul>
+      </nav>
+      <nav aria-label="About this site">
+        <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-[#9cc5c7]">About this site</h2>
+        <ul className="mt-3 grid gap-2">
+          {siteFooterLinks.filter((link) => link.group === 'site').map((link) => <li key={link.path}><a className="text-sm leading-6 text-[#b2c5c8] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-focus" href={link.path}>{link.label}</a></li>)}
+        </ul>
+      </nav>
+    </div>
+  </footer>
 </main>;
