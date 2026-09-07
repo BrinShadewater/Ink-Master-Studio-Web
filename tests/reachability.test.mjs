@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
+  appEntryPoints,
   collectReachable,
   collectSourceModules,
   findDynamicImportSpecifiers,
@@ -12,6 +13,10 @@ import {
 const repoRoot = process.cwd();
 const hasPathEnding = (paths, suffix) =>
   [...paths].some((filePath) => filePath.endsWith(suffix));
+// Unreachable from every entry point, not merely from index.tsx: the retired workflow surface.
+// Asserted exactly, so a new orphan fails here rather than accumulating quietly, and removing
+// one is a deliberate edit. Worker-reached modules used to sit in this list with a comment
+// explaining that they were live; the entry points now say that instead.
 const expectedOrphans = [
   'components/AnimatedBackground.tsx',
   'components/BatchProcessor.tsx',
@@ -32,19 +37,9 @@ const expectedOrphans = [
   'components/StudioTopBar.tsx',
   'components/TemplatesPopover.tsx',
   'components/VersionsPopover.tsx',
-  'editor/backgroundRemovalWorker.ts',
   'editor/imagetracerjs.d.ts',
-  'editor/lookWorker.ts',
-  'editor/traceProcessor.ts',
-  'editor/traceWorker.ts',
-  'editor/tshirtExportRenderer.ts',
-  'editor/tshirtExportWorker.ts',
   'services/batch.ts',
   'services/designNames.ts',
-  // Reached only from workers/imageProcessing.worker.ts, which is itself a
-  // separate worker entry point rather than a static import from index.tsx.
-  // Live code, not dead code.
-  'services/designPlacement.ts',
   'services/exportHistory.ts',
   'services/geminiService.ts',
   'services/handoffDetails.ts',
@@ -70,11 +65,15 @@ const expectedOrphans = [
   'services/templateStorage.ts',
   'services/upscaleQuality.ts',
   'services/workflowPath.ts',
-  'workers/imageProcessing.worker.ts',
 ];
 
-test('every source module is reachable from the app entry or is a known orphan', async (t) => {
-  const reachable = await collectReachable(path.join(repoRoot, 'index.tsx'));
+test('every source module is reachable from an app entry point or is a known orphan', async (t) => {
+  const reachable = new Set();
+  for (const entry of appEntryPoints) {
+    for (const filePath of await collectReachable(path.join(repoRoot, entry))) {
+      reachable.add(filePath);
+    }
+  }
   const sourceModules = await collectSourceModules(repoRoot);
   const orphans = sourceModules.filter((filePath) => !reachable.has(filePath));
   assert.deepEqual(orphans, expectedOrphans);

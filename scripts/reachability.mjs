@@ -6,6 +6,19 @@ import path from 'node:path';
 // references rather than the exact production bundle. Later bundle checks
 // provide the separate proof of what ships.
 
+// Everything the bundle starts from. index.tsx is the page entry; each worker is its own
+// entry, so the modules only a worker reaches are live code that no static import from
+// index.tsx can explain. Listing them here rather than in the test keeps one definition of
+// "what the app starts from".
+export const appEntryPoints = [
+  'index.tsx',
+  'workers/imageProcessing.worker.ts',
+  'editor/backgroundRemovalWorker.ts',
+  'editor/lookWorker.ts',
+  'editor/traceWorker.ts',
+  'editor/tshirtExportWorker.ts',
+];
+
 const sourceExtensions = ['.ts', '.tsx', '.js', '.mjs'];
 const scannedDirectories = ['components', 'editor', 'services', 'workers', 'api'];
 const sourceDirectories = ['components', 'editor', 'services', 'workers'];
