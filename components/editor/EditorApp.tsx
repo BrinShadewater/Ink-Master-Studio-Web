@@ -26,6 +26,7 @@ import {
   TraceCoordinator,
   createBrowserTraceWorker,
 } from '../../editor/traceCoordinator';
+import { resolveDisplayAssetId } from '../../editor/imagePrepModel';
 import { createDefaultLook } from '../../editor/lookModel';
 import {
   createTextLayer,
@@ -180,7 +181,12 @@ export const EditorApp = () => {
     (layer): layer is ImageLayer => layer.type === 'image',
   ) ?? null;
   const productArtworkUrl = productArtworkImageLayer
-    ? workspace.assetUrlsById[productArtworkImageLayer.assetId] ?? null
+    ? workspace.assetUrlsById[
+      resolveDisplayAssetId(
+        productArtworkImageLayer,
+        (assetId) => Boolean(workspace.assetUrlsById[assetId]),
+      )
+    ] ?? null
     : null;
   const productMockup = useProductMockup(requestedProductMockup);
 
