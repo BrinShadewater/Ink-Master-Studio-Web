@@ -205,8 +205,23 @@ test('composes ordered image and text layers with persistence on desktop', async
     'Phase 2A headline copy',
     'phase-2a-overlay.png',
   ];
-  await expect.poll(async () => (await readPersistedComposition(page, 'phase-2a-base'))?.layers.map(({ name }) => name))
-    .toEqual(expectedLayerNames);
+  // Autosave is debounced, so the names reach storage a write before the drag does, and the
+  // names are already correct before the drag happens. Polling on them alone let the read below
+  // catch layer[2] still at its pre-drag 0.5/0.5. Wait for the value this test asserts.
+  await expect.poll(async () => {
+    const persisted = await readPersistedComposition(page, 'phase-2a-base');
+    return {
+      names: persisted?.layers.map(({ name }) => name),
+      // Only the two values the drag moves; transform also carries rotation, scale and flips.
+      position: {
+        x: persisted?.layers[2]?.transform?.x,
+        y: persisted?.layers[2]?.transform?.y,
+      },
+    };
+  }).toEqual({
+    names: expectedLayerNames,
+    position: { x: expectedStoredX, y: expectedStoredY },
+  });
   const beforeReload = await readPersistedComposition(page, 'phase-2a-base');
   expect(beforeReload).not.toBeNull();
   expect(beforeReload?.layers[1].visible).toBe(false);

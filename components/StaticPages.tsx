@@ -1,16 +1,8 @@
 import React, { useEffect } from 'react';
-import { routes, type StaticRoute } from '../content/staticRoutes';
+import { routes, siteFooterLinks, type StaticRoute } from '../content/staticRoutes';
 
 
 const routeByPath = new Map(routes.map((route) => [route.path, route]));
-const footerLinks = [
-  ['/privacy', 'Privacy'],
-  ['/terms', 'Terms'],
-  ['/contact', 'Contact'],
-  ['/printify-file-requirements', 'Printify requirements'],
-  ['/print-ready-file-checklist', 'Checklist'],
-  ['/upscaling-art-for-t-shirt-printing', 'Upscaling'],
-];
 
 export const getStaticRoute = (pathname: string): StaticRoute | null => {
   if (pathname === '/' || pathname === '/editor') return null;
@@ -100,8 +92,8 @@ export const StaticPage: React.FC<{ route: StaticRoute }> = ({ route }) => {
       </main>
       <footer className="border-t border-slate-800 px-4 py-6">
         <nav className="mx-auto flex max-w-5xl flex-wrap gap-3 text-xs text-slate-400" aria-label="Footer">
-          {footerLinks.map(([href, label]) => (
-            <a key={href} href={href} className="hover:text-slate-200">{label}</a>
+          {siteFooterLinks.map(({ path, label }) => (
+            <a key={path} href={path} className="hover:text-slate-200">{label}</a>
           ))}
         </nav>
       </footer>

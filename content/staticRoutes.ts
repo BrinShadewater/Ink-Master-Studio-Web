@@ -24,6 +24,30 @@ export interface StaticRoute {
   }>;
 }
 
+/**
+ * The links every page carries to the rest of the site, in footer order.
+ *
+ * Short labels rather than page titles, because these sit in a footer and
+ * "Printify File Requirements Explained" is a headline. Kept here so the landing footer and
+ * the static-page footer cannot disagree about what the site contains, and so a new route is
+ * one edit away from being linked rather than orphaned.
+ */
+export const siteFooterLinks: Array<{
+  path: string;
+  label: string;
+  group: 'guides' | 'site';
+}> = [
+  { path: '/printify-file-requirements', label: 'Printify requirements', group: 'guides' },
+  { path: '/print-ready-file-checklist', label: 'Print-ready checklist', group: 'guides' },
+  { path: '/upscaling-art-for-t-shirt-printing', label: 'Upscaling artwork', group: 'guides' },
+  { path: '/privacy', label: 'Privacy', group: 'site' },
+  { path: '/terms', label: 'Terms', group: 'site' },
+  { path: '/contact', label: 'Contact', group: 'site' },
+];
+
+/** Public because the local-first claim should be checkable. See NOTICE.md. */
+export const SOURCE_URL = 'https://github.com/BrinShadewater/Ink-Master-Studio-Web';
+
 export const routes: StaticRoute[] = [
   {
     id: 'privacy',
