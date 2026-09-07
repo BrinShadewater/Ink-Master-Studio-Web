@@ -57,6 +57,9 @@ function prerenderStaticRoutes(): PluginOption {
           `<link rel="canonical" href="${esc(self)}" />`,
         );
         const meta: Record<string, string> = {
+          // <meta name="title"> is not standard, but it is in this shell and it named the home
+          // page on every route, which is the defect this plugin exists to remove.
+          title,
           description: route.description,
           'og:url': self,
           'og:title': title,
