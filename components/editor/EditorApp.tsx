@@ -190,6 +190,22 @@ export const EditorApp = () => {
     : null;
   const productMockup = useProductMockup(requestedProductMockup);
 
+  // The tab said "InkMaster Studio | Canvas-First Merch Editor" whichever project was open, so
+  // two editor tabs were indistinguishable. StaticPages already sets `<name> | InkMaster Studio`
+  // per route; this follows it. The base title is read from the shell once rather than
+  // hardcoded, so it cannot drift away from index.html.
+  const shellTitleRef = useRef(typeof document === 'undefined' ? '' : document.title);
+  const openProjectName = project?.name ?? null;
+  useEffect(() => {
+    const shellTitle = shellTitleRef.current;
+    document.title = openProjectName
+      ? `${openProjectName} | InkMaster Studio`
+      : shellTitle;
+    return () => {
+      document.title = shellTitle;
+    };
+  }, [openProjectName]);
+
   useEffect(() => {
     if (editorMode !== 'easy') return;
     if (compareOpen) setCompareOpen(false);

@@ -44,6 +44,9 @@ test('Product Basic leads with readiness and White persists', async ({ page }) =
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/editor');
   await uploadFixture(page, 1800, 1800, `${projectName}.png`);
+  // The tab used to read the shell title whichever project was open, so two editor tabs were
+  // indistinguishable. StaticPages already sets `<name> | InkMaster Studio` per route.
+  await expect(page).toHaveTitle(`${projectName} | InkMaster Studio`);
   await page.getByRole('button', { name: 'Product', exact: true }).click();
 
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
