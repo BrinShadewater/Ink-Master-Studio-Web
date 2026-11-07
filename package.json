@@ -27,7 +27,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.20.2",
     "autoprefixer": "^10.6.2",
     "fake-indexeddb": "6.2.5",
