@@ -24,7 +24,7 @@
     "lucide-react": "^1.43.0",
     "pica": "10.0.3",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
